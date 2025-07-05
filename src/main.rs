@@ -2,6 +2,7 @@ use crate::{interner::Interner, lexer::Lexer};
 
 mod interner;
 mod lexer;
+mod location;
 mod token;
 
 fn main() {

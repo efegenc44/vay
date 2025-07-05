@@ -6,16 +6,25 @@ use std::fmt::Display;
 
 use crate::{
     interner::Interner,
+    location::{Located, Position, SourceLocation},
     token::{Keyword, Punctuation, Token},
 };
+
+const PUNCTUATION_CHARS: &[char] = &[';'];
+
+macro_rules! locate {
+    ($self:expr, $block:block) => {{
+        let start = $self.position;
+        $block
+        let end = $self.position;
+        SourceLocation::new(start, end)
+    }};
+}
 
 pub struct Lexer<'source> {
     chars: Peekable<Chars<'source>>,
     index: usize,
-
-    row: usize,
-    column: usize,
-
+    position: Position,
     interner: Interner,
 }
 
@@ -24,10 +33,7 @@ impl<'source> Lexer<'source> {
         Self {
             chars: source.chars().peekable(),
             index: 0,
-
-            row: 1,
-            column: 1,
-
+            position: Position::new(1, 1),
             interner,
         }
     }
@@ -40,37 +46,55 @@ impl<'source> Lexer<'source> {
         let ch = self.chars.next();
 
         if let Some('\n') = ch {
-            self.row += 1;
-            self.column = 1;
+            self.position.newline();
         } else {
-            self.column += 1;
+            self.position.advance();
         }
 
         self.index += 1;
         ch
     }
 
-    fn identifier_or_keyword(&mut self) -> Token {
+    fn identifier_or_keyword(&mut self) -> Located<Token> {
         let mut lexeme = String::new();
-        while let Some(ch) = self.peek_ch() {
-            if ch.is_alphanumeric() {
-                lexeme.push(self.advance().unwrap());
-            } else {
-                break;
+        let location = locate!(self, {
+            while let Some(ch) = self.peek_ch() {
+                if ch.is_alphanumeric() {
+                    lexeme.push(self.advance().unwrap());
+                } else {
+                    break;
+                }
             }
-        }
+        });
 
         let keyword = match lexeme.as_str() {
             "proc" => Keyword::Proc,
-            _ => return Token::Identifier(self.interner.intern(lexeme)),
+            "" => unreachable!(),
+            _ => {
+                let token = Token::Identifier(self.interner.intern(lexeme));
+                return Located::new(token, location);
+            }
         };
 
-        Token::Keyword(keyword)
+        Located::new(Token::Keyword(keyword), location)
+    }
+
+    fn punctuation(&mut self) -> Located<Token> {
+        let punctuation;
+        let location = locate!(self, {
+            punctuation = match self.peek_ch().unwrap() {
+                ';' => Punctuation::Semicolon,
+                _ => unreachable!(),
+            };
+            self.advance();
+        });
+
+        Located::new(Token::Punctuation(punctuation), location)
     }
 }
 
 impl Iterator for Lexer<'_> {
-    type Item = LexResult<Token>;
+    type Item = LexResult<Located<Token>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         while self.peek_ch()?.is_whitespace() {
@@ -79,17 +103,15 @@ impl Iterator for Lexer<'_> {
 
         let ch = self.peek_ch()?;
 
-        if ch.is_alphabetic() {
-            return Some(Ok(self.identifier_or_keyword()));
-        }
-
-        let punct = match ch {
-            ';' => Punctuation::Semicolon,
-            _ => return Some(Err(LexError::UnknownStartOfAToken(*ch))),
+        let result = if ch.is_alphabetic() {
+            Ok(self.identifier_or_keyword())
+        } else if PUNCTUATION_CHARS.contains(ch) {
+            Ok(self.punctuation())
+        } else {
+            Err(LexError::UnknownStartOfAToken(*ch))
         };
-        self.advance();
 
-        Some(Ok(Token::Punctuation(punct)))
+        Some(result)
     }
 }
 
