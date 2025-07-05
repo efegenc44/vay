@@ -10,7 +10,7 @@ use crate::{
     token::{Keyword, Punctuation, Token},
 };
 
-const PUNCTUATION_CHARS: &[char] = &[';'];
+const PUNCTUATION_CHARS: &[char] = &[';', ':', ',', '(', ')', '{', '}'];
 
 macro_rules! locate {
     ($self:expr, $block:block) => {{
@@ -69,6 +69,7 @@ impl<'source> Lexer<'source> {
 
         let keyword = match lexeme.as_str() {
             "proc" => Keyword::Proc,
+            "variant" => Keyword::Variant,
             "" => unreachable!(),
             _ => {
                 let token = Token::Identifier(self.interner.intern(lexeme));
@@ -84,6 +85,12 @@ impl<'source> Lexer<'source> {
         let location = locate!(self, {
             punctuation = match self.peek_ch().unwrap() {
                 ';' => Punctuation::Semicolon,
+                ':' => Punctuation::Colon,
+                ',' => Punctuation::Comma,
+                '(' => Punctuation::LeftParenthesis,
+                ')' => Punctuation::RightParenthesis,
+                '{' => Punctuation::LeftCurly,
+                '}' => Punctuation::RightCurly,
                 _ => unreachable!(),
             };
             self.advance();
@@ -115,6 +122,7 @@ impl Iterator for Lexer<'_> {
     }
 }
 
+#[derive(Clone)]
 pub enum LexError {
     UnknownStartOfAToken(char),
 }

@@ -1,0 +1,10 @@
+variant Nat {
+    Zero;
+    Succ {
+        n: Nat;
+    };
+}
+
+proc main() {
+
+}

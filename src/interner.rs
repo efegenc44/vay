@@ -17,10 +17,14 @@ impl Interner {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct InternIdx(usize);
 
 impl InternIdx {
+    pub const fn dummy_idx() -> Self {
+        Self(0)
+    }
+
     pub fn idx(&self) -> usize {
         self.0
     }

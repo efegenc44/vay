@@ -31,6 +31,13 @@ impl SourceLocation {
     pub fn new(start: Position, end: Position) -> Self {
         Self { start, end }
     }
+
+    pub fn extend(&self, location: &Self) -> Self {
+        assert!(self.start.row <= location.start.row);
+        assert!(self.end.row <= location.end.row);
+
+        Self::new(self.start, location.end)
+    }
 }
 
 impl Display for SourceLocation {
@@ -43,6 +50,7 @@ impl Display for SourceLocation {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct Located<T> {
     data: T,
     location: SourceLocation,
