@@ -9,7 +9,6 @@ use crate::{
 };
 
 pub struct Resolver {
-    modules: Vec<Vec<Declaration>>,
     variants: HashSet<Vec<InternIdx>>,
     procedures: HashSet<Vec<InternIdx>>,
     locals: Vec<InternIdx>,
@@ -21,7 +20,6 @@ pub struct Resolver {
 impl Resolver {
     pub fn new() -> Self {
         Self {
-            modules: vec![],
             variants: HashSet::new(),
             procedures: HashSet::new(),
             locals: vec![],
@@ -174,7 +172,7 @@ impl Resolver {
                         *bound = self.variants
                             .get(&items)
                             .map(|items| Bound::absolute(items.clone()))
-                            .ok_or(ResolveError::UnboundValueIdentifier(parts[0]))?;
+                            .ok_or(ResolveError::UnboundTypeIdentifier(parts[0]))?;
                     },
                     Bound::Undetermined => unreachable!(),
                 };
