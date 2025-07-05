@@ -7,7 +7,7 @@ use std::fmt::Display;
 use crate::{
     interner::Interner,
     location::{Located, Position, SourceLocation},
-    token::{Keyword, Punctuation, Token},
+    token::Token,
 };
 
 const PUNCTUATION_CHARS: &[char] = &[';', ':', ',', '(', ')', '{', '}'];
@@ -67,36 +67,33 @@ impl<'source> Lexer<'source> {
             }
         });
 
-        let keyword = match lexeme.as_str() {
-            "proc" => Keyword::Proc,
-            "variant" => Keyword::Variant,
+        let token = match lexeme.as_str() {
+            "proc" => Token::ProcKeyword,
+            "variant" => Token::VariantKeyword,
             "" => unreachable!(),
-            _ => {
-                let token = Token::Identifier(self.interner.intern(lexeme));
-                return Located::new(token, location);
-            }
+            _ => Token::Identifier(self.interner.intern(lexeme)),
         };
 
-        Located::new(Token::Keyword(keyword), location)
+        Located::new(token, location)
     }
 
     fn punctuation(&mut self) -> Located<Token> {
-        let punctuation;
+        let token;
         let location = locate!(self, {
-            punctuation = match self.peek_ch().unwrap() {
-                ';' => Punctuation::Semicolon,
-                ':' => Punctuation::Colon,
-                ',' => Punctuation::Comma,
-                '(' => Punctuation::LeftParenthesis,
-                ')' => Punctuation::RightParenthesis,
-                '{' => Punctuation::LeftCurly,
-                '}' => Punctuation::RightCurly,
+            token = match self.peek_ch().unwrap() {
+                ';' => Token::Semicolon,
+                ':' => Token::Colon,
+                ',' => Token::Comma,
+                '(' => Token::LeftParenthesis,
+                ')' => Token::RightParenthesis,
+                '{' => Token::LeftCurly,
+                '}' => Token::RightCurly,
                 _ => unreachable!(),
             };
             self.advance();
         });
 
-        Located::new(Token::Punctuation(punctuation), location)
+        Located::new(token, location)
     }
 }
 

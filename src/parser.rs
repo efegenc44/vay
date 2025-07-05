@@ -1,23 +1,24 @@
-use std::{fmt::Display, iter::Peekable};
+use std::{fmt::Display, iter::Peekable, vec};
 
 use crate::{
     declaration::{Declaration, TypedIdentifier, VariantCase},
     expression::{Expression, TypeExpression},
     interner::InternIdx,
     lexer::{LexError, Lexer},
-    location::{self, Located},
+    location::{Located, SourceLocation},
     statement::Statement,
-    token::{self, Keyword, Punctuation, Token},
+    token::Token,
 };
 
 const PRIMARY_TOKEN_STARTS: &[Token] = &[Token::dummy_identifier()];
 
-const STATEMENT_KEYWORDS: &[Token] = &[Token::dummy_identifier(), Token::Keyword(Keyword::Proc)];
-
-const DECLARATION_KEYWORDS: &[Token] = &[
-    Token::Keyword(Keyword::Proc),
-    Token::Keyword(Keyword::Variant),
+const STATEMENT_KEYWORDS: &[Token] = &[
+    Token::dummy_identifier(),
+    Token::ProcKeyword,
+    Token::VariantKeyword,
 ];
+
+const DECLARATION_KEYWORDS: &[Token] = &[Token::ProcKeyword, Token::VariantKeyword];
 
 pub struct Parser<'source> {
     tokens: Peekable<Lexer<'source>>,
@@ -49,7 +50,7 @@ impl<'source> Parser<'source> {
     fn expect_one_of(&mut self, expected_ones: &[Token]) -> ParseResult<Located<Token>> {
         let Some(token) = self.advance()? else {
             return Err(ParseError::UnexpectedEOF {
-                expecteds: expected_ones.to_vec(),
+                expected_ones: expected_ones.to_vec(),
             });
         };
 
@@ -72,7 +73,7 @@ impl<'source> Parser<'source> {
     fn expect_identifier(&mut self) -> ParseResult<Located<InternIdx>> {
         let Some(token) = self.advance()? else {
             return Err(ParseError::UnexpectedEOF {
-                expecteds: vec![Token::dummy_identifier()],
+                expected_ones: vec![Token::dummy_identifier()],
             });
         };
 
@@ -86,6 +87,20 @@ impl<'source> Parser<'source> {
         }
     }
 
+    fn terminator(&mut self, optinal: Token) -> ParseResult<Option<Located<Token>>> {
+        let option = match self.peek()? {
+            Some(token) if token.data() == &optinal => Some(self.advance()?.unwrap()),
+            Some(_) => None,
+            None => {
+                return Err(ParseError::UnexpectedEOF {
+                    expected_ones: vec![optinal],
+                })
+            }
+        };
+
+        Ok(option)
+    }
+
     fn expression(&mut self) -> ParseResult<Located<Expression>> {
         self.primary()
     }
@@ -93,7 +108,7 @@ impl<'source> Parser<'source> {
     fn primary(&mut self) -> ParseResult<Located<Expression>> {
         let Some(token) = self.advance()? else {
             return Err(ParseError::UnexpectedEOF {
-                expecteds: PRIMARY_TOKEN_STARTS.to_vec(),
+                expected_ones: PRIMARY_TOKEN_STARTS.to_vec(),
             });
         };
 
@@ -110,36 +125,36 @@ impl<'source> Parser<'source> {
     }
 
     fn statement(&mut self) -> ParseResult<Located<Statement>> {
-        let Some(token) = self.advance()? else {
+        let Some(token) = self.peek()? else {
             return Err(ParseError::UnexpectedEOF {
-                expecteds: STATEMENT_KEYWORDS.to_vec(),
+                expected_ones: STATEMENT_KEYWORDS.to_vec(),
             });
         };
 
         match token.data() {
-            Token::Keyword(Keyword::Proc) => {
-                todo!()
+            _ => {
+                let expression = self.expression().map_err(|_| ParseError::UnexpectedToken {
+                    unexpected: token,
+                    expected_ones: STATEMENT_KEYWORDS.to_vec(),
+                })?;
+
+                let location = expression.location();
+                let statement = Statement::Expression(expression.move_data());
+                Ok(Located::new(statement, location))
             }
-            Token::Keyword(Keyword::Variant) => {
-                todo!()
-            }
-            _ => Err(ParseError::UnexpectedToken {
-                unexpected: token,
-                expected_ones: STATEMENT_KEYWORDS.to_vec(),
-            }),
         }
     }
 
     fn declaration(&mut self) -> ParseResult<Declaration> {
         let Some(token) = self.advance()? else {
             return Err(ParseError::UnexpectedEOF {
-                expecteds: DECLARATION_KEYWORDS.to_vec(),
+                expected_ones: DECLARATION_KEYWORDS.to_vec(),
             });
         };
 
         match token.data() {
-            Token::Keyword(Keyword::Proc) => self.procedure(),
-            Token::Keyword(Keyword::Variant) => self.variant(),
+            Token::ProcKeyword => self.procedure(),
+            Token::VariantKeyword => self.variant(),
             _ => Err(ParseError::UnexpectedToken {
                 unexpected: token,
                 expected_ones: DECLARATION_KEYWORDS.to_vec(),
@@ -149,7 +164,7 @@ impl<'source> Parser<'source> {
 
     pub fn module(&mut self) -> ParseResult<Vec<Declaration>> {
         let mut declarations = vec![];
-        while let Some(_) = self.peek()? {
+        while self.peek()?.is_some() {
             declarations.push(self.declaration()?);
         }
         Ok(declarations)
@@ -157,49 +172,31 @@ impl<'source> Parser<'source> {
 
     fn procedure(&mut self) -> ParseResult<Declaration> {
         let name = self.expect_identifier()?;
-        self.expect(Token::Punctuation(Punctuation::LeftParenthesis))?;
+        self.expect(Token::LeftParenthesis)?;
         let mut arguments = vec![];
         let mut first = true;
         loop {
-            match self.peek()? {
-                Some(token) => {
-                    if token.data() == &Token::Punctuation(Punctuation::RightParenthesis) {
-                        self.advance()?;
-                        break;
-                    } else {
-                        if first {
-                            first = false;
-                        } else {
-                            self.expect(Token::Punctuation(Punctuation::Comma))?;
-                        }
-                        arguments.push(self.typed_identifier()?);
-                    }
-                }
+            match self.terminator(Token::RightParenthesis)? {
+                Some(_) => break,
                 None => {
-                    return Err(ParseError::UnexpectedEOF {
-                        expecteds: vec![Token::Punctuation(Punctuation::RightParenthesis)],
-                    })
+                    if first {
+                        first = false;
+                    } else {
+                        self.expect(Token::Comma)?;
+                    }
+                    arguments.push(self.typed_identifier()?);
                 }
             }
         }
 
-        self.expect(Token::Punctuation(Punctuation::LeftCurly))?;
+        self.expect(Token::LeftCurly)?;
         let mut body = vec![];
         loop {
-            match self.peek()? {
-                Some(token) => {
-                    if token.data() == &Token::Punctuation(Punctuation::RightCurly) {
-                        self.advance()?;
-                        break;
-                    } else {
-                        body.push(self.statement()?);
-                        self.expect(Token::Punctuation(Punctuation::Semicolon))?;
-                    }
-                }
+            match self.terminator(Token::RightCurly)? {
+                Some(_) => break,
                 None => {
-                    return Err(ParseError::UnexpectedEOF {
-                        expecteds: vec![Token::Punctuation(Punctuation::RightCurly)],
-                    })
+                    body.push(self.statement()?);
+                    self.expect(Token::Semicolon)?;
                 }
             }
         }
@@ -213,23 +210,12 @@ impl<'source> Parser<'source> {
 
     fn variant(&mut self) -> ParseResult<Declaration> {
         let name = self.expect_identifier()?;
-        self.expect(Token::Punctuation(Punctuation::LeftCurly))?;
+        self.expect(Token::LeftCurly)?;
         let mut cases = vec![];
         loop {
-            match self.peek()? {
-                Some(token) => {
-                    if token.data() == &Token::Punctuation(Punctuation::RightCurly) {
-                        self.advance()?;
-                        break;
-                    } else {
-                        cases.push(self.variant_case()?);
-                    }
-                }
-                None => {
-                    return Err(ParseError::UnexpectedEOF {
-                        expecteds: vec![Token::Punctuation(Punctuation::RightCurly)],
-                    })
-                }
+            match self.terminator(Token::RightCurly)? {
+                Some(_) => break,
+                None => cases.push(self.variant_case()?),
             }
         }
 
@@ -243,7 +229,7 @@ impl<'source> Parser<'source> {
     fn type_expression_primary(&mut self) -> ParseResult<Located<TypeExpression>> {
         let Some(token) = self.advance()? else {
             return Err(ParseError::UnexpectedEOF {
-                expecteds: PRIMARY_TOKEN_STARTS.to_vec(),
+                expected_ones: PRIMARY_TOKEN_STARTS.to_vec(),
             });
         };
 
@@ -261,7 +247,7 @@ impl<'source> Parser<'source> {
 
     fn typed_identifier(&mut self) -> ParseResult<Located<TypedIdentifier>> {
         let identifier = self.expect_identifier()?;
-        self.expect(Token::Punctuation(Punctuation::Colon))?;
+        self.expect(Token::Colon)?;
         let type_expression = self.type_expression()?;
 
         let location = identifier.location().extend(&type_expression.location());
@@ -271,31 +257,21 @@ impl<'source> Parser<'source> {
 
     fn variant_case(&mut self) -> ParseResult<Located<VariantCase>> {
         let identifier = self.expect_identifier()?;
-        let token = self.expect_one_of(&[
-            Token::Punctuation(Punctuation::Semicolon),
-            Token::Punctuation(Punctuation::LeftCurly),
-        ])?;
+        let token = self.expect_one_of(&[Token::Semicolon, Token::LeftCurly])?;
 
         let (arguments, location) = match token.data() {
-            Token::Punctuation(Punctuation::Semicolon) => (None, token.location()),
-            Token::Punctuation(Punctuation::LeftCurly) => {
+            Token::Semicolon => (None, token.location()),
+            Token::LeftCurly => {
                 let mut arguments = vec![];
                 let location = loop {
-                    match self.peek()? {
+                    match self.terminator(Token::RightCurly)? {
                         Some(token) => {
-                            if token.data() == &Token::Punctuation(Punctuation::RightCurly) {
-                                self.advance()?;
-                                self.expect(Token::Punctuation(Punctuation::Semicolon))?;
-                                break token.location();
-                            } else {
-                                arguments.push(self.typed_identifier()?);
-                                self.expect(Token::Punctuation(Punctuation::Semicolon))?;
-                            }
+                            self.expect(Token::Semicolon)?;
+                            break token.location();
                         }
                         None => {
-                            return Err(ParseError::UnexpectedEOF {
-                                expecteds: vec![Token::Punctuation(Punctuation::RightCurly)],
-                            })
+                            arguments.push(self.typed_identifier()?);
+                            self.expect(Token::Semicolon)?;
                         }
                     }
                 };
@@ -316,7 +292,7 @@ pub enum ParseError {
         expected_ones: Vec<Token>,
     },
     UnexpectedEOF {
-        expecteds: Vec<Token>,
+        expected_ones: Vec<Token>,
     },
     LexError(LexError),
 }
@@ -341,7 +317,9 @@ impl Display for ParseError {
                     }
                 }
             }
-            ParseError::UnexpectedEOF { expecteds } => {
+            ParseError::UnexpectedEOF {
+                expected_ones: expecteds,
+            } => {
                 write!(f, "Encountered end of file but ")?;
                 match &expecteds[..] {
                     [] => unreachable!(),

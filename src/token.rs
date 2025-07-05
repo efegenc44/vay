@@ -5,8 +5,17 @@ use crate::interner::InternIdx;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Token {
     Identifier(InternIdx),
-    Keyword(Keyword),
-    Punctuation(Punctuation),
+
+    Semicolon,
+    Colon,
+    Comma,
+    LeftParenthesis,
+    RightParenthesis,
+    LeftCurly,
+    RightCurly,
+
+    ProcKeyword,
+    VariantKeyword,
 }
 
 impl Token {
@@ -19,48 +28,17 @@ impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Token::Identifier(intern_idx) => write!(f, "IDENTIFIER: {}", intern_idx.idx()),
-            Token::Keyword(keyword) => write!(f, "KEYWORD: {keyword}"),
-            Token::Punctuation(punctuation) => write!(f, "PUNCTUATION: {punctuation}"),
-        }
-    }
-}
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Keyword {
-    Proc,
-    Variant,
-}
+            Token::Semicolon => write!(f, ";"),
+            Token::Colon => write!(f, ":"),
+            Token::Comma => write!(f, ","),
+            Token::LeftParenthesis => write!(f, "("),
+            Token::RightParenthesis => write!(f, ")"),
+            Token::LeftCurly => write!(f, "{{"),
+            Token::RightCurly => write!(f, "}}"),
 
-impl Display for Keyword {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Keyword::Proc => write!(f, "proc"),
-            Keyword::Variant => write!(f, "variant"),
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Punctuation {
-    Semicolon,
-    Colon,
-    Comma,
-    LeftParenthesis,
-    RightParenthesis,
-    LeftCurly,
-    RightCurly,
-}
-
-impl Display for Punctuation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Punctuation::Semicolon => write!(f, ";"),
-            Punctuation::Colon => write!(f, ":"),
-            Punctuation::Comma => write!(f, ","),
-            Punctuation::LeftParenthesis => write!(f, "("),
-            Punctuation::RightParenthesis => write!(f, ")"),
-            Punctuation::LeftCurly => write!(f, "{{"),
-            Punctuation::RightCurly => write!(f, "}}"),
+            Token::ProcKeyword => write!(f, "proc"),
+            Token::VariantKeyword => write!(f, "variant"),
         }
     }
 }

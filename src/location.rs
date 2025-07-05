@@ -65,6 +65,10 @@ impl<T> Located<T> {
         &self.data
     }
 
+    pub fn move_data(self) -> T {
+        self.data
+    }
+
     pub fn location(&self) -> SourceLocation {
         self.location
     }
