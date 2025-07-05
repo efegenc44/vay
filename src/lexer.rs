@@ -21,15 +21,15 @@ macro_rules! locate {
     }};
 }
 
-pub struct Lexer<'source> {
+pub struct Lexer<'source, 'interner> {
     chars: Peekable<Chars<'source>>,
     index: usize,
     position: Position,
-    interner: Interner,
+    interner: &'interner mut Interner,
 }
 
-impl<'source> Lexer<'source> {
-    pub fn new(source: &'source str, interner: Interner) -> Self {
+impl<'source, 'interner> Lexer<'source, 'interner> {
+    pub fn new(source: &'source str, interner: &'interner mut Interner) -> Self {
         Self {
             chars: source.chars().peekable(),
             index: 0,
@@ -55,6 +55,17 @@ impl<'source> Lexer<'source> {
         ch
     }
 
+    fn optional(&mut self, optional: char) -> bool {
+        match self.peek_ch() {
+            Some(ch) if *ch == optional => {
+                self.advance();
+                true
+            },
+            Some(_) => false,
+            None => false,
+        }
+    }
+
     fn identifier_or_keyword(&mut self) -> Located<Token> {
         let mut lexeme = String::new();
         let location = locate!(self, {
@@ -68,6 +79,8 @@ impl<'source> Lexer<'source> {
         });
 
         let token = match lexeme.as_str() {
+            "module" => Token::ModuleKeyword,
+            "import" => Token::ImportKeyword,
             "proc" => Token::ProcKeyword,
             "variant" => Token::VariantKeyword,
             "" => unreachable!(),
@@ -80,9 +93,9 @@ impl<'source> Lexer<'source> {
     fn punctuation(&mut self) -> Located<Token> {
         let token;
         let location = locate!(self, {
-            token = match self.peek_ch().unwrap() {
+            token = match self.advance().unwrap() {
                 ';' => Token::Semicolon,
-                ':' => Token::Colon,
+                ':' => if self.optional(':') { Token::DoubleColon } else { Token::Colon },
                 ',' => Token::Comma,
                 '(' => Token::LeftParenthesis,
                 ')' => Token::RightParenthesis,
@@ -90,14 +103,13 @@ impl<'source> Lexer<'source> {
                 '}' => Token::RightCurly,
                 _ => unreachable!(),
             };
-            self.advance();
         });
 
         Located::new(token, location)
     }
 }
 
-impl Iterator for Lexer<'_> {
+impl Iterator for Lexer<'_, '_> {
     type Item = LexResult<Located<Token>>;
 
     fn next(&mut self) -> Option<Self::Item> {

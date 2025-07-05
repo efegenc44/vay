@@ -1,0 +1,12 @@
+module TestModule;
+
+import Main;
+
+variant Test {
+    Foo;
+    Bar;
+}
+
+proc baz(x : Main::Nat) {
+
+}

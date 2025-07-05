@@ -1,31 +1,33 @@
 use std::{fmt::Display, iter::Peekable, vec};
 
 use crate::{
+    bound::Bound,
     declaration::{Declaration, TypedIdentifier, VariantCase},
     expression::{Expression, TypeExpression},
     interner::InternIdx,
     lexer::{LexError, Lexer},
-    location::{Located, SourceLocation},
+    location::Located,
     statement::Statement,
     token::Token,
 };
 
 const PRIMARY_TOKEN_STARTS: &[Token] = &[Token::dummy_identifier()];
 
-const STATEMENT_KEYWORDS: &[Token] = &[
-    Token::dummy_identifier(),
+const STATEMENT_KEYWORDS: &[Token] = &[Token::dummy_identifier()];
+
+const DECLARATION_KEYWORDS: &[Token] = &[
+    Token::ModuleKeyword,
     Token::ProcKeyword,
     Token::VariantKeyword,
+    Token::ImportKeyword,
 ];
 
-const DECLARATION_KEYWORDS: &[Token] = &[Token::ProcKeyword, Token::VariantKeyword];
-
-pub struct Parser<'source> {
-    tokens: Peekable<Lexer<'source>>,
+pub struct Parser<'source, 'interner> {
+    tokens: Peekable<Lexer<'source, 'interner>>,
 }
 
-impl<'source> Parser<'source> {
-    pub fn new(lexer: Lexer<'source>) -> Self {
+impl<'source, 'interner> Parser<'source, 'interner> {
+    pub fn new(lexer: Lexer<'source, 'interner>) -> Self {
         Self {
             tokens: lexer.peekable(),
         }
@@ -114,7 +116,13 @@ impl<'source> Parser<'source> {
 
         match token.data() {
             Token::Identifier(intern_idx) => {
-                let expression = Expression::Identifier(*intern_idx);
+                let mut path = vec![*intern_idx];
+                while let Some(Token::DoubleColon) = self.peek()?.map(|token| *token.data()) {
+                    self.advance()?;
+                    path.push(*self.expect_identifier()?.data());
+                }
+
+                let expression = Expression::Path(path, Bound::Undetermined);
                 Ok(Located::new(expression, token.location()))
             }
             _ => Err(ParseError::UnexpectedToken {
@@ -153,6 +161,8 @@ impl<'source> Parser<'source> {
         };
 
         match token.data() {
+            Token::ModuleKeyword => self.module(),
+            Token::ImportKeyword => self.import(),
             Token::ProcKeyword => self.procedure(),
             Token::VariantKeyword => self.variant(),
             _ => Err(ParseError::UnexpectedToken {
@@ -162,12 +172,26 @@ impl<'source> Parser<'source> {
         }
     }
 
-    pub fn module(&mut self) -> ParseResult<Vec<Declaration>> {
+    pub fn program(&mut self) -> ParseResult<Vec<Declaration>> {
         let mut declarations = vec![];
         while self.peek()?.is_some() {
             declarations.push(self.declaration()?);
         }
         Ok(declarations)
+    }
+
+    fn module(&mut self) -> ParseResult<Declaration> {
+        let name = self.expect_identifier()?;
+        self.expect(Token::Semicolon)?;
+
+        Ok(Declaration::Module { name })
+    }
+
+    fn import(&mut self) -> ParseResult<Declaration> {
+        let name = self.expect_identifier()?;
+        self.expect(Token::Semicolon)?;
+
+        Ok(Declaration::Import { name })
     }
 
     fn procedure(&mut self) -> ParseResult<Declaration> {
@@ -235,7 +259,13 @@ impl<'source> Parser<'source> {
 
         match token.data() {
             Token::Identifier(intern_idx) => {
-                let type_expression = TypeExpression::Identifier(*intern_idx);
+                let mut path = vec![*intern_idx];
+                while let Some(Token::DoubleColon) = self.peek()?.map(|token| *token.data()) {
+                    self.advance()?;
+                    path.push(*self.expect_identifier()?.data());
+                }
+
+                let type_expression = TypeExpression::Path(path, Bound::Undetermined);
                 Ok(Located::new(type_expression, token.location()))
             }
             _ => Err(ParseError::UnexpectedToken {

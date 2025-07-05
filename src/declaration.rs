@@ -3,6 +3,12 @@ use crate::{
 };
 
 pub enum Declaration {
+    Module {
+        name: Located<InternIdx>,
+    },
+    Import {
+        name: Located<InternIdx>,
+    },
     Procedure {
         name: Located<InternIdx>,
         arguments: Vec<Located<TypedIdentifier>>,
@@ -26,6 +32,14 @@ impl VariantCase {
             arguments,
         }
     }
+
+    pub fn arguments_mut(&mut self) -> &mut Option<Vec<Located<TypedIdentifier>>> {
+        &mut self.arguments
+    }
+
+    pub fn identifier(&self) -> Located<InternIdx> {
+        self.identifier
+    }
 }
 
 pub struct TypedIdentifier {
@@ -39,5 +53,13 @@ impl TypedIdentifier {
             identifier,
             type_expression,
         }
+    }
+
+    pub fn indentifier(&self) -> Located<InternIdx> {
+        self.identifier
+    }
+
+    pub fn type_expression_mut(&mut self) -> &mut Located<TypeExpression> {
+        &mut self.type_expression
     }
 }

@@ -1,9 +1,9 @@
-use crate::interner::InternIdx;
+use crate::{bound::Bound, interner::InternIdx};
 
 pub enum Expression {
-    Identifier(InternIdx),
+    Path(Vec<InternIdx>, Bound),
 }
 
 pub enum TypeExpression {
-    Identifier(InternIdx),
+    Path(Vec<InternIdx>, Bound),
 }

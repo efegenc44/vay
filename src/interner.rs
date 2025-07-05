@@ -1,3 +1,6 @@
+use std::fmt::Debug;
+
+#[derive(Debug)]
 pub struct Interner {
     strings: Vec<String>,
 }
@@ -17,7 +20,7 @@ impl Interner {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct InternIdx(usize);
 
 impl InternIdx {

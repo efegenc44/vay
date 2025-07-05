@@ -1,3 +1,7 @@
+module Main;
+
+import TestModule;
+
 variant Nat {
     Zero;
     Succ {
@@ -5,6 +9,10 @@ variant Nat {
     };
 }
 
-proc main() {
+proc add(x : Nat, y : Nat) {
 
+}
+
+proc main(x : Nat) {
+    TestModule::Test::Foo;
 }

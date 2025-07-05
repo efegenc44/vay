@@ -8,12 +8,15 @@ pub enum Token {
 
     Semicolon,
     Colon,
+    DoubleColon,
     Comma,
     LeftParenthesis,
     RightParenthesis,
     LeftCurly,
     RightCurly,
 
+    ModuleKeyword,
+    ImportKeyword,
     ProcKeyword,
     VariantKeyword,
 }
@@ -31,12 +34,15 @@ impl Display for Token {
 
             Token::Semicolon => write!(f, ";"),
             Token::Colon => write!(f, ":"),
+            Token::DoubleColon => write!(f, "::"),
             Token::Comma => write!(f, ","),
             Token::LeftParenthesis => write!(f, "("),
             Token::RightParenthesis => write!(f, ")"),
             Token::LeftCurly => write!(f, "{{"),
             Token::RightCurly => write!(f, "}}"),
 
+            Token::ModuleKeyword => write!(f, "module"),
+            Token::ImportKeyword => write!(f, "import"),
             Token::ProcKeyword => write!(f, "proc"),
             Token::VariantKeyword => write!(f, "variant"),
         }
