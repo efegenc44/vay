@@ -7,6 +7,10 @@ variant Nat {
     Succ {
         n: Nat;
     };
+
+    proc add(other: Nat) {
+
+    }
 }
 
 proc add(x : Nat, y : Nat) {

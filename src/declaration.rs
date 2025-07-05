@@ -17,7 +17,20 @@ pub enum Declaration {
     Variant {
         name: Located<InternIdx>,
         cases: Vec<Located<VariantCase>>,
+        methods: Vec<Method>,
     },
+}
+
+pub struct Method {
+    pub name: Located<InternIdx>,
+    pub arguments: Vec<Located<TypedIdentifier>>,
+    pub body: Vec<Located<Statement>>,
+}
+
+impl Method {
+    pub fn new(name: Located<InternIdx>, arguments: Vec<Located<TypedIdentifier>>, body: Vec<Located<Statement>>) -> Self {
+        Self { name, arguments, body }
+    }
 }
 
 pub struct VariantCase {

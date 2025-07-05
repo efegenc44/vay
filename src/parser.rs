@@ -2,7 +2,7 @@ use std::{fmt::Display, iter::Peekable, vec};
 
 use crate::{
     bound::Bound,
-    declaration::{Declaration, TypedIdentifier, VariantCase},
+    declaration::{Declaration, Method, TypedIdentifier, VariantCase},
     expression::{Expression, TypeExpression},
     interner::InternIdx,
     lexer::{LexError, Lexer},
@@ -232,18 +232,60 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         })
     }
 
+    fn method(&mut self) -> ParseResult<Method> {
+        let name = self.expect_identifier()?;
+        self.expect(Token::LeftParenthesis)?;
+        let mut arguments = vec![];
+        let mut first = true;
+        loop {
+            match self.terminator(Token::RightParenthesis)? {
+                Some(_) => break,
+                None => {
+                    if first {
+                        first = false;
+                    } else {
+                        self.expect(Token::Comma)?;
+                    }
+                    arguments.push(self.typed_identifier()?);
+                }
+            }
+        }
+
+        self.expect(Token::LeftCurly)?;
+        let mut body = vec![];
+        loop {
+            match self.terminator(Token::RightCurly)? {
+                Some(_) => break,
+                None => {
+                    body.push(self.statement()?);
+                    self.expect(Token::Semicolon)?;
+                }
+            }
+        }
+
+        Ok(Method::new(name, arguments, body))
+    }
+
     fn variant(&mut self) -> ParseResult<Declaration> {
         let name = self.expect_identifier()?;
         self.expect(Token::LeftCurly)?;
         let mut cases = vec![];
+        let mut methods = vec![];
         loop {
             match self.terminator(Token::RightCurly)? {
                 Some(_) => break,
-                None => cases.push(self.variant_case()?),
+                None => {
+                    if let Some(Token::ProcKeyword) = self.peek()?.map(|token| *token.data()) {
+                        self.advance()?;
+                        methods.push(self.method()?);
+                    } else {
+                        cases.push(self.variant_case()?)
+                    }
+                },
             }
         }
 
-        Ok(Declaration::Variant { name, cases })
+        Ok(Declaration::Variant { name, cases, methods })
     }
 
     fn type_expression(&mut self) -> ParseResult<Located<TypeExpression>> {

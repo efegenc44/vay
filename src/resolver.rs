@@ -93,7 +93,7 @@ impl Resolver {
                 Declaration::Procedure { name, .. } => {
                     self.procedures.insert(self.absolute_path(*name.data()));
                 }
-                Declaration::Variant { name, cases } => {
+                Declaration::Variant { name, cases, .. } => {
                     self.variants.insert(self.absolute_path(*name.data()));
                     self.current_absolute_path.push(*name.data());
                     for case in cases {
@@ -209,7 +209,7 @@ impl Resolver {
                 }
                 self.locals.truncate(self.locals.len() - arguments.len());
             }
-            Declaration::Variant { cases, .. } => {
+            Declaration::Variant { cases, methods, .. } => {
                 for case in cases {
                     if let Some(arguments) = case.data_mut().arguments_mut() {
                         for argument in arguments {
@@ -218,6 +218,23 @@ impl Resolver {
                             )?;
                         }
                     }
+                }
+
+                for method in methods {
+                    for argument in method.arguments.iter_mut() {
+                        self.type_expression(
+                            argument.data_mut().type_expression_mut().data_mut(),
+                        )?;
+                    }
+
+                    // TODO : implicit (or explicit) `self` variable
+                    self.locals
+                        .extend(method.arguments.iter().map(|idx| *idx.data().indentifier().data())); // ?
+
+                    for statement in &mut method.body {
+                        self.statement(statement.data_mut())?
+                    }
+                    self.locals.truncate(self.locals.len() - method.arguments.len());
                 }
             }
         };
