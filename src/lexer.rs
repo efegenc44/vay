@@ -4,7 +4,10 @@ use core::{
 };
 use std::fmt::Display;
 
-use crate::token::{Keyword, Punctuation, Token};
+use crate::{
+    interner::Interner,
+    token::{Keyword, Punctuation, Token},
+};
 
 pub struct Lexer<'source> {
     chars: Peekable<Chars<'source>>,
@@ -12,16 +15,20 @@ pub struct Lexer<'source> {
 
     row: usize,
     column: usize,
+
+    interner: Interner,
 }
 
 impl<'source> Lexer<'source> {
-    pub fn new(source: &'source str) -> Self {
+    pub fn new(source: &'source str, interner: Interner) -> Self {
         Self {
             chars: source.chars().peekable(),
             index: 0,
 
             row: 1,
             column: 1,
+
+            interner,
         }
     }
 
@@ -55,7 +62,7 @@ impl<'source> Lexer<'source> {
 
         let keyword = match lexeme.as_str() {
             "proc" => Keyword::Proc,
-            _ => return Token::Identifier(lexeme),
+            _ => return Token::Identifier(self.interner.intern(lexeme)),
         };
 
         Token::Keyword(keyword)

@@ -1,7 +1,9 @@
 use std::fmt::Display;
 
+use crate::interner::InternIdx;
+
 pub enum Token {
-    Identifier(String),
+    Identifier(InternIdx),
     Keyword(Keyword),
     Punctuation(Punctuation),
 }
@@ -9,7 +11,7 @@ pub enum Token {
 impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Token::Identifier(lexeme) => write!(f, "IDENTIFIER: {lexeme}"),
+            Token::Identifier(intern_idx) => write!(f, "IDENTIFIER: {}", intern_idx.idx()),
             Token::Keyword(keyword) => write!(f, "KEYWORD: {keyword}"),
             Token::Punctuation(punctuation) => write!(f, "PUNCTUATION: {punctuation}"),
         }
