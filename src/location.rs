@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Position {
     row: usize,
     column: usize,
@@ -19,9 +19,17 @@ impl Position {
         self.column = 1;
         self.row += 1;
     }
+
+    pub fn row(&self) -> usize {
+        self.row
+    }
+
+    pub fn column(&self) -> usize {
+        self.column
+    }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct SourceLocation {
     start: Position,
     end: Position,
@@ -32,11 +40,27 @@ impl SourceLocation {
         Self { start, end }
     }
 
+    pub fn dummy() -> Self {
+        Self { start: Position::new(0, 0), end: Position::new(0, 0) }
+    }
+
     pub fn extend(&self, location: &Self) -> Self {
         assert!(self.start.row <= location.start.row);
         assert!(self.end.row <= location.end.row);
 
         Self::new(self.start, location.end)
+    }
+
+    pub fn start(&self) -> Position {
+        self.start
+    }
+
+    pub fn end(&self) -> Position {
+        self.end
+    }
+
+    pub fn is_on_one_line(&self) -> bool {
+        self.start().row() == self.end().row()
     }
 }
 
@@ -67,10 +91,6 @@ impl<T> Located<T> {
 
     pub fn data_mut(&mut self) -> &mut T {
         &mut self.data
-    }
-
-    pub fn move_data(self) -> T {
-        self.data
     }
 
     pub fn location(&self) -> SourceLocation {

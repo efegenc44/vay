@@ -1,11 +1,7 @@
 use std::{collections::HashSet, fmt::Display, vec};
 
 use crate::{
-    bound::Bound,
-    declaration::Declaration,
-    expression::{Expression, TypeExpression},
-    interner::InternIdx,
-    statement::Statement,
+    bound::Bound, declaration::Declaration, error::Error, expression::{Expression, TypeExpression}, interner::InternIdx, location::{Located, SourceLocation}, statement::Statement
 };
 
 pub struct Resolver {
@@ -35,15 +31,21 @@ impl Resolver {
         path
     }
 
-    pub fn resolve(&mut self, mut modules: Vec<Vec<Declaration>>) -> Result<Vec<Vec<Declaration>>, ResolveError> {
-        for module in &modules {
-            self.collect_names(module)?;
+    pub fn resolve(&mut self, mut modules: Vec<(Vec<Declaration>, String)>) -> Result<Vec<(Vec<Declaration>, String)>, (Located<ResolveError>, String)> {
+        for module in &mut modules {
+            self.collect_names(&mut module.0).map_err(|error| {
+                (error, module.1.clone())
+            })?;
         }
 
         for module in &mut modules {
-            self.which_module(module)?;
+            self.which_module(&mut module.0).map_err(|error| {
+                (error, module.1.clone())
+            })?;
 
-            self.program(module)?;
+            self.program(&mut module.0).map_err(|error| {
+                (error, module.1.clone())
+            })?;
         }
 
         Ok(modules)
@@ -68,7 +70,10 @@ impl Resolver {
                     declared = true;
                     self.current_absolute_path.push(*name.data());
                 } else {
-                    return Err(ResolveError::MultipleModuleDeclaration);
+                    return Err(Located::new(
+                        ResolveError::MultipleModuleDeclaration,
+                        name.location()
+                    ));
                 }
             }
 
@@ -78,7 +83,11 @@ impl Resolver {
         }
 
         if self.current_absolute_path.is_empty() {
-            return Err(ResolveError::ModuleIsNotDeclared);
+            // TODO: absence errors
+            return Err(Located::new(
+                ResolveError::ModuleIsNotDeclared,
+                SourceLocation::dummy()
+            ));
         }
 
         Ok(())
@@ -132,8 +141,9 @@ impl Resolver {
         }
     }
 
-    fn expression(&mut self, expression: &mut Expression) -> ResolveResult {
-        match expression {
+    fn expression(&mut self, expression: &mut Located<Expression>) -> ResolveResult {
+        let location = expression.location();
+        match expression.data_mut() {
             Expression::Path(parts, bound) => {
                 let base = self
                     .find_name(&parts[0])
@@ -147,7 +157,10 @@ impl Resolver {
                         *bound = self.procedures
                             .get(&items)
                             .map(|items| Bound::absolute(items.clone()))
-                            .ok_or(ResolveError::UnboundValueIdentifier(parts[0]))?;
+                            .ok_or(Located::new(
+                                ResolveError::UnboundValueIdentifier(parts[0]),
+                                location
+                            ))?;
                     },
                     Bound::Undetermined => unreachable!(),
                 };
@@ -157,8 +170,9 @@ impl Resolver {
         }
     }
 
-    fn type_expression(&mut self, type_expression: &mut TypeExpression) -> ResolveResult {
-        match type_expression {
+    fn type_expression(&mut self, type_expression: &mut Located<TypeExpression>) -> ResolveResult {
+        let location = type_expression.location();
+        match type_expression.data_mut() {
             TypeExpression::Path(parts, bound) => {
                 let base = self
                     .find_type_name(&parts[0])
@@ -172,7 +186,10 @@ impl Resolver {
                         *bound = self.variants
                             .get(&items)
                             .map(|items| Bound::absolute(items.clone()))
-                            .ok_or(ResolveError::UnboundTypeIdentifier(parts[0]))?;
+                            .ok_or(Located::new(
+                                ResolveError::UnboundTypeIdentifier(parts[0]),
+                                location
+                            ))?;
                     },
                     Bound::Undetermined => unreachable!(),
                 };
@@ -182,8 +199,8 @@ impl Resolver {
         }
     }
 
-    fn statement(&mut self, statement: &mut Statement) -> ResolveResult {
-        match statement {
+    fn statement(&mut self, statement: &mut Located<Statement>) -> ResolveResult {
+        match statement.data_mut() {
             Statement::Expression(expression) => return self.expression(expression),
         };
     }
@@ -197,7 +214,7 @@ impl Resolver {
             } => {
                 for argument in arguments.iter_mut() {
                     self.type_expression(
-                        argument.data_mut().type_expression_mut().data_mut(),
+                        argument.data_mut().type_expression_mut(),
                     )?;
                 }
 
@@ -205,7 +222,7 @@ impl Resolver {
                     .extend(arguments.iter().map(|idx| *idx.data().indentifier().data())); // ?
 
                 for statement in body {
-                    self.statement(statement.data_mut())?
+                    self.statement(statement)?
                 }
                 self.locals.truncate(self.locals.len() - arguments.len());
             }
@@ -214,7 +231,7 @@ impl Resolver {
                     if let Some(arguments) = case.data_mut().arguments_mut() {
                         for argument in arguments {
                             self.type_expression(
-                                argument.data_mut().type_expression_mut().data_mut(),
+                                argument.data_mut().type_expression_mut(),
                             )?;
                         }
                     }
@@ -223,7 +240,7 @@ impl Resolver {
                 for method in methods {
                     for argument in method.arguments.iter_mut() {
                         self.type_expression(
-                            argument.data_mut().type_expression_mut().data_mut(),
+                            argument.data_mut().type_expression_mut(),
                         )?;
                     }
 
@@ -232,7 +249,7 @@ impl Resolver {
                         .extend(method.arguments.iter().map(|idx| *idx.data().indentifier().data())); // ?
 
                     for statement in &mut method.body {
-                        self.statement(statement.data_mut())?
+                        self.statement(statement)?
                     }
                     self.locals.truncate(self.locals.len() - method.arguments.len());
                 }
@@ -248,6 +265,16 @@ pub enum ResolveError {
     MultipleModuleDeclaration,
     UnboundValueIdentifier(InternIdx),
     UnboundTypeIdentifier(InternIdx),
+}
+
+impl Error for Located<ResolveError> {
+    fn location(&self) -> SourceLocation {
+        self.location()
+    }
+
+    fn description(&self) -> String {
+        self.data().to_string()
+    }
 }
 
 impl Display for ResolveError {
@@ -269,4 +296,4 @@ impl Display for ResolveError {
     }
 }
 
-type ResolveResult = Result<(), ResolveError>;
+type ResolveResult = Result<(), Located<ResolveError>>;

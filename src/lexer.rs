@@ -5,9 +5,7 @@ use core::{
 use std::fmt::Display;
 
 use crate::{
-    interner::Interner,
-    location::{Located, Position, SourceLocation},
-    token::Token,
+    error::Error, interner::Interner, location::{Located, Position, SourceLocation}, token::Token
 };
 
 const PUNCTUATION_CHARS: &[char] = &[';', ':', ',', '(', ')', '{', '}'];
@@ -117,14 +115,20 @@ impl Iterator for Lexer<'_, '_> {
             self.advance();
         }
 
-        let ch = self.peek_ch()?;
+        let ch = *self.peek_ch()?;
 
         let result = if ch.is_alphabetic() {
             Ok(self.identifier_or_keyword())
-        } else if PUNCTUATION_CHARS.contains(ch) {
+        } else if PUNCTUATION_CHARS.contains(&ch) {
             Ok(self.punctuation())
         } else {
-            Err(LexError::UnknownStartOfAToken(*ch))
+            let start = self.position;
+            self.advance();
+            let end = self.position;
+            Err(Located::new(
+                LexError::UnknownStartOfAToken(ch),
+                SourceLocation::new(start, end)
+            ))
         };
 
         Some(result)
@@ -134,6 +138,16 @@ impl Iterator for Lexer<'_, '_> {
 #[derive(Clone)]
 pub enum LexError {
     UnknownStartOfAToken(char),
+}
+
+impl Error for Located<LexError> {
+    fn location(&self) -> SourceLocation {
+        self.location()
+    }
+
+    fn description(&self) -> String {
+        self.data().to_string()
+    }
 }
 
 impl Display for LexError {
@@ -146,4 +160,4 @@ impl Display for LexError {
     }
 }
 
-type LexResult<T> = Result<T, LexError>;
+type LexResult<T> = Result<T, Located<LexError>>;

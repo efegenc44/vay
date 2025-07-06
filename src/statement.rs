@@ -1,5 +1,5 @@
-use crate::expression::Expression;
+use crate::{expression::Expression, location::Located};
 
 pub enum Statement {
-    Expression(Expression),
+    Expression(Located<Expression>),
 }
