@@ -18,6 +18,10 @@ impl Interner {
             InternIdx(self.strings.len() - 1)
         }
     }
+
+    pub fn get(&self, intern_idx: &InternIdx) -> &str {
+        &self.strings[intern_idx.0]
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -26,9 +30,5 @@ pub struct InternIdx(usize);
 impl InternIdx {
     pub const fn dummy_idx() -> Self {
         Self(0)
-    }
-
-    pub fn idx(&self) -> usize {
-        self.0
     }
 }

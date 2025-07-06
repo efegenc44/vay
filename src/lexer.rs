@@ -2,10 +2,12 @@ use core::{
     iter::{Iterator, Peekable},
     str::Chars,
 };
-use std::fmt::Display;
 
 use crate::{
-    error::Error, interner::Interner, location::{Located, Position, SourceLocation}, token::Token
+    interner::Interner,
+    location::{Located, Position, SourceLocation},
+    reportable::{Reportable, ReportableResult},
+    token::Token,
 };
 
 const PUNCTUATION_CHARS: &[char] = &[';', ':', ',', '(', ')', '{', '}'];
@@ -58,7 +60,7 @@ impl<'source, 'interner> Lexer<'source, 'interner> {
             Some(ch) if *ch == optional => {
                 self.advance();
                 true
-            },
+            }
             Some(_) => false,
             None => false,
         }
@@ -93,7 +95,13 @@ impl<'source, 'interner> Lexer<'source, 'interner> {
         let location = locate!(self, {
             token = match self.advance().unwrap() {
                 ';' => Token::Semicolon,
-                ':' => if self.optional(':') { Token::DoubleColon } else { Token::Colon },
+                ':' => {
+                    if self.optional(':') {
+                        Token::DoubleColon
+                    } else {
+                        Token::Colon
+                    }
+                }
                 ',' => Token::Comma,
                 '(' => Token::LeftParenthesis,
                 ')' => Token::RightParenthesis,
@@ -105,10 +113,16 @@ impl<'source, 'interner> Lexer<'source, 'interner> {
 
         Located::new(token, location)
     }
+
+    fn unknown_start_of_a_token<T>(ch: char, location: SourceLocation) -> ReportableResult<T> {
+        let lex_error = LexError::UnknownStartOfAToken(ch);
+
+        Err(Box::new(Located::new(lex_error, location)))
+    }
 }
 
 impl Iterator for Lexer<'_, '_> {
-    type Item = LexResult<Located<Token>>;
+    type Item = ReportableResult<Located<Token>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         while self.peek_ch()?.is_whitespace() {
@@ -122,13 +136,11 @@ impl Iterator for Lexer<'_, '_> {
         } else if PUNCTUATION_CHARS.contains(&ch) {
             Ok(self.punctuation())
         } else {
-            let start = self.position;
-            self.advance();
-            let end = self.position;
-            Err(Located::new(
-                LexError::UnknownStartOfAToken(ch),
-                SourceLocation::new(start, end)
-            ))
+            let location = locate!(self, {
+                self.advance();
+            });
+
+            Self::unknown_start_of_a_token(ch, location)
         };
 
         Some(result)
@@ -140,24 +152,16 @@ pub enum LexError {
     UnknownStartOfAToken(char),
 }
 
-impl Error for Located<LexError> {
+impl Reportable for Located<LexError> {
     fn location(&self) -> SourceLocation {
         self.location()
     }
 
-    fn description(&self) -> String {
-        self.data().to_string()
-    }
-}
-
-impl Display for LexError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
+    fn description(&self, _interner: &Interner) -> String {
+        match self.data() {
             LexError::UnknownStartOfAToken(ch) => {
-                write!(f, "Encountered an unknown start of a token: `{ch}`.")
+                format!("Encountered an unknown start of a token: `{ch}`.")
             }
         }
     }
 }
-
-type LexResult<T> = Result<T, Located<LexError>>;

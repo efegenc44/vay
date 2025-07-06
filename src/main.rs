@@ -1,6 +1,6 @@
 use std::{collections::HashMap, env, fs, io};
 
-use crate::{error::Error, interner::Interner, lexer::Lexer, parser::Parser, resolver::Resolver};
+use crate::{interner::Interner, lexer::Lexer, parser::Parser, resolver::Resolver};
 
 mod bound;
 mod declaration;
@@ -9,14 +9,13 @@ mod interner;
 mod lexer;
 mod location;
 mod parser;
+mod reportable;
 mod resolver;
 mod statement;
 mod token;
-mod error;
 
 fn main() -> io::Result<()> {
     let mut interner = Interner::new();
-
 
     let mut modules = vec![];
     let mut sources = HashMap::new();
@@ -32,7 +31,7 @@ fn main() -> io::Result<()> {
                 program
             }
             Err(error) => {
-                error.print(&source_path, &source, "parsing");
+                error.report(&source_path, &source, "parsing", &interner);
                 return Ok(());
             }
         };
@@ -47,14 +46,17 @@ fn main() -> io::Result<()> {
         Ok(modules) => {
             println!("Name Resolution: OK");
             modules
-        },
+        }
         Err((error, source_path)) => {
-            error.print(&source_path, &sources[&source_path], "name resolution");
-            println!("{interner:?}");
+            error.report(
+                &source_path,
+                &sources[&source_path],
+                "name resolution",
+                &interner,
+            );
             return Ok(());
         }
     };
-
 
     Ok(())
 }

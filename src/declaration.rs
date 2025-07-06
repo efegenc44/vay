@@ -28,8 +28,16 @@ pub struct Method {
 }
 
 impl Method {
-    pub fn new(name: Located<InternIdx>, arguments: Vec<Located<TypedIdentifier>>, body: Vec<Located<Statement>>) -> Self {
-        Self { name, arguments, body }
+    pub fn new(
+        name: Located<InternIdx>,
+        arguments: Vec<Located<TypedIdentifier>>,
+        body: Vec<Located<Statement>>,
+    ) -> Self {
+        Self {
+            name,
+            arguments,
+            body,
+        }
     }
 }
 

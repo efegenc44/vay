@@ -1,7 +1,15 @@
-use std::{fmt::Display, iter::Peekable, vec};
+use std::iter::Peekable;
 
 use crate::{
-    bound::Bound, declaration::{Declaration, Method, TypedIdentifier, VariantCase}, error::Error, expression::{Expression, TypeExpression}, interner::InternIdx, lexer::{LexError, Lexer}, location::{Located, SourceLocation}, statement::Statement, token::Token
+    bound::Bound,
+    declaration::{Declaration, Method, TypedIdentifier, VariantCase},
+    expression::{Expression, TypeExpression},
+    interner::{InternIdx, Interner},
+    lexer::Lexer,
+    location::{Located, SourceLocation},
+    reportable::{Reportable, ReportableResult},
+    statement::Statement,
+    token::Token,
 };
 
 const PRIMARY_TOKEN_STARTS: &[Token] = &[Token::dummy_identifier()];
@@ -26,34 +34,26 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         }
     }
 
-    fn peek(&mut self) -> ParseResult<Option<Located<Token>>> {
+    fn peek(&mut self) -> ReportableResult<Option<Located<Token>>> {
         match self.tokens.peek() {
             Some(Ok(token)) => Ok(Some(*token)),
-            Some(Err(lex_error)) => Err(Located::new(
-                ParseError::LexError(lex_error.data().clone()),
-                lex_error.location()
-            )),
+            // TODO: fix here, hacky
+            Some(Err(_)) => self.advance(),
             None => Ok(None),
         }
     }
 
-    fn advance(&mut self) -> ParseResult<Option<Located<Token>>> {
+    fn advance(&mut self) -> ReportableResult<Option<Located<Token>>> {
         match self.tokens.next() {
             Some(Ok(token)) => Ok(Some(token)),
-            Some(Err(lex_error)) => Err(Located::new(
-                ParseError::LexError(lex_error.data().clone()),
-                lex_error.location()
-            )),
+            Some(Err(lex_error)) => Err(lex_error),
             None => Ok(None),
         }
     }
 
-    fn expect_one_of(&mut self, expected_ones: &[Token]) -> ParseResult<Located<Token>> {
+    fn expect_one_of(&mut self, expected_ones: &[Token]) -> ReportableResult<Located<Token>> {
         let Some(token) = self.advance()? else {
-            // TODO: absence errors
-            return Err(Located::new(ParseError::UnexpectedEOF {
-                expected_ones: expected_ones.to_vec(),
-            }, SourceLocation::dummy()));
+            return Self::unexpected_eof(expected_ones.to_vec());
         };
 
         let result = expected_ones
@@ -61,59 +61,41 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             .find(|expected| expected == &token.data());
         match result {
             Some(_) => Ok(token),
-            None => Err(Located::new(ParseError::UnexpectedToken {
-                unexpected: token,
-                expected_ones: expected_ones.to_vec(),
-            }, token.location())),
+            None => Self::unexpected_token(token, expected_ones.to_vec()),
         }
     }
 
-    fn expect(&mut self, expected: Token) -> ParseResult<Located<Token>> {
+    fn expect(&mut self, expected: Token) -> ReportableResult<Located<Token>> {
         self.expect_one_of(&[expected])
     }
 
-    fn expect_identifier(&mut self) -> ParseResult<Located<InternIdx>> {
-        // TODO: absence errors
+    fn expect_identifier(&mut self) -> ReportableResult<Located<InternIdx>> {
         let Some(token) = self.advance()? else {
-            return Err(Located::new(ParseError::UnexpectedEOF {
-                expected_ones: vec![Token::dummy_identifier()],
-            }, SourceLocation::dummy()));
+            return Self::unexpected_eof(vec![Token::dummy_identifier()]);
         };
 
         if let Token::Identifier(intern_idx) = token.data() {
             Ok(Located::new(*intern_idx, token.location()))
         } else {
-            Err(Located::new(ParseError::UnexpectedToken {
-                unexpected: token,
-                expected_ones: vec![Token::dummy_identifier()],
-            }, token.location()))
+            Self::unexpected_token(token, vec![Token::dummy_identifier()])
         }
     }
 
-    fn terminator(&mut self, optinal: Token) -> ParseResult<Option<Located<Token>>> {
-        let option = match self.peek()? {
-            Some(token) if token.data() == &optinal => Some(self.advance()?.unwrap()),
-            Some(_) => None,
-            None => {
-                // TODO: absence errors
-                return Err(Located::new(ParseError::UnexpectedEOF {
-                    expected_ones: vec![optinal],
-                }, SourceLocation::dummy()))
-            }
-        };
-
-        Ok(option)
+    fn terminator(&mut self, terminator: Token) -> ReportableResult<Option<Located<Token>>> {
+        match self.peek()? {
+            Some(token) if token.data() == &terminator => Ok(Some(self.advance()?.unwrap())),
+            Some(_) => Ok(None),
+            None => Self::unexpected_eof(vec![terminator]),
+        }
     }
 
-    fn expression(&mut self) -> ParseResult<Located<Expression>> {
+    fn expression(&mut self) -> ReportableResult<Located<Expression>> {
         self.primary()
     }
 
-    fn primary(&mut self) -> ParseResult<Located<Expression>> {
+    fn primary(&mut self) -> ReportableResult<Located<Expression>> {
         let Some(token) = self.advance()? else {
-            return Err(Located::new(ParseError::UnexpectedEOF {
-                expected_ones: PRIMARY_TOKEN_STARTS.to_vec(),
-            }, SourceLocation::dummy()));
+            return Self::unexpected_eof(PRIMARY_TOKEN_STARTS.to_vec());
         };
 
         match token.data() {
@@ -130,26 +112,20 @@ impl<'source, 'interner> Parser<'source, 'interner> {
                 let expression = Expression::Path(path, Bound::Undetermined);
                 Ok(Located::new(expression, token.location().extend(&end)))
             }
-            _ => Err(Located::new(ParseError::UnexpectedToken {
-                unexpected: token,
-                expected_ones: PRIMARY_TOKEN_STARTS.to_vec(),
-            }, token.location())),
+            _ => Self::unexpected_token(token, PRIMARY_TOKEN_STARTS.to_vec()),
         }
     }
 
-    fn statement(&mut self) -> ParseResult<Located<Statement>> {
+    fn statement(&mut self) -> ReportableResult<Located<Statement>> {
         let Some(token) = self.peek()? else {
-            return Err(Located::new(ParseError::UnexpectedEOF {
-                expected_ones: STATEMENT_KEYWORDS.to_vec(),
-            }, SourceLocation::dummy()));
+            return Self::unexpected_eof(STATEMENT_KEYWORDS.to_vec());
         };
 
         match token.data() {
             _ => {
-                let expression = self.expression().map_err(|_| Located::new(ParseError::UnexpectedToken {
-                    unexpected: token,
-                    expected_ones: STATEMENT_KEYWORDS.to_vec(),
-                }, token.location()))?;
+                let Ok(expression) = self.expression() else {
+                    return Self::unexpected_token(token, STATEMENT_KEYWORDS.to_vec());
+                };
 
                 let location = expression.location();
                 let statement = Statement::Expression(expression);
@@ -158,11 +134,9 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         }
     }
 
-    fn declaration(&mut self) -> ParseResult<Declaration> {
+    fn declaration(&mut self) -> ReportableResult<Declaration> {
         let Some(token) = self.advance()? else {
-            return Err(Located::new(ParseError::UnexpectedEOF {
-                expected_ones: DECLARATION_KEYWORDS.to_vec(),
-            }, SourceLocation::dummy()));
+            return Self::unexpected_eof(DECLARATION_KEYWORDS.to_vec());
         };
 
         match token.data() {
@@ -170,14 +144,11 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             Token::ImportKeyword => self.import(),
             Token::ProcKeyword => self.procedure(),
             Token::VariantKeyword => self.variant(),
-            _ => Err(Located::new(ParseError::UnexpectedToken {
-                unexpected: token,
-                expected_ones: DECLARATION_KEYWORDS.to_vec(),
-            }, token.location())),
+            _ => Self::unexpected_token(token, DECLARATION_KEYWORDS.to_vec()),
         }
     }
 
-    pub fn program(&mut self) -> ParseResult<Vec<Declaration>> {
+    pub fn program(&mut self) -> ReportableResult<Vec<Declaration>> {
         let mut declarations = vec![];
         while self.peek()?.is_some() {
             declarations.push(self.declaration()?);
@@ -185,21 +156,21 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         Ok(declarations)
     }
 
-    fn module(&mut self) -> ParseResult<Declaration> {
+    fn module(&mut self) -> ReportableResult<Declaration> {
         let name = self.expect_identifier()?;
         self.expect(Token::Semicolon)?;
 
         Ok(Declaration::Module { name })
     }
 
-    fn import(&mut self) -> ParseResult<Declaration> {
+    fn import(&mut self) -> ReportableResult<Declaration> {
         let name = self.expect_identifier()?;
         self.expect(Token::Semicolon)?;
 
         Ok(Declaration::Import { name })
     }
 
-    fn procedure(&mut self) -> ParseResult<Declaration> {
+    fn procedure(&mut self) -> ReportableResult<Declaration> {
         let name = self.expect_identifier()?;
         self.expect(Token::LeftParenthesis)?;
         let mut arguments = vec![];
@@ -237,7 +208,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         })
     }
 
-    fn method(&mut self) -> ParseResult<Method> {
+    fn method(&mut self) -> ReportableResult<Method> {
         let name = self.expect_identifier()?;
         self.expect(Token::LeftParenthesis)?;
         let mut arguments = vec![];
@@ -271,7 +242,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         Ok(Method::new(name, arguments, body))
     }
 
-    fn variant(&mut self) -> ParseResult<Declaration> {
+    fn variant(&mut self) -> ReportableResult<Declaration> {
         let name = self.expect_identifier()?;
         self.expect(Token::LeftCurly)?;
         let mut cases = vec![];
@@ -286,22 +257,24 @@ impl<'source, 'interner> Parser<'source, 'interner> {
                     } else {
                         cases.push(self.variant_case()?)
                     }
-                },
+                }
             }
         }
 
-        Ok(Declaration::Variant { name, cases, methods })
+        Ok(Declaration::Variant {
+            name,
+            cases,
+            methods,
+        })
     }
 
-    fn type_expression(&mut self) -> ParseResult<Located<TypeExpression>> {
+    fn type_expression(&mut self) -> ReportableResult<Located<TypeExpression>> {
         self.type_expression_primary()
     }
 
-    fn type_expression_primary(&mut self) -> ParseResult<Located<TypeExpression>> {
+    fn type_expression_primary(&mut self) -> ReportableResult<Located<TypeExpression>> {
         let Some(token) = self.advance()? else {
-            return Err(Located::new(ParseError::UnexpectedEOF {
-                expected_ones: PRIMARY_TOKEN_STARTS.to_vec(),
-            }, SourceLocation::dummy()));
+            return Self::unexpected_eof(PRIMARY_TOKEN_STARTS.to_vec());
         };
 
         match token.data() {
@@ -318,14 +291,11 @@ impl<'source, 'interner> Parser<'source, 'interner> {
                 let type_expression = TypeExpression::Path(path, Bound::Undetermined);
                 Ok(Located::new(type_expression, token.location().extend(&end)))
             }
-            _ => Err(Located::new(ParseError::UnexpectedToken {
-                unexpected: token,
-                expected_ones: PRIMARY_TOKEN_STARTS.to_vec(),
-            }, token.location())),
+            _ => Self::unexpected_token(token, PRIMARY_TOKEN_STARTS.to_vec()),
         }
     }
 
-    fn typed_identifier(&mut self) -> ParseResult<Located<TypedIdentifier>> {
+    fn typed_identifier(&mut self) -> ReportableResult<Located<TypedIdentifier>> {
         let identifier = self.expect_identifier()?;
         self.expect(Token::Colon)?;
         let type_expression = self.type_expression()?;
@@ -335,7 +305,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         Ok(Located::new(typed_identifier, location))
     }
 
-    fn variant_case(&mut self) -> ParseResult<Located<VariantCase>> {
+    fn variant_case(&mut self) -> ReportableResult<Located<VariantCase>> {
         let identifier = self.expect_identifier()?;
         let token = self.expect_one_of(&[Token::Semicolon, Token::LeftCurly])?;
 
@@ -364,68 +334,80 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         let variant_case = VariantCase::new(identifier, arguments);
         Ok(Located::new(variant_case, location))
     }
+
+    fn unexpected_token<T>(
+        token: Located<Token>,
+        expected_ones: Vec<Token>,
+    ) -> ReportableResult<T> {
+        let parse_error = ParseError::UnexpectedToken {
+            unexpected: *token.data(),
+            expected_ones,
+        };
+
+        Err(Box::new(Located::new(parse_error, token.location())))
+    }
+
+    fn unexpected_eof<T>(expected_ones: Vec<Token>) -> ReportableResult<T> {
+        let parse_error = ParseError::UnexpectedEOF { expected_ones };
+
+        Err(Box::new(Located::new(parse_error, SourceLocation::dummy())))
+    }
 }
 
 pub enum ParseError {
     UnexpectedToken {
-        unexpected: Located<Token>,
+        unexpected: Token,
         expected_ones: Vec<Token>,
     },
     UnexpectedEOF {
         expected_ones: Vec<Token>,
     },
-    LexError(LexError),
 }
 
-impl Error for Located<ParseError> {
+impl Reportable for Located<ParseError> {
     fn location(&self) -> SourceLocation {
         self.location()
     }
 
-    fn description(&self) -> String {
-        self.data().to_string()
-    }
-}
-
-impl Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
+    fn description(&self, _intener: &Interner) -> String {
+        match self.data() {
             ParseError::UnexpectedToken {
                 unexpected,
-                expected_ones: expecteds,
+                expected_ones,
             } => {
-                write!(f, "Encountered `{unexpected}` but ")?;
-                match &expecteds[..] {
+                let mut description = format!("Encountered {} but ", unexpected.kind_name());
+                match &expected_ones[..] {
                     [] => unreachable!(),
-                    [expected] => write!(f, "expected `{}`", expected),
-                    _ => {
-                        write!(f, "expected one of ")?;
-                        for expected in expecteds {
-                            write!(f, "`{}` ", expected)?;
-                        }
-                        Ok(())
+                    [expected] => {
+                        description.push_str(&format!("expected {}", expected.kind_name()))
                     }
-                }
+                    [init @ .., last] => {
+                        description.push_str("expected either ");
+                        for expected in init {
+                            description.push_str(&format!("{}, ", expected.kind_name()));
+                        }
+                        description.push_str(&format!("or {}.", last.kind_name()));
+                    }
+                };
+                description
             }
-            ParseError::UnexpectedEOF {
-                expected_ones: expecteds,
-            } => {
-                write!(f, "Encountered end of file but ")?;
-                match &expecteds[..] {
+            ParseError::UnexpectedEOF { expected_ones } => {
+                let mut description = String::from("Encountered end of file but ");
+                match &expected_ones[..] {
                     [] => unreachable!(),
-                    [expected] => write!(f, "expected `{}`", expected),
-                    _ => {
-                        write!(f, "expected one of ")?;
-                        for expected in expecteds {
-                            write!(f, "`{}`", expected)?;
-                        }
-                        Ok(())
+                    [expected] => {
+                        description.push_str(&format!("expected {}", expected.kind_name()))
                     }
-                }
+                    [init @ .., last] => {
+                        description.push_str("expected either ");
+                        for expected in init {
+                            description.push_str(&format!("{}, ", expected.kind_name()));
+                        }
+                        description.push_str(&format!("or {}.", last.kind_name()));
+                    }
+                };
+                description
             }
-            ParseError::LexError(lex_error) => lex_error.fmt(f),
         }
     }
 }
-
-type ParseResult<T> = Result<T, Located<ParseError>>;

@@ -41,7 +41,10 @@ impl SourceLocation {
     }
 
     pub fn dummy() -> Self {
-        Self { start: Position::new(0, 0), end: Position::new(0, 0) }
+        Self {
+            start: Position::new(0, 0),
+            end: Position::new(0, 0),
+        }
     }
 
     pub fn extend(&self, location: &Self) -> Self {
@@ -61,6 +64,10 @@ impl SourceLocation {
 
     pub fn is_on_one_line(&self) -> bool {
         self.start().row() == self.end().row()
+    }
+
+    pub fn is_absence(&self) -> bool {
+        self == &Self::dummy()
     }
 }
 
