@@ -21,21 +21,31 @@ macro_rules! locate {
     }};
 }
 
-pub struct Lexer<'source, 'interner> {
-    chars: Peekable<Chars<'source>>,
+pub struct Lexer<'source_content, 'interner> {
+    chars: Peekable<Chars<'source_content>>,
     index: usize,
     position: Position,
     interner: &'interner mut Interner,
+    source: String,
 }
 
 impl<'source, 'interner> Lexer<'source, 'interner> {
-    pub fn new(source: &'source str, interner: &'interner mut Interner) -> Self {
+    pub fn new(
+        source: String,
+        source_content: &'source str,
+        interner: &'interner mut Interner,
+    ) -> Self {
         Self {
-            chars: source.chars().peekable(),
+            chars: source_content.chars().peekable(),
             index: 0,
             position: Position::new(1, 1),
             interner,
+            source,
         }
+    }
+
+    pub fn source(&self) -> &str {
+        &self.source
     }
 
     fn peek_ch(&mut self) -> Option<&char> {
@@ -114,10 +124,9 @@ impl<'source, 'interner> Lexer<'source, 'interner> {
         Located::new(token, location)
     }
 
-    fn unknown_start_of_a_token<T>(ch: char, location: SourceLocation) -> ReportableResult<T> {
-        let lex_error = LexError::UnknownStartOfAToken(ch);
-
-        Err(Box::new(Located::new(lex_error, location)))
+    fn error<T>(&self, error: LexError, location: SourceLocation) -> ReportableResult<T> {
+        let reportable = (Located::new(error, location), self.source.clone());
+        Err(Box::new(reportable))
     }
 }
 
@@ -140,7 +149,7 @@ impl Iterator for Lexer<'_, '_> {
                 self.advance();
             });
 
-            Self::unknown_start_of_a_token(ch, location)
+            self.error(LexError::UnknownStartOfAToken(ch), location)
         };
 
         Some(result)
@@ -152,13 +161,17 @@ pub enum LexError {
     UnknownStartOfAToken(char),
 }
 
-impl Reportable for Located<LexError> {
+impl Reportable for (Located<LexError>, String) {
     fn location(&self) -> SourceLocation {
-        self.location()
+        self.0.location()
+    }
+
+    fn source(&self) -> &str {
+        &self.1
     }
 
     fn description(&self, _interner: &Interner) -> String {
-        match self.data() {
+        match self.0.data() {
             LexError::UnknownStartOfAToken(ch) => {
                 format!("Encountered an unknown start of a token: `{ch}`.")
             }

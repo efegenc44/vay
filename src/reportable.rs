@@ -2,15 +2,17 @@ use crate::{interner::Interner, location::SourceLocation};
 
 pub trait Reportable {
     fn location(&self) -> SourceLocation;
+    fn source(&self) -> &str;
     fn description(&self, interner: &Interner) -> String;
 
-    fn report(&self, source_name: &str, source: &str, stage: &str, interner: &Interner) {
-        let mut lines = source.lines();
+    fn report(&self, source_content: &str, stage: &str, interner: &Interner) {
+        let mut lines = source_content.lines();
         let location = self.location();
+        let source = self.source();
 
         if location.is_absence() {
             eprintln!();
-            eprintln!("        | [{source_name}] (at {stage})");
+            eprintln!("        | [{source}] (at {stage})");
             eprintln!("        |");
             eprintln!("        | {}", self.description(interner));
             return;
@@ -20,7 +22,7 @@ pub trait Reportable {
 
         eprintln!();
         eprintln!(
-            "        | [{source_name}:{first_line_number}:{}] (at {stage})",
+            "        | [{source}:{first_line_number}:{}] (at {stage})",
             location.start().column()
         );
         eprintln!("        |");

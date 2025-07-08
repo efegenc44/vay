@@ -1,9 +1,9 @@
-use crate::interner::InternIdx;
+use crate::interner::{InternIdx, Interner};
 
 pub enum Bound {
     Undetermined,
     Local(BoundIdx),
-    Absolute(Vec<InternIdx>),
+    Absolute(Path),
 }
 
 impl Bound {
@@ -12,8 +12,49 @@ impl Bound {
     }
 
     pub fn absolute(path: Vec<InternIdx>) -> Self {
-        Self::Absolute(path)
+        Self::Absolute(Path(path))
     }
 }
 
 pub struct BoundIdx(usize);
+
+#[derive(Clone, Hash, PartialEq, Eq)]
+pub struct Path(Vec<InternIdx>);
+
+impl Path {
+    pub fn empty() -> Self {
+        Self(vec![])
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn append(&self, name: InternIdx) -> Self {
+        let mut path = self.clone();
+        path.0.push(name);
+        path
+    }
+
+    pub fn append_parts(&self, parts: &[InternIdx]) -> Self {
+        let mut result = self.clone();
+        result.0.extend(parts);
+        result
+    }
+
+    pub fn push(&mut self, name: InternIdx) {
+        self.0.push(name);
+    }
+
+    pub fn pop(&mut self) -> Option<InternIdx> {
+        self.0.pop()
+    }
+
+    pub fn as_string(&self, interner: &Interner) -> String {
+        self.0
+            .iter()
+            .map(|intern_idx| interner.get(intern_idx))
+            .collect::<Vec<_>>()
+            .join("::")
+    }
+}

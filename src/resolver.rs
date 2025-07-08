@@ -1,8 +1,8 @@
 use std::{collections::HashSet, vec};
 
 use crate::{
-    bound::Bound,
-    declaration::Declaration,
+    bound::{Bound, Path},
+    declaration::{Declaration, Method, Module, TypedIdentifier, VariantCase},
     expression::{Expression, TypeExpression},
     interner::{InternIdx, Interner},
     location::{Located, SourceLocation},
@@ -11,12 +11,16 @@ use crate::{
 };
 
 pub struct Resolver {
-    variants: HashSet<Vec<InternIdx>>,
-    procedures: HashSet<Vec<InternIdx>>,
+    modules: HashSet<InternIdx>,
+
+    variants: HashSet<Path>,
+    procedures: HashSet<Path>,
+
     locals: Vec<InternIdx>,
 
-    imports: HashSet<InternIdx>,
-    current_absolute_path: Vec<InternIdx>,
+    current_imports: HashSet<InternIdx>,
+    current_path: Path,
+    current_source: String,
 }
 
 impl Resolver {
@@ -26,92 +30,129 @@ impl Resolver {
             procedures: HashSet::new(),
             locals: vec![],
 
-            imports: HashSet::new(),
-            current_absolute_path: vec![],
+            modules: HashSet::new(),
+
+            current_imports: HashSet::new(),
+            current_path: Path::empty(),
+            current_source: String::new(),
         }
     }
 
-    fn absolute_path(&self, name: InternIdx) -> Vec<InternIdx> {
-        let mut path = self.current_absolute_path.clone();
-        path.push(name);
-        path
-    }
-
-    pub fn resolve(
-        &mut self,
-        mut modules: Vec<(Vec<Declaration>, String)>,
-    ) -> Result<Vec<(Vec<Declaration>, String)>, (Box<dyn Reportable>, String)> {
+    pub fn resolve(&mut self, mut modules: Vec<Module>) -> ReportableResult<Vec<Module>> {
         for module in &mut modules {
-            self.collect_names(&module.0)
-                .map_err(|error| (error, module.1.clone()))?;
+            self.collect_names(module)?;
         }
 
         for module in &mut modules {
-            self.which_module(&module.0)
-                .map_err(|error| (error, module.1.clone()))?;
-
-            self.program(&mut module.0)
-                .map_err(|error| (error, module.1.clone()))?;
+            // TODO: this is a bit unnecessary
+            self.which_module(module)?;
+            self.module(module)?;
         }
 
         Ok(modules)
     }
 
-    fn program(&mut self, declarations: &mut [Declaration]) -> ReportableResult<()> {
-        for declaration in declarations {
+    fn module(&mut self, module: &mut Module) -> ReportableResult<()> {
+        for declaration in module.declarations_mut() {
             self.declaration(declaration)?;
         }
 
         Ok(())
     }
 
-    fn which_module(&mut self, declarations: &[Declaration]) -> ReportableResult<()> {
-        self.current_absolute_path.clear();
-        self.imports.clear();
+    fn which_module(&mut self, module: &Module) -> ReportableResult<()> {
+        self.current_imports.clear();
+        self.current_path = Path::empty();
+        self.current_source = module.source().to_string();
 
         let mut declared = false;
-        for declaration in declarations {
-            if let Declaration::Module { name } = declaration {
-                if !declared {
-                    declared = true;
-                    self.current_absolute_path.push(*name.data());
-                } else {
-                    return Self::multiple_module_declarations(name.location());
+        for declaration in module.declarations() {
+            match declaration {
+                Declaration::Module { name } => {
+                    if !declared {
+                        declared = true;
+                        self.current_path.push(*name.data());
+                        self.modules.insert(*name.data());
+                    } else {
+                        return self
+                            .error(ResolveError::DuplicateModuleDeclaration, name.location());
+                    }
                 }
-            }
-
-            if let Declaration::Import { name } = declaration {
-                self.imports.insert(*name.data());
+                Declaration::Import { name } => {
+                    self.current_imports.insert(*name.data());
+                }
+                _ => (),
             }
         }
 
-        if self.current_absolute_path.is_empty() {
-            return Self::module_is_not_declared();
+        if self.current_path.is_empty() {
+            return self.error(ResolveError::ModuleIsNotDeclared, SourceLocation::dummy());
         }
 
         Ok(())
     }
 
-    fn collect_names(&mut self, declarations: &[Declaration]) -> ReportableResult<()> {
-        self.which_module(declarations)?;
-        for declaration in declarations {
+    fn collect_names(&mut self, module: &Module) -> ReportableResult<()> {
+        self.which_module(module)?;
+        for declaration in module.declarations() {
             match declaration {
                 Declaration::Module { .. } => {}
                 Declaration::Import { .. } => {}
-                Declaration::Procedure { name, .. } => {
-                    self.procedures.insert(self.absolute_path(*name.data()));
-                }
+                Declaration::Procedure { name, .. } => self.collect_procedure_name(name)?,
                 Declaration::Variant { name, cases, .. } => {
-                    self.variants.insert(self.absolute_path(*name.data()));
-                    self.current_absolute_path.push(*name.data());
-                    for case in cases {
-                        self.procedures
-                            .insert(self.absolute_path(*case.data().identifier().data()));
-                    }
-                    self.current_absolute_path.pop();
+                    self.collect_variant_name(name, cases)?
                 }
             }
         }
+
+        Ok(())
+    }
+
+    fn collect_procedure_name(&mut self, name: &Located<InternIdx>) -> ReportableResult<()> {
+        let procedure_path = self.current_path.append(*name.data());
+        if !self.procedures.contains(&procedure_path) {
+            self.procedures.insert(procedure_path);
+        } else {
+            return self.error(
+                ResolveError::DuplicateProcedureDeclaration(procedure_path),
+                name.location(),
+            );
+        }
+
+        Ok(())
+    }
+
+    fn collect_variant_name(
+        &mut self,
+        name: &Located<InternIdx>,
+        cases: &[Located<VariantCase>],
+    ) -> ReportableResult<()> {
+        let variant_path = self.current_path.append(*name.data());
+        if self.variants.contains(&variant_path) {
+            return self.error(
+                ResolveError::DuplicateTypeDeclaration(variant_path),
+                name.location(),
+            );
+        }
+
+        self.current_path.push(*name.data());
+        for case in cases {
+            let constructor = *case.data().identifier().data();
+            let constructor_path = self.current_path.append(constructor);
+            if !self.procedures.contains(&constructor_path) {
+                self.procedures.insert(constructor_path);
+            } else {
+                return self.error(
+                    ResolveError::DuplicateConstructorDeclaration {
+                        constructor,
+                        variant_path,
+                    },
+                    case.data().identifier().location(),
+                );
+            }
+        }
+        self.current_path.pop();
+        self.variants.insert(variant_path);
 
         Ok(())
     }
@@ -124,7 +165,7 @@ impl Resolver {
             }
         }
 
-        if self.imports.contains(intern_idx) {
+        if self.current_imports.contains(intern_idx) {
             Some(Bound::absolute(vec![*intern_idx]))
         } else {
             None
@@ -134,7 +175,7 @@ impl Resolver {
     fn find_type_name(&self, intern_idx: &InternIdx) -> Option<Bound> {
         // TODO: Local Scope (type variables)
 
-        if self.imports.contains(intern_idx) {
+        if self.current_imports.contains(intern_idx) {
             Some(Bound::absolute(vec![*intern_idx]))
         } else {
             None
@@ -144,29 +185,38 @@ impl Resolver {
     fn expression(&mut self, expression: &mut Located<Expression>) -> ReportableResult<()> {
         let location = expression.location();
         match expression.data_mut() {
-            Expression::Path(parts, bound) => {
-                let base = self
-                    .find_name(&parts[0])
-                    .or(Some(Bound::absolute(self.absolute_path(parts[0]))));
-
-                match base.as_ref().unwrap() {
-                    Bound::Local(_) => *bound = base.unwrap(),
-                    Bound::Absolute(path) => {
-                        let mut path = path.clone();
-                        path.extend(&parts[1..]);
-
-                        let Some(path) = self.procedures.get(&path) else {
-                            return Self::unbound_value_path(path, location);
-                        };
-
-                        *bound = Bound::absolute(path.clone());
-                    }
-                    Bound::Undetermined => unreachable!(),
-                };
-
-                Ok(())
-            }
+            Expression::Path(parts, bound) => self.path(parts, bound, location)?,
         }
+
+        Ok(())
+    }
+
+    fn path(
+        &mut self,
+        parts: &[InternIdx],
+        bound: &mut Bound,
+        location: SourceLocation,
+    ) -> ReportableResult<()> {
+        let base = self
+            .find_name(&parts[0])
+            .unwrap_or(Bound::Absolute(self.current_path.append(parts[0])));
+
+        match base {
+            Bound::Local(_) => {
+                assert!(parts.len() == 1);
+                *bound = base
+            }
+            Bound::Absolute(base_path) => {
+                let path = base_path.append_parts(&parts[1..]);
+                let Some(path) = self.procedures.get(&path) else {
+                    return self.error(ResolveError::UnboundValuePath(path), location);
+                };
+                *bound = Bound::Absolute(path.clone());
+            }
+            Bound::Undetermined => unreachable!(),
+        };
+
+        Ok(())
     }
 
     fn type_expression(
@@ -175,29 +225,38 @@ impl Resolver {
     ) -> ReportableResult<()> {
         let location = type_expression.location();
         match type_expression.data_mut() {
-            TypeExpression::Path(parts, bound) => {
-                let base = self
-                    .find_type_name(&parts[0])
-                    .or(Some(Bound::absolute(self.absolute_path(parts[0]))));
-
-                match base.as_ref().unwrap() {
-                    Bound::Local(_) => *bound = base.unwrap(),
-                    Bound::Absolute(path) => {
-                        let mut path = path.clone();
-                        path.extend(&parts[1..]);
-
-                        let Some(path) = self.variants.get(&path) else {
-                            return Self::unbound_type_path(path, location);
-                        };
-
-                        *bound = Bound::absolute(path.clone());
-                    }
-                    Bound::Undetermined => unreachable!(),
-                };
-
-                Ok(())
-            }
+            TypeExpression::Path(parts, bound) => self.type_path(parts, bound, location)?,
         }
+
+        Ok(())
+    }
+
+    fn type_path(
+        &mut self,
+        parts: &[InternIdx],
+        bound: &mut Bound,
+        location: SourceLocation,
+    ) -> ReportableResult<()> {
+        let base = self
+            .find_type_name(&parts[0])
+            .unwrap_or(Bound::Absolute(self.current_path.append(parts[0])));
+
+        match base {
+            Bound::Local(_) => {
+                assert!(parts.len() == 1);
+                *bound = base
+            }
+            Bound::Absolute(base_path) => {
+                let path = base_path.append_parts(&parts[1..]);
+                let Some(path) = self.variants.get(&path) else {
+                    return self.error(ResolveError::UnboundTypePath(path), location);
+                };
+                *bound = Bound::Absolute(path.clone());
+            }
+            Bound::Undetermined => unreachable!(),
+        };
+
+        Ok(())
     }
 
     fn statement(&mut self, statement: &mut Located<Statement>) -> ReportableResult<()> {
@@ -210,117 +269,130 @@ impl Resolver {
         // TODO: maybe take Located<Declaration> for better error reporting
         match declaration {
             Declaration::Module { .. } => {}
-            // TODO: check if the module exists
-            Declaration::Import { .. } => {}
+            Declaration::Import { name } => self.import(name)?,
             Declaration::Procedure {
                 arguments, body, ..
-            } => {
-                for argument in arguments.iter_mut() {
-                    self.type_expression(argument.data_mut().type_expression_mut())?;
-                }
-
-                self.locals
-                    .extend(arguments.iter().map(|idx| *idx.data().indentifier().data()));
-                for statement in body {
-                    self.statement(statement)?
-                }
-                self.locals.truncate(self.locals.len() - arguments.len());
-            }
-            Declaration::Variant { cases, methods, .. } => {
-                for case in cases {
-                    if let Some(arguments) = case.data_mut().arguments_mut() {
-                        for argument in arguments {
-                            self.type_expression(argument.data_mut().type_expression_mut())?;
-                        }
-                    }
-                }
-
-                for method in methods {
-                    for argument in method.arguments.iter_mut() {
-                        self.type_expression(argument.data_mut().type_expression_mut())?;
-                    }
-
-                    // TODO : implicit (or explicit) `self` variable
-                    self.locals.extend(
-                        method
-                            .arguments
-                            .iter()
-                            .map(|idx| *idx.data().indentifier().data()),
-                    ); // ?
-
-                    for statement in &mut method.body {
-                        self.statement(statement)?
-                    }
-                    self.locals
-                        .truncate(self.locals.len() - method.arguments.len());
-                }
-            }
+            } => self.procedure(arguments, body)?,
+            Declaration::Variant { cases, methods, .. } => self.variant(cases, methods)?,
         };
 
         Ok(())
     }
 
-    fn module_is_not_declared() -> ReportableResult<()> {
-        let resolve_error = ResolveError::ModuleIsNotDeclared;
+    fn import(&self, name: &Located<InternIdx>) -> ReportableResult<()> {
+        if !self.modules.contains(name.data()) {
+            return self.error(
+                ResolveError::ModuleDoesNotExist(*name.data()),
+                name.location(),
+            );
+        }
 
-        Err(Box::new(Located::new(
-            resolve_error,
-            SourceLocation::dummy(),
-        )))
+        Ok(())
     }
 
-    fn multiple_module_declarations(location: SourceLocation) -> ReportableResult<()> {
-        let resolve_error = ResolveError::MultipleModuleDeclarations;
+    fn procedure(
+        &mut self,
+        arguments: &mut [Located<TypedIdentifier>],
+        body: &mut [Located<Statement>],
+    ) -> ReportableResult<()> {
+        for argument in arguments.iter_mut() {
+            self.type_expression(argument.data_mut().type_expression_mut())?;
+        }
 
-        Err(Box::new(Located::new(resolve_error, location)))
+        let argument_names = arguments.iter().map(|idx| *idx.data().indentifier().data());
+        self.locals.extend(argument_names);
+        for statement in body {
+            self.statement(statement)?
+        }
+        self.locals.truncate(self.locals.len() - arguments.len());
+
+        Ok(())
     }
 
-    fn unbound_value_path(path: Vec<InternIdx>, location: SourceLocation) -> ReportableResult<()> {
-        let resolve_error = ResolveError::UnboundValuePath(path);
+    fn variant(
+        &mut self,
+        cases: &mut [Located<VariantCase>],
+        methods: &mut [Method],
+    ) -> ReportableResult<()> {
+        for case in cases {
+            if let Some(arguments) = case.data_mut().arguments_mut() {
+                for argument in arguments {
+                    self.type_expression(argument.data_mut().type_expression_mut())?;
+                }
+            }
+        }
 
-        Err(Box::new(Located::new(resolve_error, location)))
+        for method in methods {
+            // TODO : implicit (or explicit) `self` variable
+            self.procedure(&mut method.arguments, &mut method.body)?;
+        }
+
+        Ok(())
     }
 
-    fn unbound_type_path(path: Vec<InternIdx>, location: SourceLocation) -> ReportableResult<()> {
-        let resolve_error = ResolveError::UnboundTypePath(path);
-
-        Err(Box::new(Located::new(resolve_error, location)))
+    fn error<T>(&self, error: ResolveError, location: SourceLocation) -> ReportableResult<T> {
+        let reportable = (Located::new(error, location), self.current_source.clone());
+        Err(Box::new(reportable))
     }
 }
 
 pub enum ResolveError {
     ModuleIsNotDeclared,
-    MultipleModuleDeclarations,
-    UnboundValuePath(Vec<InternIdx>),
-    UnboundTypePath(Vec<InternIdx>),
+    ModuleDoesNotExist(InternIdx),
+    DuplicateModuleDeclaration,
+    DuplicateProcedureDeclaration(Path),
+    DuplicateTypeDeclaration(Path),
+    DuplicateConstructorDeclaration {
+        constructor: InternIdx,
+        variant_path: Path,
+    },
+    UnboundValuePath(Path),
+    UnboundTypePath(Path),
 }
 
-impl Reportable for Located<ResolveError> {
+impl Reportable for (Located<ResolveError>, String) {
     fn location(&self) -> SourceLocation {
-        self.location()
+        self.0.location()
+    }
+
+    fn source(&self) -> &str {
+        &self.1
     }
 
     fn description(&self, interner: &Interner) -> String {
-        match self.data() {
+        match self.0.data() {
             ResolveError::ModuleIsNotDeclared => "No module declarations found.".into(),
-            ResolveError::MultipleModuleDeclarations => "Duplicate declaration of module.".into(),
+            ResolveError::ModuleDoesNotExist(name) => {
+                format!("Imported module `{}` does not exist.", interner.get(name))
+            }
+            ResolveError::DuplicateModuleDeclaration => "Duplicate declaration of module.".into(),
+            ResolveError::DuplicateProcedureDeclaration(path) => {
+                format!(
+                    "Duplicate declaration of procedure `{}`.",
+                    path.as_string(interner)
+                )
+            }
+            ResolveError::DuplicateTypeDeclaration(path) => {
+                format!(
+                    "Duplicate declaration of type `{}`.",
+                    path.as_string(interner)
+                )
+            }
+            ResolveError::DuplicateConstructorDeclaration {
+                constructor,
+                variant_path: variant,
+            } => {
+                format!(
+                    "Duplicate declaration of constructor `{}` in variant type `{}`.",
+                    interner.get(constructor),
+                    variant.as_string(interner)
+                )
+            }
             ResolveError::UnboundValuePath(path) => {
-                let path_string = path
-                    .iter()
-                    .map(|intern_idx| interner.get(intern_idx))
-                    .collect::<Vec<_>>()
-                    .join("::");
-
-                format!("`{path_string}` is not bound to value.")
+                format!("`{}` is not bound to a value.", path.as_string(interner))
             }
             ResolveError::UnboundTypePath(path) => {
-                let path_string = path
-                    .iter()
-                    .map(|intern_idx| interner.get(intern_idx))
-                    .collect::<Vec<_>>()
-                    .join("::");
-
-                format!("`{path_string}` is not bound to type.")
+                format!("`{}` is not bound to a type.", path.as_string(interner))
             }
         }
     }

@@ -84,3 +84,29 @@ impl TypedIdentifier {
         &mut self.type_expression
     }
 }
+
+pub struct Module {
+    declarations: Vec<Declaration>,
+    source: String,
+}
+
+impl Module {
+    pub fn new(declarations: Vec<Declaration>, source: String) -> Self {
+        Self {
+            declarations,
+            source,
+        }
+    }
+
+    pub fn declarations(&self) -> &[Declaration] {
+        &self.declarations
+    }
+
+    pub fn declarations_mut(&mut self) -> &mut [Declaration] {
+        &mut self.declarations
+    }
+
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+}

@@ -18,26 +18,26 @@ fn main() -> io::Result<()> {
     let mut interner = Interner::new();
 
     let mut modules = vec![];
-    let mut sources = HashMap::new();
-    for source_path in env::args().skip(1) {
-        let source = fs::read_to_string(&source_path)?;
+    let mut source_contents = HashMap::new();
+    for source in env::args().skip(1) {
+        let source_content = fs::read_to_string(&source)?;
 
-        let lexer = Lexer::new(&source, &mut interner);
+        let lexer = Lexer::new(source.clone(), &source_content, &mut interner);
         let mut parser = Parser::new(lexer);
 
-        let program = match parser.program() {
-            Ok(program) => {
-                println!("{source_path} - Parsing: OK");
-                program
+        let module = match parser.module() {
+            Ok(module) => {
+                println!("{source} - Parsing: OK");
+                module
             }
             Err(error) => {
-                error.report(&source_path, &source, "parsing", &interner);
+                error.report(&source_content, "parsing", &interner);
                 return Ok(());
             }
         };
 
-        modules.push((program, source_path.clone()));
-        sources.insert(source_path, source);
+        modules.push(module);
+        source_contents.insert(source, source_content);
     }
 
     let mut resolver = Resolver::new();
@@ -47,10 +47,9 @@ fn main() -> io::Result<()> {
             println!("Name Resolution: OK");
             modules
         }
-        Err((error, source_path)) => {
+        Err(error) => {
             error.report(
-                &source_path,
-                &sources[&source_path],
+                &source_contents[error.source()],
                 "name resolution",
                 &interner,
             );
