@@ -1,7 +1,7 @@
 use std::iter::Peekable;
 
 use crate::{
-    bound::Bound,
+    bound::{Bound, Path},
     declaration::{Declaration, Method, Module, TypedIdentifier, VariantCase},
     expression::{Expression, TypeExpression},
     interner::{InternIdx, Interner},
@@ -14,7 +14,7 @@ use crate::{
 
 const PRIMARY_TOKEN_STARTS: &[Token] = &[Token::dummy_identifier()];
 
-const STATEMENT_KEYWORDS: &[Token] = &[Token::dummy_identifier()];
+const STATEMENT_KEYWORDS: &[Token] = &[Token::ReturnKeyword, Token::dummy_identifier()];
 
 const DECLARATION_KEYWORDS: &[Token] = &[
     Token::ModuleKeyword,
@@ -172,6 +172,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         };
 
         match token.data() {
+            Token::ReturnKeyword => self.retrn(),
             _ => {
                 let Ok(expression) = self.expression() else {
                     return self.error(
@@ -188,6 +189,14 @@ impl<'source, 'interner> Parser<'source, 'interner> {
                 Ok(Located::new(statement, location))
             }
         }
+    }
+
+    fn retrn(&mut self) -> ReportableResult<Located<Statement>> {
+        let token = self.expect(Token::ReturnKeyword)?;
+        let expression = self.expression()?;
+
+        let location = token.location().extend(&expression.location());
+        Ok(Located::new(Statement::Return(expression), location))
     }
 
     fn declaration(&mut self) -> ReportableResult<Declaration> {
@@ -260,6 +269,9 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             }
         }
 
+        self.expect(Token::Colon)?;
+        let return_type = self.type_expression()?;
+
         self.expect(Token::LeftCurly)?;
         let mut body = vec![];
         loop {
@@ -275,7 +287,9 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         Ok(Declaration::Procedure {
             name,
             arguments,
+            return_type,
             body,
+            path: Path::empty(),
         })
     }
 
@@ -299,6 +313,9 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             }
         }
 
+        self.expect(Token::Colon)?;
+        let return_type = self.type_expression()?;
+
         self.expect(Token::LeftCurly)?;
         let mut body = vec![];
         loop {
@@ -311,7 +328,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             }
         }
 
-        Ok(Method::new(name, arguments, body))
+        Ok(Method::new(name, arguments, return_type, body))
     }
 
     fn variant(&mut self) -> ReportableResult<Declaration> {
@@ -337,6 +354,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             name,
             cases,
             methods,
+            path: Path::empty(),
         })
     }
 
@@ -420,7 +438,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         };
 
         let location = identifier.location().extend(&location);
-        let variant_case = VariantCase::new(identifier, arguments);
+        let variant_case = VariantCase::new(identifier, arguments, Path::empty());
         Ok(Located::new(variant_case, location))
     }
 

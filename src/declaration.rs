@@ -1,5 +1,6 @@
 use crate::{
-    expression::TypeExpression, interner::InternIdx, location::Located, statement::Statement,
+    bound::Path, expression::TypeExpression, interner::InternIdx, location::Located,
+    statement::Statement,
 };
 
 pub enum Declaration {
@@ -12,18 +13,22 @@ pub enum Declaration {
     Procedure {
         name: Located<InternIdx>,
         arguments: Vec<Located<TypedIdentifier>>,
+        return_type: Located<TypeExpression>,
         body: Vec<Located<Statement>>,
+        path: Path,
     },
     Variant {
         name: Located<InternIdx>,
         cases: Vec<Located<VariantCase>>,
         methods: Vec<Method>,
+        path: Path,
     },
 }
 
 pub struct Method {
     pub name: Located<InternIdx>,
     pub arguments: Vec<Located<TypedIdentifier>>,
+    pub return_type: Located<TypeExpression>,
     pub body: Vec<Located<Statement>>,
 }
 
@@ -31,11 +36,13 @@ impl Method {
     pub fn new(
         name: Located<InternIdx>,
         arguments: Vec<Located<TypedIdentifier>>,
+        return_type: Located<TypeExpression>,
         body: Vec<Located<Statement>>,
     ) -> Self {
         Self {
             name,
             arguments,
+            return_type,
             body,
         }
     }
@@ -44,14 +51,24 @@ impl Method {
 pub struct VariantCase {
     identifier: Located<InternIdx>,
     arguments: Option<Vec<Located<TypedIdentifier>>>,
+    path: Path,
 }
 
 impl VariantCase {
-    pub fn new(name: Located<InternIdx>, arguments: Option<Vec<Located<TypedIdentifier>>>) -> Self {
+    pub fn new(
+        name: Located<InternIdx>,
+        arguments: Option<Vec<Located<TypedIdentifier>>>,
+        path: Path,
+    ) -> Self {
         Self {
             identifier: name,
             arguments,
+            path,
         }
+    }
+
+    pub fn arguments(&self) -> Option<&Vec<Located<TypedIdentifier>>> {
+        self.arguments.as_ref()
     }
 
     pub fn arguments_mut(&mut self) -> &mut Option<Vec<Located<TypedIdentifier>>> {
@@ -60,6 +77,14 @@ impl VariantCase {
 
     pub fn identifier(&self) -> Located<InternIdx> {
         self.identifier
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn path_mut(&mut self) -> &mut Path {
+        &mut self.path
     }
 }
 
@@ -78,6 +103,10 @@ impl TypedIdentifier {
 
     pub fn indentifier(&self) -> Located<InternIdx> {
         self.identifier
+    }
+
+    pub fn type_expression(&self) -> &Located<TypeExpression> {
+        &self.type_expression
     }
 
     pub fn type_expression_mut(&mut self) -> &mut Located<TypeExpression> {

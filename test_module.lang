@@ -7,6 +7,6 @@ variant Test {
     Bar;
 }
 
-proc main(x : Main::Nat) {
-
+proc main(x : Main::Nat) : Main::Nat {
+    return Main::Nat::Zero;
 }

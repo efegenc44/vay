@@ -18,7 +18,13 @@ impl Bound {
 
 pub struct BoundIdx(usize);
 
-#[derive(Clone, Hash, PartialEq, Eq)]
+impl BoundIdx {
+    pub fn idx(&self) -> usize {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Path(Vec<InternIdx>);
 
 impl Path {

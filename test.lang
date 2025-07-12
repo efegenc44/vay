@@ -1,6 +1,7 @@
 module Main;
 
 import TestModule;
+import Main;
 
 variant Nat {
     Zero;
@@ -8,15 +9,15 @@ variant Nat {
         n: Nat;
     };
 
-    proc add(other: Nat) {
-
+    proc add(other: Nat) : Nat {
+        return Main::Nat::Zero;
     }
 }
 
-proc add(x : Nat, y : Nat) {
-
+proc add(x : Nat, y : Nat) : Nat {
+    return Nat::Zero;
 }
 
-proc main(x : Nat) {
-    TestModule::Test::Foo;
+proc main(x : Nat) : TestModule::Test {
+    return TestModule::Test::Foo;
 }

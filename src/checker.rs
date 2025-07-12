@@ -1,0 +1,482 @@
+use std::collections::HashMap;
+
+use crate::{
+    bound::{Bound, Path},
+    declaration::{Declaration, Method, Module, TypedIdentifier, VariantCase},
+    expression::{Expression, TypeExpression},
+    interner::{InternIdx, Interner},
+    location::{Located, SourceLocation},
+    reportable::{Reportable, ReportableResult},
+    statement::Statement,
+    typ::Type,
+};
+
+pub struct Checker {
+    names: HashMap<Path, Type>,
+    variants: HashMap<
+        Path,
+        (
+            Type,
+            HashMap<InternIdx, HashMap<InternIdx, Type>>,
+            // TODO: here we have only methods so maybe store only
+            //   a procedure type instead of Type
+            HashMap<InternIdx, Type>,
+        ),
+    >,
+
+    locals: Vec<Type>,
+
+    current_source: String,
+}
+
+impl Checker {
+    pub fn new() -> Self {
+        Self {
+            names: HashMap::new(),
+            variants: HashMap::new(),
+            locals: vec![],
+            current_source: String::new(),
+        }
+    }
+
+    fn eval_type_expression(
+        &mut self,
+        type_expression: &Located<TypeExpression>,
+    ) -> ReportableResult<Type> {
+        match type_expression.data() {
+            TypeExpression::Path(_, bound) => self.eval_type_path(bound),
+        }
+    }
+
+    fn eval_type_path(&mut self, bound: &Bound) -> ReportableResult<Type> {
+        match bound {
+            Bound::Local(_) => todo!("Type variables."),
+            Bound::Absolute(path) => Ok(self.variants[path].0.clone()),
+            Bound::Undetermined => unreachable!(),
+        }
+    }
+
+    pub fn type_check(&mut self, modules: &[Module]) -> ReportableResult<()> {
+        for module in modules {
+            self.current_source = module.source().to_string();
+            self.collect_types(module)?;
+        }
+
+        for module in modules {
+            self.current_source = module.source().to_string();
+            self.collect_names(module)?;
+        }
+
+        for module in modules {
+            self.current_source = module.source().to_string();
+            self.module(module)?;
+        }
+
+        Ok(())
+    }
+
+    fn module(&mut self, module: &Module) -> ReportableResult<()> {
+        for declaration in module.declarations() {
+            self.declaration(declaration)?;
+        }
+
+        Ok(())
+    }
+
+    fn collect_types(&mut self, module: &Module) -> ReportableResult<()> {
+        for declaration in module.declarations() {
+            match declaration {
+                Declaration::Module { .. } => (),
+                Declaration::Import { .. } => (),
+                Declaration::Procedure { .. } => (),
+                Declaration::Variant { path, .. } => self.collect_variant_type(path.clone())?,
+            }
+        }
+
+        Ok(())
+    }
+
+    fn collect_names(&mut self, module: &Module) -> ReportableResult<()> {
+        for declaration in module.declarations() {
+            match declaration {
+                Declaration::Variant {
+                    cases,
+                    methods,
+                    path,
+                    ..
+                } => {
+                    self.collect_variant_name(cases, methods, path.clone())?;
+                }
+                Declaration::Procedure {
+                    arguments,
+                    return_type,
+                    path,
+                    ..
+                } => self.collect_procedure_name(arguments, return_type, path.clone())?,
+
+                _ => (),
+            }
+        }
+
+        Ok(())
+    }
+
+    fn collect_procedure_name(
+        &mut self,
+        arguments: &[Located<TypedIdentifier>],
+        return_type: &Located<TypeExpression>,
+        path: Path,
+    ) -> ReportableResult<()> {
+        let mut argument_types = vec![];
+        for argument in arguments {
+            argument_types.push(self.eval_type_expression(argument.data().type_expression())?);
+        }
+
+        let return_type = self.eval_type_expression(return_type)?;
+
+        self.names.insert(
+            path,
+            Type::Procedure {
+                arguments: argument_types,
+                return_type: Box::new(return_type),
+            },
+        );
+
+        Ok(())
+    }
+
+    fn collect_variant_type(&mut self, path: Path) -> ReportableResult<()> {
+        let variant_type = Type::Variant(path.clone());
+        let variant = (variant_type, HashMap::new(), HashMap::new());
+        self.variants.insert(path, variant);
+
+        Ok(())
+    }
+
+    fn collect_variant_name(
+        &mut self,
+        cases: &[Located<VariantCase>],
+        methods: &[Method],
+        path: Path,
+    ) -> ReportableResult<()> {
+        for method in methods {
+            let mut argument_types = vec![];
+            for argument in &method.arguments {
+                argument_types.push(self.eval_type_expression(argument.data().type_expression())?);
+            }
+
+            let return_type = self.eval_type_expression(&method.return_type)?;
+            let method_type = Type::Procedure {
+                arguments: argument_types,
+                return_type: Box::new(return_type),
+            };
+            if self
+                .variants
+                .get_mut(&path)
+                .unwrap()
+                .2
+                .insert(*method.name.data(), method_type)
+                .is_some()
+            {
+                return self.error(
+                    TypeCheckError::DuplicateMethodDeclaration {
+                        variant_path: path,
+                        method_name: *method.name.data(),
+                    },
+                    method.name.location(),
+                );
+            };
+        }
+
+        let variant_type = self.variants[&path].0.clone();
+        for case in cases {
+            if let Some(arguments) = case.data().arguments() {
+                let mut argument_types_vec = vec![];
+                let mut argument_types = HashMap::new();
+                for argument in arguments {
+                    let argument_type =
+                        self.eval_type_expression(argument.data().type_expression())?;
+                    if argument_types
+                        .insert(*argument.data().indentifier().data(), argument_type.clone())
+                        .is_some()
+                    {
+                        return self.error(
+                            TypeCheckError::DuplicateConstructorFieldDeclaration {
+                                variant_path: path.clone(),
+                                constructor_name: *case.data().identifier().data(),
+                                field_name: *argument.data().indentifier().data(),
+                            },
+                            argument.location(),
+                        );
+                    }
+                    argument_types_vec.push(argument_type);
+                }
+                self.variants
+                    .get_mut(&path)
+                    .unwrap()
+                    .1
+                    .insert(*case.data().identifier().data(), argument_types);
+                self.names.insert(
+                    case.data().path().clone(),
+                    Type::Procedure {
+                        arguments: argument_types_vec,
+                        return_type: Box::new(variant_type.clone()),
+                    },
+                );
+            } else {
+                self.names
+                    .insert(case.data().path().clone(), variant_type.clone());
+                self.variants
+                    .get_mut(&path)
+                    .unwrap()
+                    .1
+                    .insert(*case.data().identifier().data(), HashMap::new());
+                self.names
+                    .insert(case.data().path().clone(), variant_type.clone());
+            }
+        }
+
+        Ok(())
+    }
+
+    fn declaration(&mut self, declaration: &Declaration) -> ReportableResult<()> {
+        match declaration {
+            Declaration::Module { .. } | Declaration::Import { .. } => Ok(()),
+            Declaration::Variant { methods, path, .. } => self.variant_methods(path, methods),
+            Declaration::Procedure {
+                body, path, name, ..
+            } => self.procedure(path, body, name.location()),
+        }
+    }
+
+    fn variant_methods(&mut self, path: &Path, methods: &[Method]) -> ReportableResult<()> {
+        // TODO: implicit (or explicit) self
+
+        for method in methods {
+            let Type::Procedure {
+                arguments,
+                return_type,
+            } = self.variants[path].2[method.name.data()].clone()
+            else {
+                unreachable!();
+            };
+
+            if !Self::returns(&method.body) {
+                return self.error(
+                    TypeCheckError::MethodDoesNotReturn {
+                        type_path: path.clone(),
+                        method: *method.name.data(),
+                        expceted: *return_type,
+                    },
+                    method.name.location(),
+                );
+            }
+
+            let arguments_len = arguments.len();
+            self.locals.extend(arguments);
+            for statement in &method.body {
+                if let Statement::Return(expression) = statement.data() {
+                    self.check(expression, *return_type.clone())?;
+                    continue;
+                }
+
+                self.statement(statement)?;
+            }
+            self.locals.truncate(self.locals.len() - arguments_len);
+        }
+
+        Ok(())
+    }
+
+    fn procedure(
+        &mut self,
+        path: &Path,
+        body: &[Located<Statement>],
+        location: SourceLocation,
+    ) -> ReportableResult<()> {
+        let Type::Procedure {
+            arguments,
+            return_type,
+        } = self.names[path].clone()
+        else {
+            unreachable!();
+        };
+
+        if !Self::returns(body) {
+            return self.error(
+                TypeCheckError::ProcedureDoesNotReturn {
+                    procedure: path.clone(),
+                    expceted: *return_type,
+                },
+                location,
+            );
+        }
+
+        let arguments_len = arguments.len();
+        self.locals.extend(arguments);
+        for statement in body {
+            if let Statement::Return(expression) = statement.data() {
+                self.check(expression, *return_type.clone())?;
+                continue;
+            };
+
+            self.statement(statement)?;
+        }
+        self.locals.truncate(self.locals.len() - arguments_len);
+
+        Ok(())
+    }
+
+    fn returns(body: &[Located<Statement>]) -> bool {
+        for statement in body {
+            let statement_returns = match statement.data() {
+                Statement::Expression(_) => false,
+                Statement::Return(_) => true,
+            };
+
+            if statement_returns {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn statement(&mut self, statement: &Located<Statement>) -> ReportableResult<()> {
+        match statement.data() {
+            Statement::Expression(expression) => self.infer(expression),
+            Statement::Return(_) => {
+                unreachable!("Supposed to be handled in procedure and method type checking")
+            }
+        };
+
+        Ok(())
+    }
+
+    fn check(&mut self, expression: &Located<Expression>, expected: Type) -> ReportableResult<()> {
+        match (expression.data(), &expected) {
+            (Expression::Path(..), _) => {
+                let encountered = self.infer(expression);
+                if self.infer(expression) != expected {
+                    return self.error(
+                        TypeCheckError::MismatchedTypes {
+                            encountered,
+                            expected,
+                        },
+                        expression.location(),
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn infer(&mut self, expression: &Located<Expression>) -> Type {
+        match expression.data() {
+            Expression::Path(_, bound) => match bound {
+                Bound::Local(bound_idx) => self.locals[bound_idx.idx()].clone(),
+                Bound::Absolute(path) => self.names[path].clone(),
+                Bound::Undetermined => unreachable!(),
+            },
+        }
+    }
+
+    fn error<T>(&self, error: TypeCheckError, location: SourceLocation) -> ReportableResult<T> {
+        let reportable = (Located::new(error, location), self.current_source.clone());
+        Err(Box::new(reportable))
+    }
+}
+
+pub enum TypeCheckError {
+    MismatchedTypes {
+        encountered: Type,
+        expected: Type,
+    },
+    DuplicateMethodDeclaration {
+        variant_path: Path,
+        method_name: InternIdx,
+    },
+    DuplicateConstructorFieldDeclaration {
+        variant_path: Path,
+        constructor_name: InternIdx,
+        field_name: InternIdx,
+    },
+    ProcedureDoesNotReturn {
+        procedure: Path,
+        expceted: Type,
+    },
+    MethodDoesNotReturn {
+        type_path: Path,
+        method: InternIdx,
+        expceted: Type,
+    },
+}
+
+impl Reportable for (Located<TypeCheckError>, String) {
+    fn location(&self) -> SourceLocation {
+        self.0.location()
+    }
+
+    fn source(&self) -> &str {
+        &self.1
+    }
+
+    fn description(&self, interner: &Interner) -> String {
+        match self.0.data() {
+            TypeCheckError::MismatchedTypes {
+                encountered,
+                expected,
+            } => {
+                format!(
+                    "Expected type `{}` but encountered type `{}`.",
+                    expected.display(interner),
+                    encountered.display(interner)
+                )
+            }
+            TypeCheckError::DuplicateMethodDeclaration {
+                variant_path,
+                method_name,
+            } => {
+                format!(
+                    "Duplicate declaration of method `{}` in variant type `{}`.",
+                    interner.get(method_name),
+                    variant_path.as_string(interner)
+                )
+            }
+            TypeCheckError::DuplicateConstructorFieldDeclaration {
+                variant_path,
+                constructor_name,
+                field_name,
+            } => {
+                format!(
+                    "Duplicate declaration of field `{}` in constructor `{}` of variant type `{}`.",
+                    interner.get(field_name),
+                    interner.get(constructor_name),
+                    variant_path.as_string(interner)
+                )
+            }
+            TypeCheckError::ProcedureDoesNotReturn {
+                procedure,
+                expceted,
+            } => {
+                format!(
+                    "Procedure `{}` does not always return, expected to return `{}`.",
+                    procedure.as_string(interner),
+                    expceted.display(interner),
+                )
+            }
+            TypeCheckError::MethodDoesNotReturn {
+                type_path,
+                method,
+                expceted,
+            } => {
+                format!(
+                    "Method `{}` of `{}` does not always return, expected to return `{}`.",
+                    interner.get(method),
+                    type_path.as_string(interner),
+                    expceted.display(interner),
+                )
+            }
+        }
+    }
+}

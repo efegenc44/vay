@@ -17,6 +17,7 @@ pub enum Token {
     ImportKeyword,
     ProcKeyword,
     VariantKeyword,
+    ReturnKeyword,
 }
 
 impl Token {
@@ -34,13 +35,14 @@ impl Token {
             Token::Comma => "`,`",
             Token::LeftParenthesis => "`(`",
             Token::RightParenthesis => "`)`",
-            Token::LeftCurly => "`{{`",
-            Token::RightCurly => "`}}`",
+            Token::LeftCurly => "`{`",
+            Token::RightCurly => "`}`",
 
             Token::ModuleKeyword => "keyword `module`",
             Token::ImportKeyword => "keyword `import`",
             Token::ProcKeyword => "keyword `proc`",
             Token::VariantKeyword => "keyword `variant`",
+            Token::ReturnKeyword => "keyword `return`",
         }
     }
 }

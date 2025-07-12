@@ -92,26 +92,33 @@ impl Resolver {
         Ok(())
     }
 
-    fn collect_names(&mut self, module: &Module) -> ReportableResult<()> {
+    fn collect_names(&mut self, module: &mut Module) -> ReportableResult<()> {
         self.which_module(module)?;
-        for declaration in module.declarations() {
+        for declaration in module.declarations_mut() {
             match declaration {
                 Declaration::Module { .. } => {}
                 Declaration::Import { .. } => {}
-                Declaration::Procedure { name, .. } => self.collect_procedure_name(name)?,
-                Declaration::Variant { name, cases, .. } => {
-                    self.collect_variant_name(name, cases)?
+                Declaration::Procedure { name, path, .. } => {
+                    self.collect_procedure_name(name, path)?
                 }
+                Declaration::Variant {
+                    name, cases, path, ..
+                } => self.collect_variant_name(name, cases, path)?,
             }
         }
 
         Ok(())
     }
 
-    fn collect_procedure_name(&mut self, name: &Located<InternIdx>) -> ReportableResult<()> {
+    fn collect_procedure_name(
+        &mut self,
+        name: &Located<InternIdx>,
+        path: &mut Path,
+    ) -> ReportableResult<()> {
         let procedure_path = self.current_path.append(*name.data());
         if !self.procedures.contains(&procedure_path) {
-            self.procedures.insert(procedure_path);
+            self.procedures.insert(procedure_path.clone());
+            *path = procedure_path;
         } else {
             return self.error(
                 ResolveError::DuplicateProcedureDeclaration(procedure_path),
@@ -125,7 +132,8 @@ impl Resolver {
     fn collect_variant_name(
         &mut self,
         name: &Located<InternIdx>,
-        cases: &[Located<VariantCase>],
+        cases: &mut [Located<VariantCase>],
+        path: &mut Path,
     ) -> ReportableResult<()> {
         let variant_path = self.current_path.append(*name.data());
         if self.variants.contains(&variant_path) {
@@ -136,11 +144,12 @@ impl Resolver {
         }
 
         self.current_path.push(*name.data());
-        for case in cases {
+        for case in cases.iter_mut() {
             let constructor = *case.data().identifier().data();
             let constructor_path = self.current_path.append(constructor);
             if !self.procedures.contains(&constructor_path) {
-                self.procedures.insert(constructor_path);
+                self.procedures.insert(constructor_path.clone());
+                *case.data_mut().path_mut() = constructor_path;
             } else {
                 return self.error(
                     ResolveError::DuplicateConstructorDeclaration {
@@ -152,7 +161,8 @@ impl Resolver {
             }
         }
         self.current_path.pop();
-        self.variants.insert(variant_path);
+        self.variants.insert(variant_path.clone());
+        *path = variant_path;
 
         Ok(())
     }
@@ -261,8 +271,9 @@ impl Resolver {
 
     fn statement(&mut self, statement: &mut Located<Statement>) -> ReportableResult<()> {
         match statement.data_mut() {
-            Statement::Expression(expression) => return self.expression(expression),
-        };
+            Statement::Expression(expression) => self.expression(expression),
+            Statement::Return(expression) => self.expression(expression),
+        }
     }
 
     fn declaration(&mut self, declaration: &mut Declaration) -> ReportableResult<()> {
@@ -271,8 +282,11 @@ impl Resolver {
             Declaration::Module { .. } => {}
             Declaration::Import { name } => self.import(name)?,
             Declaration::Procedure {
-                arguments, body, ..
-            } => self.procedure(arguments, body)?,
+                arguments,
+                return_type,
+                body,
+                ..
+            } => self.procedure(arguments, return_type, body)?,
             Declaration::Variant { cases, methods, .. } => self.variant(cases, methods)?,
         };
 
@@ -293,11 +307,14 @@ impl Resolver {
     fn procedure(
         &mut self,
         arguments: &mut [Located<TypedIdentifier>],
+        return_type: &mut Located<TypeExpression>,
         body: &mut [Located<Statement>],
     ) -> ReportableResult<()> {
         for argument in arguments.iter_mut() {
             self.type_expression(argument.data_mut().type_expression_mut())?;
         }
+
+        self.type_expression(return_type)?;
 
         let argument_names = arguments.iter().map(|idx| *idx.data().indentifier().data());
         self.locals.extend(argument_names);
@@ -324,7 +341,11 @@ impl Resolver {
 
         for method in methods {
             // TODO : implicit (or explicit) `self` variable
-            self.procedure(&mut method.arguments, &mut method.body)?;
+            self.procedure(
+                &mut method.arguments,
+                &mut method.return_type,
+                &mut method.body,
+            )?;
         }
 
         Ok(())

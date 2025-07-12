@@ -93,6 +93,7 @@ impl<'source, 'interner> Lexer<'source, 'interner> {
             "import" => Token::ImportKeyword,
             "proc" => Token::ProcKeyword,
             "variant" => Token::VariantKeyword,
+            "return" => Token::ReturnKeyword,
             "" => unreachable!(),
             _ => Token::Identifier(self.interner.intern(lexeme)),
         };

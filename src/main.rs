@@ -1,8 +1,11 @@
 use std::{collections::HashMap, env, fs, io};
 
-use crate::{interner::Interner, lexer::Lexer, parser::Parser, resolver::Resolver};
+use crate::{
+    checker::Checker, interner::Interner, lexer::Lexer, parser::Parser, resolver::Resolver,
+};
 
 mod bound;
+mod checker;
 mod declaration;
 mod expression;
 mod interner;
@@ -13,6 +16,7 @@ mod reportable;
 mod resolver;
 mod statement;
 mod token;
+mod typ;
 
 fn main() -> io::Result<()> {
     let mut interner = Interner::new();
@@ -27,7 +31,7 @@ fn main() -> io::Result<()> {
 
         let module = match parser.module() {
             Ok(module) => {
-                println!("{source} - Parsing: OK");
+                println!("Parsing: OK - {source}");
                 module
             }
             Err(error) => {
@@ -42,7 +46,7 @@ fn main() -> io::Result<()> {
 
     let mut resolver = Resolver::new();
 
-    let _modules = match resolver.resolve(modules) {
+    let modules = match resolver.resolve(modules) {
         Ok(modules) => {
             println!("Name Resolution: OK");
             modules
@@ -56,6 +60,15 @@ fn main() -> io::Result<()> {
             return Ok(());
         }
     };
+
+    let mut checker = Checker::new();
+    match checker.type_check(&modules) {
+        Ok(()) => println!("Type Checking: OK"),
+        Err(error) => {
+            error.report(&source_contents[error.source()], "type checking", &interner);
+            return Ok(());
+        }
+    }
 
     Ok(())
 }
