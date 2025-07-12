@@ -10,11 +10,19 @@ variant Nat {
     };
 
     proc add(this, other: Nat) : Nat {
-        return this;
+        match this {
+            Succ { n; } : return n;
+            Zero        : return Nat::Zero;
+        };
     }
 }
 
 proc add(x : Nat, y : Nat) : Nat {
+    match x {
+        Succ { n; } : return n;
+        Zero        : return Nat::Zero;
+    };
+
     return Nat::Zero;
 }
 

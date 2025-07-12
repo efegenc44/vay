@@ -18,6 +18,7 @@ pub enum Token {
     ProcKeyword,
     VariantKeyword,
     ReturnKeyword,
+    MatchKeyword,
 }
 
 impl Token {
@@ -43,6 +44,7 @@ impl Token {
             Token::ProcKeyword => "keyword `proc`",
             Token::VariantKeyword => "keyword `variant`",
             Token::ReturnKeyword => "keyword `return`",
+            Token::MatchKeyword => "keyword `match`",
         }
     }
 }

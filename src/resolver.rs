@@ -7,7 +7,7 @@ use crate::{
     interner::{InternIdx, Interner},
     location::{Located, SourceLocation},
     reportable::{Reportable, ReportableResult},
-    statement::Statement,
+    statement::{MatchBranch, Pattern, Statement},
 };
 
 pub struct Resolver {
@@ -273,8 +273,36 @@ impl Resolver {
         match statement.data_mut() {
             Statement::Expression(expression) => self.expression(expression),
             Statement::Return(expression) => self.expression(expression),
+            Statement::Match { expression, branches } => self.matc(expression, branches),
         }
     }
+
+
+    fn matc(&mut self, expression: &mut Located<Expression>, branches: &mut [Located<MatchBranch>]) -> ReportableResult<()> {
+        self.expression(expression)?;
+        let locals_len = self.locals.len();
+
+        for branch in branches {
+            match branch.data().pattern.data() {
+                Pattern::VariantCase { name: _, fields } => {
+                    let fields = if let Some(fields) = fields {
+                        fields
+                    } else {
+                        &vec![]
+                    };
+
+                    let fields = fields.iter().map(|field| *field.data());
+                    self.locals.extend(fields);
+                },
+            }
+
+            self.statement(&mut branch.data_mut().statement)?;
+            self.locals.truncate(locals_len);
+        }
+
+        Ok(())
+    }
+
 
     fn declaration(&mut self, declaration: &mut Declaration) -> ReportableResult<()> {
         // TODO: maybe take Located<Declaration> for better error reporting

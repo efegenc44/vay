@@ -8,7 +8,7 @@ use crate::{
     lexer::Lexer,
     location::{Located, SourceLocation},
     reportable::{Reportable, ReportableResult},
-    statement::Statement,
+    statement::{MatchBranch, Pattern, Statement},
     token::Token,
 };
 
@@ -22,6 +22,8 @@ const DECLARATION_KEYWORDS: &[Token] = &[
     Token::VariantKeyword,
     Token::ImportKeyword,
 ];
+
+const PATTERN_TOKEN_STARTS: &[Token] = &[Token::dummy_identifier()];
 
 pub struct Parser<'source_content, 'interner> {
     tokens: Peekable<Lexer<'source_content, 'interner>>,
@@ -173,6 +175,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
 
         match token.data() {
             Token::ReturnKeyword => self.retrn(),
+            Token::MatchKeyword => self.matc(),
             _ => {
                 let Ok(expression) = self.expression() else {
                     return self.error(
@@ -189,6 +192,87 @@ impl<'source, 'interner> Parser<'source, 'interner> {
                 Ok(Located::new(statement, location))
             }
         }
+    }
+
+    fn matc(&mut self) -> ReportableResult<Located<Statement>> {
+        let start = self.expect(Token::MatchKeyword)?.location();
+        let expression = self.expression()?;
+
+        self.expect(Token::LeftCurly)?;
+        let mut branches = vec![];
+        let end = loop {
+            match self.terminator(Token::RightCurly)? {
+                Some(token) => break token.location(),
+                None => {
+                    branches.push(self.match_branch()?);
+                }
+            }
+        };
+
+        let location = start.extend(&end);
+        Ok(Located::new(Statement::Match { expression, branches }, location))
+    }
+
+    fn match_branch(&mut self) -> ReportableResult<Located<MatchBranch>> {
+        let pattern = self.pattern()?;
+        self.expect(Token::Colon)?;
+        let statement = self.statement()?;
+        self.expect(Token::Semicolon)?;
+
+        let location = pattern.location().extend(&statement.location());
+        Ok(Located::new(MatchBranch { pattern, statement }, location))
+    }
+
+    fn pattern(&mut self) -> ReportableResult<Located<Pattern>> {
+        let Some(token) = self.peek()? else {
+            return self.error(
+                ParseError::UnexpectedEOF {
+                    expected_ones: PATTERN_TOKEN_STARTS.to_vec(),
+                },
+                SourceLocation::dummy(),
+            );
+        };
+
+        match token.data() {
+            Token::Identifier(_) => self.varint_case_pattern(),
+            _ => self.error(
+                ParseError::UnexpectedToken {
+                    unexpected: *token.data(),
+                    expected_ones: PRIMARY_TOKEN_STARTS.to_vec(),
+                },
+                token.location(),
+            ),
+        }
+    }
+
+    fn varint_case_pattern(&mut self) -> ReportableResult<Located<Pattern>> {
+        let identifier = self.expect_identifier()?;
+
+        let (fields, location) = if let Some(Token::LeftCurly) = self.peek()?.map(|token| *token.data()) {
+            self.advance()?;
+            let mut fields = vec![];
+            let end = loop {
+                match self.terminator(Token::RightCurly)? {
+                    Some(token) => break token.location(),
+                    None => {
+                        fields.push(self.expect_identifier()?);
+                        self.expect(Token::Semicolon)?;
+                    }
+                }
+            };
+
+            (Some(fields), identifier.location().extend(&end))
+        } else {
+            (None, identifier.location())
+        };
+
+        Ok(Located::new(
+            Pattern::VariantCase {
+                name: identifier,
+                fields
+            },
+            location)
+        )
     }
 
     fn retrn(&mut self) -> ReportableResult<Located<Statement>> {
