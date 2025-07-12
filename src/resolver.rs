@@ -340,12 +340,13 @@ impl Resolver {
         }
 
         for method in methods {
-            // TODO : implicit (or explicit) `self` variable
+            self.locals.push(*method.this.data());
             self.procedure(
                 &mut method.arguments,
                 &mut method.return_type,
                 &mut method.body,
             )?;
+            self.locals.pop();
         }
 
         Ok(())

@@ -250,8 +250,6 @@ impl Checker {
     }
 
     fn variant_methods(&mut self, path: &Path, methods: &[Method]) -> ReportableResult<()> {
-        // TODO: implicit (or explicit) self
-
         for method in methods {
             let Type::Procedure {
                 arguments,
@@ -272,7 +270,11 @@ impl Checker {
                 );
             }
 
+            let variant_type = self.variants[&path].0.clone();
+
             let arguments_len = arguments.len();
+
+            self.locals.push(variant_type);
             self.locals.extend(arguments);
             for statement in &method.body {
                 if let Statement::Return(expression) = statement.data() {
@@ -283,6 +285,7 @@ impl Checker {
                 self.statement(statement)?;
             }
             self.locals.truncate(self.locals.len() - arguments_len);
+            self.locals.pop();
         }
 
         Ok(())

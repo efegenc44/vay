@@ -9,8 +9,8 @@ variant Nat {
         n: Nat;
     };
 
-    proc add(other: Nat) : Nat {
-        return Main::Nat::Zero;
+    proc add(this, other: Nat) : Nat {
+        return this;
     }
 }
 

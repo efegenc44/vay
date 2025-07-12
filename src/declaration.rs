@@ -27,6 +27,7 @@ pub enum Declaration {
 
 pub struct Method {
     pub name: Located<InternIdx>,
+    pub this: Located<InternIdx>,
     pub arguments: Vec<Located<TypedIdentifier>>,
     pub return_type: Located<TypeExpression>,
     pub body: Vec<Located<Statement>>,
@@ -35,12 +36,14 @@ pub struct Method {
 impl Method {
     pub fn new(
         name: Located<InternIdx>,
+        this: Located<InternIdx>,
         arguments: Vec<Located<TypedIdentifier>>,
         return_type: Located<TypeExpression>,
         body: Vec<Located<Statement>>,
     ) -> Self {
         Self {
             name,
+            this,
             arguments,
             return_type,
             body,

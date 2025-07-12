@@ -297,17 +297,18 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         self.expect(Token::ProcKeyword)?;
         let name = self.expect_identifier()?;
         self.expect(Token::LeftParenthesis)?;
+
+        // TODO: Better error message
+        let this = self.expect_identifier()?;
+
         let mut arguments = vec![];
-        let mut first = true;
         loop {
             match self.terminator(Token::RightParenthesis)? {
                 Some(_) => break,
                 None => {
-                    if first {
-                        first = false;
-                    } else {
-                        self.expect(Token::Comma)?;
-                    }
+                    // TODO: Maybe better error message when
+                    //   right after the first identifier
+                    self.expect(Token::Comma)?;
                     arguments.push(self.typed_identifier()?);
                 }
             }
@@ -328,7 +329,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             }
         }
 
-        Ok(Method::new(name, arguments, return_type, body))
+        Ok(Method::new(name, this, arguments, return_type, body))
     }
 
     fn variant(&mut self) -> ReportableResult<Declaration> {
