@@ -397,7 +397,7 @@ impl Resolver {
         for case in cases {
             if let Some(arguments) = case.data_mut().arguments_mut() {
                 for argument in arguments {
-                    self.type_expression(argument.data_mut().type_expression_mut())?;
+                    self.type_expression(argument)?;
                 }
             }
         }

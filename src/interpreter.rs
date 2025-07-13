@@ -88,16 +88,10 @@ impl Interpreter {
                 Declaration::Variant { cases, methods, path, .. } => {
                     for case in cases {
                         let value = match case.data().arguments() {
-                            Some(arguments) => {
-                                let arguments_in_order = arguments
-                                    .iter()
-                                    .map(|arg| *arg.data().indentifier().data())
-                                    .collect();
-
+                            Some(_arguments) => {
                                 Value::Constructor {
                                     name: *case.data().identifier().data(),
                                     type_path: path.clone(),
-                                    arguments_in_order
                                 }
                             },
                             None => {
@@ -165,9 +159,9 @@ impl Interpreter {
                 }
 
                 match fields {
-                    Some(fields) => {
-                        for field in fields {
-                            self.locals.push(values[field.data()].clone());
+                    Some(_) => {
+                        for value in values.iter() {
+                            self.locals.push(value.clone());
                         }
                     },
                     None => {
@@ -243,11 +237,11 @@ impl Interpreter {
 
                         return_value
                     },
-                    Value::Constructor { type_path, name, arguments_in_order } => {
-                        let mut values = HashMap::new();
-                        for (argument, argument_name) in arguments.iter().zip(arguments_in_order) {
+                    Value::Constructor { type_path, name } => {
+                        let mut values = vec![];
+                        for argument in arguments {
                             let argument = self.expression(argument);
-                            values.insert(argument_name, argument);
+                            values.push(argument);
                         }
 
                         Value::Instance {

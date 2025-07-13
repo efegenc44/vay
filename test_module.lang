@@ -3,8 +3,8 @@ module TestModule;
 import Main;
 
 variant Test {
-    Foo;
-    Bar;
+    Foo
+    Bar
 }
 
 proc main(x : Main::Nat) : Main::Nat {

@@ -17,7 +17,7 @@ pub struct Checker {
         Path,
         (
             Type,
-            HashMap<InternIdx, HashMap<InternIdx, Type>>,
+            HashMap<InternIdx, Vec<Type>>,
             // TODO: here we have only methods so maybe store only
             //   a procedure type instead of Type
             HashMap<InternIdx, Type>,
@@ -209,35 +209,20 @@ impl Checker {
         let variant_type = self.variants[&path].0.clone();
         for case in cases {
             if let Some(arguments) = case.data().arguments() {
-                let mut argument_types_vec = vec![];
-                let mut argument_types = HashMap::new();
+                let mut argument_types = vec![];
                 for argument in arguments {
-                    let argument_type =
-                        self.eval_type_expression(argument.data().type_expression())?;
-                    if argument_types
-                        .insert(*argument.data().indentifier().data(), argument_type.clone())
-                        .is_some()
-                    {
-                        return self.error(
-                            TypeCheckError::DuplicateConstructorFieldDeclaration {
-                                variant_path: path.clone(),
-                                constructor_name: *case.data().identifier().data(),
-                                field_name: *argument.data().indentifier().data(),
-                            },
-                            argument.location(),
-                        );
-                    }
-                    argument_types_vec.push(argument_type);
+                    let argument_type = self.eval_type_expression(argument)?;
+                    argument_types.push(argument_type);
                 }
                 self.variants
                     .get_mut(&path)
                     .unwrap()
                     .1
-                    .insert(*case.data().identifier().data(), argument_types);
+                    .insert(*case.data().identifier().data(), argument_types.clone());
                 self.names.insert(
                     case.data().path().clone(),
                     Type::Procedure {
-                        arguments: argument_types_vec,
+                        arguments: argument_types,
                         return_type: Box::new(variant_type.clone()),
                     },
                 );
@@ -248,7 +233,7 @@ impl Checker {
                     .get_mut(&path)
                     .unwrap()
                     .1
-                    .insert(*case.data().identifier().data(), HashMap::new());
+                    .insert(*case.data().identifier().data(), vec![]);
                 self.names
                     .insert(case.data().path().clone(), variant_type.clone());
             }
@@ -444,36 +429,19 @@ impl Checker {
 
                 let fields = fields.clone().unwrap_or(vec![]);
 
-                if case_fields.len() == fields.len() {
-                    for case_field in case_fields {
-                        if !fields.iter().any(|field| field.data() == case_field.0) {
-                            return self.error(
-                                TypeCheckError::WrongFieldNames {
-                                    type_path: path,
-                                    case_name: *name.data(),
-                                },
-                                pattern.location(),
-                            );
-                        }
-                    }
-                } else {
+                if case_fields.len() != fields.len() {
                     return self.error(
-                        TypeCheckError::WrongFieldNames {
+                        TypeCheckError::WrongCaseArity {
                             type_path: path,
                             case_name: *name.data(),
+                            expected: case_fields.len(),
+                            encountered: fields.len()
                         },
                         pattern.location(),
                     );
                 }
 
-                for field in fields {
-                    let Some((_, ty)) = case_fields
-                        .iter()
-                        .find(|case_field| case_field.0 == field.data())
-                    else {
-                        unreachable!();
-                    };
-
+                for ty in case_fields {
                     self.locals.push(ty.clone());
                 }
 
@@ -590,11 +558,6 @@ pub enum TypeCheckError {
         variant_path: Path,
         method_name: InternIdx,
     },
-    DuplicateConstructorFieldDeclaration {
-        variant_path: Path,
-        constructor_name: InternIdx,
-        field_name: InternIdx,
-    },
     ProcedureDoesNotReturn {
         procedure: Path,
         expceted: Type,
@@ -608,9 +571,11 @@ pub enum TypeCheckError {
         type_path: Path,
         case_name: InternIdx,
     },
-    WrongFieldNames {
+    WrongCaseArity {
         type_path: Path,
         case_name: InternIdx,
+        expected: usize,
+        encountered: usize,
     },
     NotAPatternOfType {
         expected: Type,
@@ -659,18 +624,6 @@ impl Reportable for (Located<TypeCheckError>, String) {
                     variant_path.as_string(interner)
                 )
             }
-            TypeCheckError::DuplicateConstructorFieldDeclaration {
-                variant_path,
-                constructor_name,
-                field_name,
-            } => {
-                format!(
-                    "Duplicate declaration of field `{}` in constructor `{}` of variant type `{}`.",
-                    interner.get(field_name),
-                    interner.get(constructor_name),
-                    variant_path.as_string(interner)
-                )
-            }
             TypeCheckError::ProcedureDoesNotReturn {
                 procedure,
                 expceted,
@@ -703,14 +656,18 @@ impl Reportable for (Located<TypeCheckError>, String) {
                     interner.get(case_name),
                 )
             }
-            TypeCheckError::WrongFieldNames {
+            TypeCheckError::WrongCaseArity {
                 type_path,
                 case_name,
+                expected,
+                encountered,
             } => {
                 format!(
-                    "Wrong field names for `{}` of variant `{}`.",
+                    "`{}` of variant `{}` takes `{}` values but supplied `{}` values.",
                     interner.get(case_name),
                     type_path.as_string(interner),
+                    expected,
+                    encountered
                 )
             }
             TypeCheckError::NotAPatternOfType { expected } => {

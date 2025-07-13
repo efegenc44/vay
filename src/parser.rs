@@ -302,15 +302,20 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         let identifier = self.expect_identifier()?;
 
         let (fields, location) =
-            if let Some(Token::LeftCurly) = self.peek()?.map(|token| *token.data()) {
+            if let Some(Token::LeftParenthesis) = self.peek()?.map(|token| *token.data()) {
                 self.advance()?;
                 let mut fields = vec![];
+                let mut first = true;
                 let end = loop {
-                    match self.terminator(Token::RightCurly)? {
+                    match self.terminator(Token::RightParenthesis)? {
                         Some(token) => break token.location(),
                         None => {
+                            if first {
+                                first = false;
+                            } else {
+                                self.expect(Token::Comma)?;
+                            }
                             fields.push(self.expect_identifier()?);
-                            self.expect(Token::Semicolon)?;
                         }
                     }
                 };
@@ -586,30 +591,28 @@ impl<'source, 'interner> Parser<'source, 'interner> {
 
     fn variant_case(&mut self) -> ReportableResult<Located<VariantCase>> {
         let identifier = self.expect_identifier()?;
-        let token = self.expect_one_of(&[Token::Semicolon, Token::LeftCurly])?;
-
-        let (arguments, location) = match token.data() {
-            Token::Semicolon => (None, token.location()),
-            Token::LeftCurly => {
-                let mut arguments = vec![];
-                let location = loop {
-                    match self.terminator(Token::RightCurly)? {
-                        Some(token) => {
-                            self.expect(Token::Semicolon)?;
-                            break token.location();
+        let (arguments, location) = if let Some(Token::LeftParenthesis) = self.peek()?.map(|token| *token.data()) {
+            self.advance()?;
+            let mut arguments = vec![];
+            let mut first = true;
+            let end = loop {
+                match self.terminator(Token::RightParenthesis)? {
+                    Some(token) => break token.location(),
+                    None => {
+                        if first {
+                            first = false;
+                        } else {
+                            self.expect(Token::Comma)?;
                         }
-                        None => {
-                            arguments.push(self.typed_identifier()?);
-                            self.expect(Token::Semicolon)?;
-                        }
+                        arguments.push(self.type_expression()?);
                     }
-                };
-                (Some(arguments), location)
-            }
-            _ => unreachable!(),
+                }
+            };
+            (Some(arguments), identifier.location().extend(&end))
+        } else {
+            (None, identifier.location())
         };
 
-        let location = identifier.location().extend(&location);
         let variant_case = VariantCase::new(identifier, arguments, Path::empty());
         Ok(Located::new(variant_case, location))
     }

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc};
+use std::rc::Rc;
 
 use crate::{bound::Path, interner::{InternIdx, Interner}, location::Located, statement::Statement};
 
@@ -14,12 +14,11 @@ pub enum Value {
     Constructor {
         type_path: Path,
         name: InternIdx,
-        arguments_in_order: Vec<InternIdx>,
     },
     Instance {
         type_path: Path,
         case: InternIdx,
-        values: Rc<HashMap<InternIdx, Value>>
+        values: Rc<Vec<Value>>
     },
     None
 }
@@ -35,11 +34,17 @@ impl Value {
                     return interner.get(case).into();
                 }
 
-                let mut string = format!("{} {{ ", interner.get(case));
-                for (field, value) in values.iter() {
-                    string.push_str(&format!("{} = {}; ", interner.get(field), value.as_string(interner)));
+                let mut string = format!("{}(", interner.get(case));
+                let mut first = true;
+                for value in values.iter() {
+                    if first {
+                        first = false;
+                    } else {
+                        string.push_str(", ");
+                    }
+                    string.push_str(&format!("{}", value.as_string(interner)));
                 }
-                string.push('}');
+                string.push(')');
                 string
             },
             Value::None => "None".into(),

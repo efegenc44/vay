@@ -53,14 +53,14 @@ impl Method {
 
 pub struct VariantCase {
     identifier: Located<InternIdx>,
-    arguments: Option<Vec<Located<TypedIdentifier>>>,
+    arguments: Option<Vec<Located<TypeExpression>>>,
     path: Path,
 }
 
 impl VariantCase {
     pub fn new(
         name: Located<InternIdx>,
-        arguments: Option<Vec<Located<TypedIdentifier>>>,
+        arguments: Option<Vec<Located<TypeExpression>>>,
         path: Path,
     ) -> Self {
         Self {
@@ -70,11 +70,11 @@ impl VariantCase {
         }
     }
 
-    pub fn arguments(&self) -> Option<&Vec<Located<TypedIdentifier>>> {
+    pub fn arguments(&self) -> Option<&Vec<Located<TypeExpression>>> {
         self.arguments.as_ref()
     }
 
-    pub fn arguments_mut(&mut self) -> &mut Option<Vec<Located<TypedIdentifier>>> {
+    pub fn arguments_mut(&mut self) -> &mut Option<Vec<Located<TypeExpression>>> {
         &mut self.arguments
     }
 

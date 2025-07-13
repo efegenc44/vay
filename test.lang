@@ -11,22 +11,20 @@ proc main() : Main::Nat {
 }
 
 variant Nat {
-    Zero;
-    Succ {
-        n: Nat;
-    };
+    Zero
+    Succ(Nat)
 
     proc add(this, that : Nat) : Nat {
         match that {
-            Zero        : return this;
-            Succ { n; } : return Nat::Succ(this.add(n));
+            Zero    : return this;
+            Succ(n) : return Nat::Succ(this.add(n));
         };
     }
 
     proc mul(this, that : Nat) : Nat {
         match that {
-            Zero        : return Nat::Zero;
-            Succ { n; } : return this.add(this.mul(n));
+            Zero    : return Nat::Zero;
+            Succ(n) : return this.add(this.mul(n));
         };
     }
 }
