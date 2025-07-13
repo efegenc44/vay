@@ -6,17 +6,17 @@ pub enum Statement {
     Match {
         expression: Located<Expression>,
         branches: Vec<Located<MatchBranch>>,
-    }
+    },
 }
 
 pub struct MatchBranch {
     pub pattern: Located<Pattern>,
-    pub statement: Located<Statement>
+    pub statement: Located<Statement>,
 }
 
 pub enum Pattern {
     VariantCase {
         name: Located<InternIdx>,
         fields: Option<Vec<Located<InternIdx>>>,
-    }
+    },
 }

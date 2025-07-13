@@ -196,6 +196,10 @@ impl Resolver {
         let location = expression.location();
         match expression.data_mut() {
             Expression::Path(parts, bound) => self.path(parts, bound, location)?,
+            Expression::Application {
+                function,
+                arguments,
+            } => self.application(function, arguments)?,
         }
 
         Ok(())
@@ -229,16 +233,28 @@ impl Resolver {
         Ok(())
     }
 
+    fn application(
+        &mut self,
+        function: &mut Located<Expression>,
+        arguments: &mut [Located<Expression>],
+    ) -> ReportableResult<()> {
+        self.expression(function)?;
+        for argument in arguments {
+            self.expression(argument)?;
+        }
+
+        Ok(())
+    }
+
     fn type_expression(
         &mut self,
         type_expression: &mut Located<TypeExpression>,
     ) -> ReportableResult<()> {
         let location = type_expression.location();
         match type_expression.data_mut() {
-            TypeExpression::Path(parts, bound) => self.type_path(parts, bound, location)?,
+            TypeExpression::Path(parts, bound) => self.type_path(parts, bound, location),
+            TypeExpression::Procedure { arguments, return_type } => self.type_procedure(arguments, return_type),
         }
-
-        Ok(())
     }
 
     fn type_path(
@@ -269,16 +285,35 @@ impl Resolver {
         Ok(())
     }
 
+
+    fn type_procedure(
+        &mut self,
+        arguments: &mut [Located<TypeExpression>],
+        return_type: &mut Located<TypeExpression>
+    ) -> ReportableResult<()> {
+        for argument in arguments {
+            self.type_expression(argument)?;
+        }
+
+        self.type_expression(return_type)
+    }
+
     fn statement(&mut self, statement: &mut Located<Statement>) -> ReportableResult<()> {
         match statement.data_mut() {
             Statement::Expression(expression) => self.expression(expression),
             Statement::Return(expression) => self.expression(expression),
-            Statement::Match { expression, branches } => self.matc(expression, branches),
+            Statement::Match {
+                expression,
+                branches,
+            } => self.matc(expression, branches),
         }
     }
 
-
-    fn matc(&mut self, expression: &mut Located<Expression>, branches: &mut [Located<MatchBranch>]) -> ReportableResult<()> {
+    fn matc(
+        &mut self,
+        expression: &mut Located<Expression>,
+        branches: &mut [Located<MatchBranch>],
+    ) -> ReportableResult<()> {
         self.expression(expression)?;
         let locals_len = self.locals.len();
 
@@ -293,7 +328,7 @@ impl Resolver {
 
                     let fields = fields.iter().map(|field| *field.data());
                     self.locals.extend(fields);
-                },
+                }
             }
 
             self.statement(&mut branch.data_mut().statement)?;
@@ -302,7 +337,6 @@ impl Resolver {
 
         Ok(())
     }
-
 
     fn declaration(&mut self, declaration: &mut Declaration) -> ReportableResult<()> {
         // TODO: maybe take Located<Declaration> for better error reporting

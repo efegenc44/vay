@@ -123,7 +123,42 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     }
 
     fn expression(&mut self) -> ReportableResult<Located<Expression>> {
-        self.primary()
+        self.application()
+    }
+
+    fn application(&mut self) -> ReportableResult<Located<Expression>> {
+        let mut expression = self.primary()?;
+        loop {
+            if let Some(Token::LeftParenthesis) = self.peek()?.map(|token| *token.data()) {
+                self.advance()?;
+                let mut arguments = vec![];
+                let mut first = true;
+                let end = loop {
+                    match self.terminator(Token::RightParenthesis)? {
+                        Some(token) => break token.location(),
+                        None => {
+                            if first {
+                                first = false;
+                            } else {
+                                self.expect(Token::Comma)?;
+                            }
+                            arguments.push(self.expression()?);
+                        }
+                    }
+                };
+
+                let location = expression.location().extend(&end);
+                let application = Expression::Application {
+                    function: Box::new(expression),
+                    arguments,
+                };
+                expression = Located::new(application, location);
+            } else {
+                break;
+            }
+        }
+
+        Ok(expression)
     }
 
     fn primary(&mut self) -> ReportableResult<Located<Expression>> {
@@ -210,7 +245,13 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         };
 
         let location = start.extend(&end);
-        Ok(Located::new(Statement::Match { expression, branches }, location))
+        Ok(Located::new(
+            Statement::Match {
+                expression,
+                branches,
+            },
+            location,
+        ))
     }
 
     fn match_branch(&mut self) -> ReportableResult<Located<MatchBranch>> {
@@ -248,31 +289,32 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     fn varint_case_pattern(&mut self) -> ReportableResult<Located<Pattern>> {
         let identifier = self.expect_identifier()?;
 
-        let (fields, location) = if let Some(Token::LeftCurly) = self.peek()?.map(|token| *token.data()) {
-            self.advance()?;
-            let mut fields = vec![];
-            let end = loop {
-                match self.terminator(Token::RightCurly)? {
-                    Some(token) => break token.location(),
-                    None => {
-                        fields.push(self.expect_identifier()?);
-                        self.expect(Token::Semicolon)?;
+        let (fields, location) =
+            if let Some(Token::LeftCurly) = self.peek()?.map(|token| *token.data()) {
+                self.advance()?;
+                let mut fields = vec![];
+                let end = loop {
+                    match self.terminator(Token::RightCurly)? {
+                        Some(token) => break token.location(),
+                        None => {
+                            fields.push(self.expect_identifier()?);
+                            self.expect(Token::Semicolon)?;
+                        }
                     }
-                }
-            };
+                };
 
-            (Some(fields), identifier.location().extend(&end))
-        } else {
-            (None, identifier.location())
-        };
+                (Some(fields), identifier.location().extend(&end))
+            } else {
+                (None, identifier.location())
+            };
 
         Ok(Located::new(
             Pattern::VariantCase {
                 name: identifier,
-                fields
+                fields,
             },
-            location)
-        )
+            location,
+        ))
     }
 
     fn retrn(&mut self) -> ReportableResult<Located<Statement>> {
@@ -459,6 +501,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
 
         match token.data() {
             Token::Identifier(_) => self.type_path(),
+            Token::ProcKeyword => self.type_procedure(),
             _ => self.error(
                 ParseError::UnexpectedToken {
                     unexpected: *token.data(),
@@ -484,6 +527,38 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         Ok(Located::new(
             type_expression,
             identifier.location().extend(&end),
+        ))
+    }
+
+    fn type_procedure(&mut self) -> ReportableResult<Located<TypeExpression>> {
+        let start = self.expect(Token::ProcKeyword)?.location();
+        self.expect(Token::LeftParenthesis)?;
+        let mut arguments = vec![];
+        let mut first = true;
+        loop {
+            match self.terminator(Token::RightParenthesis)? {
+                Some(_) => break,
+                None => {
+                    if first {
+                        first = false;
+                    } else {
+                        self.expect(Token::Comma)?;
+                    }
+                    arguments.push(self.type_expression()?);
+                }
+            }
+        }
+
+        self.expect(Token::Colon)?;
+        let return_type = self.type_expression()?;
+
+        let location = start.extend(&return_type.location());
+        Ok(Located::new(
+            TypeExpression::Procedure {
+                arguments,
+                return_type: Box::new(return_type)
+            },
+            location
         ))
     }
 

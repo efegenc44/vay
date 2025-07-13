@@ -47,6 +47,7 @@ impl Checker {
     ) -> ReportableResult<Type> {
         match type_expression.data() {
             TypeExpression::Path(_, bound) => self.eval_type_path(bound),
+            TypeExpression::Procedure { arguments, return_type } => self.eval_type_procedure(arguments, return_type),
         }
     }
 
@@ -56,6 +57,21 @@ impl Checker {
             Bound::Absolute(path) => Ok(self.variants[path].0.clone()),
             Bound::Undetermined => unreachable!(),
         }
+    }
+
+    fn eval_type_procedure(
+        &mut self,
+        arguments: &[Located<TypeExpression>],
+        return_type: &Located<TypeExpression>
+    ) -> ReportableResult<Type> {
+        let mut argument_types = vec![];
+        for argument in arguments {
+            argument_types.push(self.eval_type_expression(argument)?);
+        }
+
+        let return_type = Box::new(self.eval_type_expression(return_type)?);
+
+        Ok(Type::Procedure { arguments: argument_types, return_type })
     }
 
     pub fn type_check(&mut self, modules: &[Module]) -> ReportableResult<()> {
@@ -279,7 +295,7 @@ impl Checker {
                 );
             }
 
-            let variant_type = self.variants[&path].0.clone();
+            let variant_type = self.variants[path].0.clone();
 
             let arguments_len = arguments.len();
 
@@ -344,7 +360,10 @@ impl Checker {
         match statement.data() {
             Statement::Expression(_) => false,
             Statement::Return(_) => true,
-            Statement::Match { expression: _, branches } => {
+            Statement::Match {
+                expression: _,
+                branches,
+            } => {
                 let mut returns = true;
                 for branch in branches {
                     if !Self::returns(&branch.data().statement) {
@@ -352,41 +371,46 @@ impl Checker {
                     }
                 }
                 returns
-            },
+            }
         }
     }
 
     fn statement(&mut self, statement: &Located<Statement>) -> ReportableResult<()> {
         match statement.data() {
             Statement::Expression(expression) => {
-                self.infer(expression);
-            },
-            Statement::Match { expression, branches } => {
+                self.infer(expression)?;
+            }
+            Statement::Match {
+                expression,
+                branches,
+            } => {
                 self.matc(expression, branches)?;
-            },
+            }
             Statement::Return(expression) => {
                 if let Some(ty) = self.return_type.clone() {
                     self.check(expression, ty)?;
                 }
-            },
+            }
         };
 
         Ok(())
     }
 
-    fn matc(&mut self, expression: &Located<Expression>, branches: &[Located<MatchBranch>]) -> ReportableResult<()> {
+    fn matc(
+        &mut self,
+        expression: &Located<Expression>,
+        branches: &[Located<MatchBranch>],
+    ) -> ReportableResult<()> {
         // TODO: Exhaustiveness check
 
         let locals_len = self.locals.len();
-        let ty = self.infer(expression);
+        let ty = self.infer(expression)?;
         for branch in branches {
             if !self.type_pattern_match(ty.clone(), &branch.data().pattern)? {
                 self.locals.truncate(locals_len);
                 return self.error(
-                    TypeCheckError::NotAPatternOfType {
-                        expected: ty
-                    },
-                    branch.data().pattern.location()
+                    TypeCheckError::NotAPatternOfType { expected: ty },
+                    branch.data().pattern.location(),
                 );
             }
 
@@ -394,11 +418,14 @@ impl Checker {
             self.locals.truncate(locals_len);
         }
 
-
         Ok(())
     }
 
-    fn type_pattern_match(&mut self, ty: Type, pattern: &Located<Pattern>) -> ReportableResult<bool> {
+    fn type_pattern_match(
+        &mut self,
+        ty: Type,
+        pattern: &Located<Pattern>,
+    ) -> ReportableResult<bool> {
         match (ty, pattern.data()) {
             (Type::Variant(path), Pattern::VariantCase { name, fields }) => {
                 let cases = &self.variants[&path].1;
@@ -406,9 +433,9 @@ impl Checker {
                     return self.error(
                         TypeCheckError::CaseNotExist {
                             type_path: path,
-                            case_name: *name.data()
+                            case_name: *name.data(),
                         },
-                        name.location()
+                        name.location(),
                     );
                 }
 
@@ -418,13 +445,13 @@ impl Checker {
 
                 if case_fields.len() == fields.len() {
                     for case_field in case_fields {
-                        if fields.iter().find(|field| field.data() == case_field.0).is_none() {
+                        if !fields.iter().any(|field| field.data() == case_field.0) {
                             return self.error(
                                 TypeCheckError::WrongFieldNames {
                                     type_path: path,
-                                    case_name: *name.data()
+                                    case_name: *name.data(),
                                 },
-                                pattern.location()
+                                pattern.location(),
                             );
                         }
                     }
@@ -432,14 +459,17 @@ impl Checker {
                     return self.error(
                         TypeCheckError::WrongFieldNames {
                             type_path: path,
-                            case_name: *name.data()
+                            case_name: *name.data(),
                         },
-                        pattern.location()
+                        pattern.location(),
                     );
                 }
 
                 for field in fields {
-                    let Some((_, ty)) = case_fields.iter().find(|case_field| case_field.0 == field.data()) else {
+                    let Some((_, ty)) = case_fields
+                        .iter()
+                        .find(|case_field| case_field.0 == field.data())
+                    else {
                         unreachable!();
                     };
 
@@ -447,7 +477,7 @@ impl Checker {
                 }
 
                 Ok(true)
-            },
+            }
             (Type::Procedure { .. }, _) => Ok(false),
         }
     }
@@ -455,7 +485,20 @@ impl Checker {
     fn check(&mut self, expression: &Located<Expression>, expected: Type) -> ReportableResult<()> {
         match (expression.data(), &expected) {
             (Expression::Path(..), _) => {
-                let encountered = self.infer(expression);
+                let encountered = self.infer(expression)?;
+
+                if encountered != expected {
+                    return self.error(
+                        TypeCheckError::MismatchedTypes {
+                            encountered,
+                            expected,
+                        },
+                        expression.location(),
+                    );
+                }
+            }
+            (Expression::Application { .. }, _) => {
+                let encountered = self.infer(expression)?;
 
                 if encountered != expected {
                     return self.error(
@@ -472,15 +515,46 @@ impl Checker {
         Ok(())
     }
 
-    fn infer(&mut self, expression: &Located<Expression>) -> Type {
+    fn infer(&mut self, expression: &Located<Expression>) -> ReportableResult<Type> {
         match expression.data() {
             Expression::Path(_, bound) => match bound {
                 Bound::Local(bound_idx) => {
-                    self.locals[self.locals.len() - 1 - bound_idx.idx()].clone()
-                },
-                Bound::Absolute(path) => self.names[path].clone(),
+                    Ok(self.locals[self.locals.len() - 1 - bound_idx.idx()].clone())
+                }
+                Bound::Absolute(path) => Ok(self.names[path].clone()),
                 Bound::Undetermined => unreachable!(),
             },
+            Expression::Application {
+                function,
+                arguments,
+            } => {
+                let ty = self.infer(function)?;
+                let Type::Procedure {
+                    arguments: arguments_type,
+                    return_type,
+                } = ty
+                else {
+                    return self.error(
+                        TypeCheckError::ExpectedAProcedure { encountered: ty },
+                        function.location()
+                    );
+                };
+
+                if arguments.len() != arguments_type.len() {
+                    return self.error(
+                        TypeCheckError::ArityMismatch {
+                            expected: arguments_type.len(),
+                            encountered: arguments.len()
+                        },
+                        function.location()
+                    );                }
+
+                for (argument, ty) in arguments.iter().zip(arguments_type) {
+                    self.check(argument, ty)?;
+                }
+
+                Ok(*return_type.clone())
+            }
         }
     }
 
@@ -515,15 +589,22 @@ pub enum TypeCheckError {
     },
     CaseNotExist {
         type_path: Path,
-        case_name: InternIdx
+        case_name: InternIdx,
     },
     WrongFieldNames {
         type_path: Path,
-        case_name: InternIdx
+        case_name: InternIdx,
     },
     NotAPatternOfType {
-        expected: Type
-    }
+        expected: Type,
+    },
+    ExpectedAProcedure {
+        encountered: Type,
+    },
+    ArityMismatch {
+        expected: usize,
+        encountered: usize,
+    },
 }
 
 impl Reportable for (Located<TypeCheckError>, String) {
@@ -611,12 +692,15 @@ impl Reportable for (Located<TypeCheckError>, String) {
                     type_path.as_string(interner),
                 )
             }
-            TypeCheckError::NotAPatternOfType {
-                expected,
-            } => {
-                format!(
-                    "Pattern is not of type `{}`.",
-                    expected.display(interner),
+            TypeCheckError::NotAPatternOfType { expected } => {
+                format!("Pattern is not of type `{}`.", expected.display(interner),)
+            }
+            TypeCheckError::ExpectedAProcedure { encountered } => {
+                format!("A procedure is expected but encountered `{}`.", encountered.display(interner),)
+            }
+            TypeCheckError::ArityMismatch { encountered, expected } => {
+                format!("Procedure is of arity {} but supplied {} arguments.",
+                    expected, encountered
                 )
             }
         }

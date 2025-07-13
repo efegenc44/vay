@@ -26,6 +26,10 @@ proc add(x : Nat, y : Nat) : Nat {
     return Nat::Zero;
 }
 
-proc main(x : Nat) : TestModule::Test {
-    return TestModule::Test::Foo;
+proc test() : proc(Nat) : Nat {
+    return Nat::Succ;
+}
+
+proc main(x : Nat) : Main::Nat {
+    return test()(x);
 }
