@@ -371,7 +371,7 @@ impl Checker {
                     }
                 }
                 returns
-            }
+            },
         }
     }
 
@@ -387,10 +387,11 @@ impl Checker {
                 self.matc(expression, branches)?;
             }
             Statement::Return(expression) => {
-                if let Some(ty) = self.return_type.clone() {
-                    self.check(expression, ty)?;
-                }
-            }
+                let Some(ty) = self.return_type.clone() else {
+                    unreachable!();
+                };
+                self.check(expression, ty)?;
+            },
         };
 
         Ok(())

@@ -1,7 +1,7 @@
 use std::{collections::HashMap, env, fs, io};
 
 use crate::{
-    checker::Checker, interner::Interner, lexer::Lexer, parser::Parser, resolver::Resolver,
+    checker::Checker, interner::Interner, interpreter::Interpreter, lexer::Lexer, parser::Parser, resolver::Resolver
 };
 
 mod bound;
@@ -17,6 +17,8 @@ mod resolver;
 mod statement;
 mod token;
 mod typ;
+mod interpreter;
+mod value;
 
 fn main() -> io::Result<()> {
     let mut interner = Interner::new();
@@ -69,6 +71,9 @@ fn main() -> io::Result<()> {
             return Ok(());
         }
     }
+
+    let mut interpreter = Interpreter::new();
+    interpreter.evaluate_main(&modules, &interner);
 
     Ok(())
 }

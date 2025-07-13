@@ -91,6 +91,7 @@ impl VariantCase {
     }
 }
 
+#[derive(Clone)]
 pub struct TypedIdentifier {
     identifier: Located<InternIdx>,
     type_expression: Located<TypeExpression>,

@@ -3,33 +3,36 @@ module Main;
 import TestModule;
 import Main;
 
+proc main() : Main::Nat {
+    return foo(
+        Nat::Succ(Nat::Succ(Nat::Zero)),
+        Nat::Succ(Nat::Zero)
+    );
+}
+
 variant Nat {
     Zero;
     Succ {
         n: Nat;
     };
 
-    proc add(this, other: Nat) : Nat {
-        match this {
-            Succ { n; } : return n;
+    proc add(this, that : Nat) : Nat {
+        match that {
+            Zero        : return this;
+            Succ { n; } : return Nat::Succ(this.add(n));
+        };
+    }
+
+    proc mul(this, that : Nat) : Nat {
+        match that {
             Zero        : return Nat::Zero;
+            Succ { n; } : return this.add(this.mul(n));
         };
     }
 }
 
-proc add(x : Nat, y : Nat) : Nat {
-    match x {
-        Succ { n; } : return n;
-        Zero        : return Nat::Zero;
-    };
-
-    return Nat::Zero;
-}
-
-proc test(x: Nat) : proc(Nat) : Nat {
-    return x.add;
-}
-
-proc main(x : Nat) : Main::Nat {
-    return x.add(x);
+proc foo(x : Nat, y : Nat) : Nat {
+    return x
+        .add(y)
+        .mul(Nat::Succ(Nat::Succ(Nat::Succ(Nat::Zero))));
 }

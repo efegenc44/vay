@@ -1,5 +1,6 @@
 use crate::{bound::Bound, interner::InternIdx, location::Located};
 
+#[derive(Clone)]
 pub enum Expression {
     Path(Vec<InternIdx>, Bound),
     Application {
@@ -12,6 +13,7 @@ pub enum Expression {
     },
 }
 
+#[derive(Clone)]
 pub enum TypeExpression {
     Path(Vec<InternIdx>, Bound),
     Procedure {

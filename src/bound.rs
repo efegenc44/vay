@@ -1,5 +1,6 @@
 use crate::interner::{InternIdx, Interner};
 
+#[derive(Clone)]
 pub enum Bound {
     Undetermined,
     Local(BoundIdx),
@@ -16,6 +17,7 @@ impl Bound {
     }
 }
 
+#[derive(Clone)]
 pub struct BoundIdx(usize);
 
 impl BoundIdx {

@@ -79,6 +79,7 @@ impl Resolver {
                     }
                 }
                 Declaration::Import { name } => {
+                    // TODO: Check for duplicate module names
                     self.current_imports.insert(*name.data());
                 }
                 _ => (),
@@ -324,6 +325,7 @@ impl Resolver {
                     } else {
                         &vec![]
                     };
+
 
                     let fields = fields.iter().map(|field| *field.data());
                     self.locals.extend(fields);
