@@ -129,32 +129,44 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     fn application(&mut self) -> ReportableResult<Located<Expression>> {
         let mut expression = self.primary()?;
         loop {
-            if let Some(Token::LeftParenthesis) = self.peek()?.map(|token| *token.data()) {
-                self.advance()?;
-                let mut arguments = vec![];
-                let mut first = true;
-                let end = loop {
-                    match self.terminator(Token::RightParenthesis)? {
-                        Some(token) => break token.location(),
-                        None => {
-                            if first {
-                                first = false;
-                            } else {
-                                self.expect(Token::Comma)?;
+            match self.peek()?.map(|token| *token.data()) {
+                Some(Token::LeftParenthesis) => {
+                    self.advance()?;
+                    let mut arguments = vec![];
+                    let mut first = true;
+                    let end = loop {
+                        match self.terminator(Token::RightParenthesis)? {
+                            Some(token) => break token.location(),
+                            None => {
+                                if first {
+                                    first = false;
+                                } else {
+                                    self.expect(Token::Comma)?;
+                                }
+                                arguments.push(self.expression()?);
                             }
-                            arguments.push(self.expression()?);
                         }
-                    }
-                };
+                    };
 
-                let location = expression.location().extend(&end);
-                let application = Expression::Application {
-                    function: Box::new(expression),
-                    arguments,
-                };
-                expression = Located::new(application, location);
-            } else {
-                break;
+                    let location = expression.location().extend(&end);
+                    let application = Expression::Application {
+                        function: Box::new(expression),
+                        arguments,
+                    };
+                    expression = Located::new(application, location);
+                }
+                Some(Token::Dot) => {
+                    self.advance()?;
+                    let name = self.expect_identifier()?;
+
+                    let location = expression.location().extend(&name.location());
+                    let projection = Expression::Projection {
+                        expression: Box::new(expression),
+                        name
+                    };
+                    expression = Located::new(projection, location)
+                }
+                _ => break,
             }
         }
 

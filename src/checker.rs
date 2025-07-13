@@ -483,33 +483,20 @@ impl Checker {
     }
 
     fn check(&mut self, expression: &Located<Expression>, expected: Type) -> ReportableResult<()> {
-        match (expression.data(), &expected) {
-            (Expression::Path(..), _) => {
-                let encountered = self.infer(expression)?;
+        let encountered = match expression.data() {
+            Expression::Path(..) |
+            Expression::Application { .. } |
+            Expression::Projection { .. } => self.infer(expression)?
+        };
 
-                if encountered != expected {
-                    return self.error(
-                        TypeCheckError::MismatchedTypes {
-                            encountered,
-                            expected,
-                        },
-                        expression.location(),
-                    );
-                }
-            }
-            (Expression::Application { .. }, _) => {
-                let encountered = self.infer(expression)?;
-
-                if encountered != expected {
-                    return self.error(
-                        TypeCheckError::MismatchedTypes {
-                            encountered,
-                            expected,
-                        },
-                        expression.location(),
-                    );
-                }
-            }
+        if encountered != expected {
+            return self.error(
+                TypeCheckError::MismatchedTypes {
+                    encountered,
+                    expected,
+                },
+                expression.location(),
+            );
         }
 
         Ok(())
@@ -554,6 +541,35 @@ impl Checker {
                 }
 
                 Ok(*return_type.clone())
+            }
+            Expression::Projection { expression, name } => {
+                let ty = self.infer(expression)?;
+
+                let Type::Variant(path) = &ty else {
+                    return self.error(
+                        TypeCheckError::HasNoMethod {
+                            ty,
+                            name: *name.data()
+                        },
+                        name.location()
+                    );
+                };
+
+                let Some(method_ty) = self.variants[&path].2.get(name.data()) else {
+                    return self.error(
+                        TypeCheckError::HasNoMethod {
+                            ty,
+                            name: *name.data()
+                        },
+                        name.location()
+                    );
+                };
+
+                let encountered @ Type::Procedure { .. } = method_ty.clone() else {
+                    unreachable!();
+                };
+
+                Ok(encountered)
             }
         }
     }
@@ -604,6 +620,10 @@ pub enum TypeCheckError {
     ArityMismatch {
         expected: usize,
         encountered: usize,
+    },
+    HasNoMethod {
+        ty: Type,
+        name: InternIdx,
     },
 }
 
@@ -701,6 +721,11 @@ impl Reportable for (Located<TypeCheckError>, String) {
             TypeCheckError::ArityMismatch { encountered, expected } => {
                 format!("Procedure is of arity {} but supplied {} arguments.",
                     expected, encountered
+                )
+            }
+            TypeCheckError::HasNoMethod { ty, name } => {
+                format!("`{}` has no method named `{}`.",
+                    ty.display(interner), interner.get(name)
                 )
             }
         }

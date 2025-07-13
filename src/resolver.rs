@@ -195,14 +195,13 @@ impl Resolver {
     fn expression(&mut self, expression: &mut Located<Expression>) -> ReportableResult<()> {
         let location = expression.location();
         match expression.data_mut() {
-            Expression::Path(parts, bound) => self.path(parts, bound, location)?,
+            Expression::Path(parts, bound) => self.path(parts, bound, location),
             Expression::Application {
                 function,
                 arguments,
-            } => self.application(function, arguments)?,
+            } => self.application(function, arguments),
+            Expression::Projection { expression, name: _ } => self.expression(expression),
         }
-
-        Ok(())
     }
 
     fn path(

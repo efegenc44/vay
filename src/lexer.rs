@@ -10,7 +10,7 @@ use crate::{
     token::Token,
 };
 
-const PUNCTUATION_CHARS: &[char] = &[';', ':', ',', '(', ')', '{', '}'];
+const PUNCTUATION_CHARS: &[char] = &[';', ':', ',', '(', ')', '{', '}', '.'];
 
 macro_rules! locate {
     ($self:expr, $block:block) => {{
@@ -119,6 +119,7 @@ impl<'source, 'interner> Lexer<'source, 'interner> {
                 ')' => Token::RightParenthesis,
                 '{' => Token::LeftCurly,
                 '}' => Token::RightCurly,
+                '.' => Token::Dot,
                 _ => unreachable!(),
             };
         });

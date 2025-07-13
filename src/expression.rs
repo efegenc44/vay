@@ -6,6 +6,10 @@ pub enum Expression {
         function: Box<Located<Expression>>,
         arguments: Vec<Located<Expression>>,
     },
+    Projection {
+        expression: Box<Located<Expression>>,
+        name: Located<InternIdx>
+    },
 }
 
 pub enum TypeExpression {

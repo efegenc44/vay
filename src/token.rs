@@ -12,6 +12,7 @@ pub enum Token {
     RightParenthesis,
     LeftCurly,
     RightCurly,
+    Dot,
 
     ModuleKeyword,
     ImportKeyword,
@@ -38,6 +39,7 @@ impl Token {
             Token::RightParenthesis => "`)`",
             Token::LeftCurly => "`{`",
             Token::RightCurly => "`}`",
+            Token::Dot => "`.`",
 
             Token::ModuleKeyword => "keyword `module`",
             Token::ImportKeyword => "keyword `import`",

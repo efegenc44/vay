@@ -26,10 +26,10 @@ proc add(x : Nat, y : Nat) : Nat {
     return Nat::Zero;
 }
 
-proc test() : proc(Nat) : Nat {
-    return Nat::Succ;
+proc test(x: Nat) : proc(Nat) : Nat {
+    return x.add;
 }
 
 proc main(x : Nat) : Main::Nat {
-    return test()(x);
+    return x.add(x);
 }
