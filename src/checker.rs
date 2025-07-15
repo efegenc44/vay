@@ -2,30 +2,36 @@ use std::collections::HashMap;
 
 use crate::{
     bound::{Bound, Path},
-    declaration::{Declaration, Module, ProcedureDeclaration, VariantDeclaration},
+    declaration::{Declaration, MethodDeclaration, Module, ProcedureDeclaration, VariantDeclaration},
     expression::{
-        Expression, ApplicationExpression, PathExpression, PathTypeExpression,
-        ProcedureTypeExpression, ProjectionExpression, TypeExpression
+        ApplicationExpression, Expression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, TypeExpression
     },
     interner::{InternIdx, Interner},
     location::{Located, SourceLocation},
     reportable::{Reportable, ReportableResult},
     statement::{MatchStatement, Pattern, ReturnStatement, Statement, VariantCasePattern},
-    typ::Type,
+    typ::{ProcedureType, Type},
 };
+
+struct VariantData {
+    ty: Type,
+    cases: HashMap<InternIdx, Vec<Type>>,
+    methods: HashMap<InternIdx, ProcedureType>,
+}
+
+impl VariantData {
+    fn with_type(ty: Type) -> Self {
+        Self {
+            ty,
+            cases: HashMap::new(),
+            methods: HashMap::new()
+        }
+    }
+}
 
 pub struct Checker {
     names: HashMap<Path, Type>,
-    variants: HashMap<
-        Path,
-        (
-            Type,
-            HashMap<InternIdx, Vec<Type>>,
-            // TODO: here we have only methods so maybe store only
-            //   a procedure type instead of Type
-            HashMap<InternIdx, Type>,
-        ),
-    >,
+    variants: HashMap<Path, VariantData>,
 
     locals: Vec<Type>,
     return_type: Option<Type>,
@@ -44,10 +50,7 @@ impl Checker {
         }
     }
 
-    fn eval_type_expression(
-        &mut self,
-        type_expression: &Located<TypeExpression>,
-    ) -> ReportableResult<Type> {
+    fn eval_type_expression(&mut self, type_expression: &Located<TypeExpression>) -> ReportableResult<Type> {
         match type_expression.data() {
             TypeExpression::Path(type_path) => self.eval_path_type(type_path),
             TypeExpression::Procedure(procedure_type) => self.eval_procedure_type(procedure_type),
@@ -59,7 +62,7 @@ impl Checker {
 
         match bound {
             Bound::Local(_) => todo!("Type variables."),
-            Bound::Absolute(path) => Ok(self.variants[path].0.clone()),
+            Bound::Absolute(path) => Ok(self.variants[path].ty.clone()),
             Bound::Undetermined => unreachable!(),
         }
     }
@@ -74,7 +77,8 @@ impl Checker {
 
         let return_type = Box::new(self.eval_type_expression(return_type)?);
 
-        Ok(Type::Procedure { arguments: argument_types, return_type })
+        let procedure_type = ProcedureType { arguments: argument_types, return_type };
+        Ok(Type::Procedure(procedure_type))
     }
 
     pub fn type_check(&mut self, modules: &[Module]) -> ReportableResult<()> {
@@ -137,14 +141,12 @@ impl Checker {
             argument_types.push(self.eval_type_expression(argument.data().type_expression())?);
         }
 
-        let return_type = self.eval_type_expression(return_type)?;
+        let return_type = Box::new(self.eval_type_expression(return_type)?);
 
+        let procedure_type = ProcedureType { arguments: argument_types, return_type };
         self.names.insert(
             path.clone(),
-            Type::Procedure {
-                arguments: argument_types,
-                return_type: Box::new(return_type),
-            },
+            Type::Procedure(procedure_type),
         );
 
         Ok(())
@@ -154,8 +156,8 @@ impl Checker {
         let VariantDeclaration { path, .. } = variant;
 
         let variant_type = Type::Variant(path.clone());
-        let variant = (variant_type, HashMap::new(), HashMap::new());
-        self.variants.insert(path.clone(), variant);
+        let variant_data = VariantData::with_type(variant_type);
+        self.variants.insert(path.clone(), variant_data);
 
         Ok(())
     }
@@ -164,64 +166,64 @@ impl Checker {
         let VariantDeclaration { cases, methods, path, .. } = variant;
 
         for method in methods {
+            let MethodDeclaration { name, arguments, return_type, .. } = method;
+
             let mut argument_types = vec![];
-            for argument in &method.arguments {
+            for argument in arguments {
                 argument_types.push(self.eval_type_expression(argument.data().type_expression())?);
             }
 
-            let return_type = self.eval_type_expression(&method.return_type)?;
-            let method_type = Type::Procedure {
-                arguments: argument_types,
-                return_type: Box::new(return_type),
-            };
-            if self
-                .variants
+            let return_type = Box::new(self.eval_type_expression(return_type)?);
+            let procedure_type = ProcedureType { arguments: argument_types, return_type };
+            if self.variants
                 .get_mut(path)
                 .unwrap()
-                .2
-                .insert(*method.name.data(), method_type)
+                .methods
+                .insert(*name.data(), procedure_type)
                 .is_some()
             {
                 return self.error(
                     TypeCheckError::DuplicateMethodDeclaration {
                         variant_path: path.clone(),
-                        method_name: *method.name.data(),
+                        method_name: *name.data(),
                     },
                     method.name.location(),
                 );
             };
         }
 
-        let variant_type = self.variants[path].0.clone();
+        let variant_type = self.variants[path].ty.clone();
         for case in cases {
+            let case_name = *case.data().identifier().data();
+            let case_path = case.data().path().clone();
+
             if let Some(arguments) = case.data().arguments() {
                 let mut argument_types = vec![];
                 for argument in arguments {
                     let argument_type = self.eval_type_expression(argument)?;
                     argument_types.push(argument_type);
                 }
+
                 self.variants
                     .get_mut(path)
                     .unwrap()
-                    .1
-                    .insert(*case.data().identifier().data(), argument_types.clone());
-                self.names.insert(
-                    case.data().path().clone(),
-                    Type::Procedure {
-                        arguments: argument_types,
-                        return_type: Box::new(variant_type.clone()),
-                    },
-                );
+                    .cases
+                    .insert(case_name, argument_types.clone());
+
+                let procedure_type = ProcedureType {
+                    arguments: argument_types,
+                    return_type: Box::new(variant_type.clone())
+                };
+                self.names.insert(case_path, Type::Procedure(procedure_type));
             } else {
-                self.names
-                    .insert(case.data().path().clone(), variant_type.clone());
                 self.variants
                     .get_mut(path)
                     .unwrap()
-                    .1
-                    .insert(*case.data().identifier().data(), vec![]);
+                    .cases
+                    .insert(case_name, vec![]);
+
                 self.names
-                    .insert(case.data().path().clone(), variant_type.clone());
+                    .insert(case_path, variant_type.clone());
             }
         }
 
@@ -240,22 +242,11 @@ impl Checker {
         let VariantDeclaration { methods, path, .. } = variant;
 
         for method in methods {
-            let Type::Procedure {
-                arguments,
-                return_type,
-            } = self.variants[path].2[method.name.data()].clone()
-            else {
-                unreachable!();
-            };
+            let MethodDeclaration { name, body, .. } = method;
 
-            let mut returns = false;
-            for statement in &method.body {
-                if Self::returns(statement) {
-                    returns = true;
-                }
-            }
+            let ProcedureType { arguments, return_type } = self.variants[path].methods[name.data()].clone();
 
-            if !returns {
+            if !body.iter().all(|statement| statement.data().returns()) {
                 return self.error(
                     TypeCheckError::MethodDoesNotReturn {
                         type_path: path.clone(),
@@ -266,16 +257,16 @@ impl Checker {
                 );
             }
 
-            let variant_type = self.variants[path].0.clone();
+            let variant_type = self.variants[path].ty.clone();
 
             let arguments_len = arguments.len();
 
             self.locals.push(variant_type);
             self.locals.extend(arguments);
             self.return_type = Some(*return_type.clone());
-            for statement in &method.body {
-                self.statement(statement)?;
-            }
+                for statement in body {
+                    self.statement(statement)?;
+                }
             self.return_type = None;
             self.locals.truncate(self.locals.len() - arguments_len);
             self.locals.pop();
@@ -287,22 +278,12 @@ impl Checker {
     fn procedure(&mut self, procedure: &ProcedureDeclaration) -> ReportableResult<()> {
         let ProcedureDeclaration { name, body, path, .. } = procedure;
 
-        let Type::Procedure {
-            arguments,
-            return_type,
-        } = self.names[path].clone()
-        else {
+        let Type::Procedure(procedure) = self.names[path].clone() else {
             unreachable!();
         };
+        let ProcedureType { arguments, return_type } = procedure;
 
-        let mut returns = false;
-        for statement in body {
-            if Self::returns(statement) {
-                returns = true;
-            }
-        }
-
-        if !returns {
+        if !body.iter().all(|statement| statement.data().returns()) {
             return self.error(
                 TypeCheckError::ProcedureDoesNotReturn {
                     procedure: path.clone(),
@@ -315,29 +296,13 @@ impl Checker {
         let arguments_len = arguments.len();
         self.locals.extend(arguments);
         self.return_type = Some(*return_type.clone());
-        for statement in body {
-            self.statement(statement)?;
-        }
+            for statement in body {
+                self.statement(statement)?;
+            }
         self.return_type = None;
         self.locals.truncate(self.locals.len() - arguments_len);
 
         Ok(())
-    }
-
-    fn returns(statement: &Located<Statement>) -> bool {
-        match statement.data() {
-            Statement::Expression(_) => false,
-            Statement::Return(_) => true,
-            Statement::Match(matc) => {
-                let mut returns = true;
-                for branch in &matc.branches {
-                    if !Self::returns(branch.data().statement()) {
-                        returns = false;
-                    }
-                }
-                returns
-            },
-        }
     }
 
     fn statement(&mut self, statement: &Located<Statement>) -> ReportableResult<()> {
@@ -379,16 +344,12 @@ impl Checker {
         Ok(())
     }
 
-    fn type_pattern_match(
-        &mut self,
-        ty: Type,
-        pattern: &Located<Pattern>,
-    ) -> ReportableResult<bool> {
+    fn type_pattern_match(&mut self, ty: Type, pattern: &Located<Pattern>) -> ReportableResult<bool> {
         match (ty, pattern.data()) {
             (Type::Variant(path), Pattern::VariantCase(variant_case)) => {
                 let VariantCasePattern { name, fields } = variant_case;
 
-                let cases = &self.variants[&path].1;
+                let cases = &self.variants[&path].cases;
                 if !cases.contains_key(name.data()) {
                     return self.error(
                         TypeCheckError::CaseNotExist {
@@ -399,17 +360,17 @@ impl Checker {
                     );
                 }
 
-                let case_fields = &self.variants[&path].1[name.data()];
+                let case_fields = &cases[name.data()];
 
-                let fields = fields.clone().unwrap_or(vec![]);
+                let fields_len = fields.as_ref().map(|fields| fields.len()).unwrap_or(0);
 
-                if case_fields.len() != fields.len() {
+                if case_fields.len() != fields_len {
                     return self.error(
                         TypeCheckError::WrongCaseArity {
                             type_path: path,
                             case_name: *name.data(),
                             expected: case_fields.len(),
-                            encountered: fields.len()
+                            encountered: fields_len
                         },
                         pattern.location(),
                     );
@@ -458,7 +419,8 @@ impl Checker {
 
         match bound {
             Bound::Local(bound_idx) => {
-                Ok(self.locals[self.locals.len() - 1 - bound_idx.idx()].clone())
+                let index = self.locals.len() - 1 - bound_idx.idx();
+                Ok(self.locals[index].clone())
             }
             Bound::Absolute(path) => Ok(self.names[path].clone()),
             Bound::Undetermined => unreachable!(),
@@ -469,16 +431,13 @@ impl Checker {
         let ApplicationExpression { function, arguments } = application;
 
         let ty = self.infer(function)?;
-        let Type::Procedure {
-            arguments: arguments_type,
-            return_type,
-        } = ty
-        else {
+        let Type::Procedure(procedure) = ty else {
             return self.error(
                 TypeCheckError::ExpectedAProcedure { encountered: ty },
                 function.location()
             );
         };
+        let ProcedureType { arguments: arguments_type, return_type } = procedure;
 
         if arguments.len() != arguments_type.len() {
             return self.error(
@@ -487,7 +446,8 @@ impl Checker {
                     encountered: arguments.len()
                 },
                 function.location()
-            );                }
+            );
+        }
 
         for (argument, ty) in arguments.iter().zip(arguments_type) {
             self.check(argument, ty)?;
@@ -511,7 +471,7 @@ impl Checker {
             );
         };
 
-        let Some(method_ty) = self.variants[path].2.get(name.data()) else {
+        let Some(method_ty) = self.variants[path].methods.get(name.data()) else {
             return self.error(
                 TypeCheckError::HasNoMethod {
                     ty,
@@ -521,11 +481,7 @@ impl Checker {
             );
         };
 
-        let encountered @ Type::Procedure { .. } = method_ty.clone() else {
-            unreachable!();
-        };
-
-        Ok(encountered)
+        Ok(Type::Procedure(method_ty.clone()))
     }
 
     fn error<T>(&self, error: TypeCheckError, location: SourceLocation) -> ReportableResult<T> {

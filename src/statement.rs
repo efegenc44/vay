@@ -7,6 +7,24 @@ pub enum Statement {
     Match(MatchStatement),
 }
 
+impl Statement {
+    pub fn returns(&self) -> bool {
+        match self {
+            Statement::Expression(_) => false,
+            Statement::Return(_) => true,
+            Statement::Match(matc) => {
+                let mut returns = true;
+                for branch in &matc.branches {
+                    if !branch.data().statement().data().returns() {
+                        returns = false;
+                    }
+                }
+                returns
+            },
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct ReturnStatement {
     pub expression: Located<Expression>

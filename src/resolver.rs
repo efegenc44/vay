@@ -87,12 +87,10 @@ impl Resolver {
                         return self.error(ResolveError::DuplicateModuleDeclaration, name.location());
                     }
                 }
-            } else {
-                if let Declaration::Import(import) = declaration {
-                    let ImportDeclaration { name } = import;
+            } else if let Declaration::Import(import) = declaration {
+                let ImportDeclaration { name } = import;
 
-                    self.current_imports.insert(*name.data());
-                }
+                self.current_imports.insert(*name.data());
             }
         }
 

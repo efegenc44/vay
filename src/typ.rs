@@ -3,20 +3,22 @@ use crate::{bound::Path, interner::Interner};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Variant(Path),
-    Procedure {
-        arguments: Vec<Type>,
-        return_type: Box<Type>,
-    },
+    Procedure(ProcedureType)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcedureType {
+    pub arguments: Vec<Type>,
+    pub return_type: Box<Type>,
 }
 
 impl Type {
     pub fn display(&self, interner: &Interner) -> String {
         match self {
             Type::Variant(path) => path.as_string(interner),
-            Type::Procedure {
-                arguments,
-                return_type,
-            } => {
+            Type::Procedure(procedure) => {
+                let ProcedureType { arguments, return_type } = procedure;
+
                 let mut type_string = String::from("proc(");
                 match &arguments[..] {
                     [] => type_string.push(')'),
