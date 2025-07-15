@@ -6,12 +6,12 @@ use crate::{
         Declaration, ImportDeclaration, MethodDeclaration, Module, ModuleDeclaration,
         ProcedureDeclaration, TypedIdentifier, VariantCase, VariantDeclaration,
     },
-    expression::{Expression, TypeExpression},
+    expression::{ApplicationExpression, Expression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, TypeExpression},
     interner::{InternIdx, Interner},
     lexer::Lexer,
     location::{Located, SourceLocation},
     reportable::{Reportable, ReportableResult},
-    statement::{MatchBranch, Pattern, Statement},
+    statement::{MatchBranch, MatchStatement, Pattern, ReturnStatement, Statement, VariantCasePattern},
     token::Token,
 };
 
@@ -156,22 +156,22 @@ impl<'source, 'interner> Parser<'source, 'interner> {
                     };
 
                     let location = expression.location().extend(&end);
-                    let application = Expression::Application {
+                    let application = ApplicationExpression {
                         function: Box::new(expression),
                         arguments,
                     };
-                    expression = Located::new(application, location);
+                    expression = Located::new(Expression::Application(application), location);
                 }
                 Some(Token::Dot) => {
                     self.advance()?;
                     let name = self.expect_identifier()?;
 
                     let location = expression.location().extend(&name.location());
-                    let projection = Expression::Projection {
+                    let projection = ProjectionExpression {
                         expression: Box::new(expression),
                         name,
                     };
-                    expression = Located::new(projection, location)
+                    expression = Located::new(Expression::Projection(projection), location)
                 }
                 _ => break,
             }
@@ -204,16 +204,17 @@ impl<'source, 'interner> Parser<'source, 'interner> {
 
     fn path(&mut self) -> ReportableResult<Located<Expression>> {
         let identifier = self.expect_identifier()?;
-        let mut path = vec![*identifier.data()];
+        let mut parts = vec![*identifier.data()];
         let mut end = identifier.location();
         while let Some(Token::DoubleColon) = self.peek()?.map(|token| *token.data()) {
             self.advance()?;
             let identifier = self.expect_identifier()?;
-            path.push(*identifier.data());
+            parts.push(*identifier.data());
             end = identifier.location();
         }
 
-        let expression = Expression::Path(path, Bound::Undetermined);
+        let path = PathExpression { parts, bound: Bound::Undetermined };
+        let expression = Expression::Path(path);
         Ok(Located::new(expression, identifier.location().extend(&end)))
     }
 
@@ -228,7 +229,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         };
 
         match token.data() {
-            Token::ReturnKeyword => self.retrn(),
+            Token::ReturnKeyword => self.return_statement(),
             Token::MatchKeyword => self.matc(),
             _ => {
                 let Ok(expression) = self.expression() else {
@@ -264,11 +265,13 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         };
 
         let location = start.extend(&end);
+        let matc = MatchStatement {
+            expression,
+            branches
+        };
+
         Ok(Located::new(
-            Statement::Match {
-                expression,
-                branches,
-            },
+            Statement::Match(matc),
             location,
         ))
     }
@@ -305,7 +308,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     }
 
     fn varint_case_pattern(&mut self) -> ReportableResult<Located<Pattern>> {
-        let identifier = self.expect_identifier()?;
+        let name = self.expect_identifier()?;
 
         let (fields, location) =
             if let Some(Token::LeftParenthesis) = self.peek()?.map(|token| *token.data()) {
@@ -326,26 +329,25 @@ impl<'source, 'interner> Parser<'source, 'interner> {
                     }
                 };
 
-                (Some(fields), identifier.location().extend(&end))
+                (Some(fields), name.location().extend(&end))
             } else {
-                (None, identifier.location())
+                (None, name.location())
             };
 
-        Ok(Located::new(
-            Pattern::VariantCase {
-                name: identifier,
-                fields,
-            },
-            location,
-        ))
+        let variant_case = VariantCasePattern {
+            name,
+            fields,
+        };
+        Ok(Located::new(Pattern::VariantCase(variant_case), location))
     }
 
-    fn retrn(&mut self) -> ReportableResult<Located<Statement>> {
+    fn return_statement(&mut self) -> ReportableResult<Located<Statement>> {
         let token = self.expect(Token::ReturnKeyword)?;
         let expression = self.expression()?;
 
         let location = token.location().extend(&expression.location());
-        Ok(Located::new(Statement::Return(expression), location))
+        let retrn = ReturnStatement { expression };
+        Ok(Located::new(Statement::Return(retrn), location))
     }
 
     fn declaration(&mut self) -> ReportableResult<Declaration> {
@@ -358,13 +360,13 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             );
         };
 
-        let declaration = match token.data() {
-            Token::ModuleKeyword => Declaration::Module(self.module_declaration()?),
-            Token::ImportKeyword => Declaration::Import(self.import_declaration()?),
-            Token::ProcKeyword => Declaration::Procedure(self.procedure_declaration()?),
-            Token::VariantKeyword => Declaration::Variant(self.variant_declaration()?),
+        match token.data() {
+            Token::ModuleKeyword => self.modul(),
+            Token::ImportKeyword => self.import(),
+            Token::ProcKeyword => self.procedure(),
+            Token::VariantKeyword => self.variant(),
             _ => {
-                return self.error(
+                self.error(
                     ParseError::UnexpectedToken {
                         unexpected: *token.data(),
                         expected_ones: DECLARATION_KEYWORDS.to_vec(),
@@ -372,9 +374,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
                     token.location(),
                 )
             }
-        };
-
-        Ok(declaration)
+        }
     }
 
     pub fn module(&mut self) -> ReportableResult<Module> {
@@ -385,21 +385,23 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         Ok(Module::new(declarations, self.source.clone()))
     }
 
-    fn module_declaration(&mut self) -> ReportableResult<ModuleDeclaration> {
+    fn modul(&mut self) -> ReportableResult<Declaration> {
         self.expect(Token::ModuleKeyword)?;
         let name = self.expect_identifier()?;
 
-        Ok(ModuleDeclaration { name })
+        let module = ModuleDeclaration { name };
+        Ok(Declaration::Module(module))
     }
 
-    fn import_declaration(&mut self) -> ReportableResult<ImportDeclaration> {
+    fn import(&mut self) -> ReportableResult<Declaration> {
         self.expect(Token::ImportKeyword)?;
         let name = self.expect_identifier()?;
 
-        Ok(ImportDeclaration { name })
+        let import = ImportDeclaration { name };
+        Ok(Declaration::Import(import))
     }
 
-    fn procedure_declaration(&mut self) -> ReportableResult<ProcedureDeclaration> {
+    fn procedure(&mut self) -> ReportableResult<Declaration> {
         self.expect(Token::ProcKeyword)?;
         let name = self.expect_identifier()?;
         self.expect(Token::LeftParenthesis)?;
@@ -433,13 +435,15 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             }
         }
 
-        Ok(ProcedureDeclaration {
+        let procedure = ProcedureDeclaration {
             name,
             arguments,
             return_type,
             body,
             path: Path::empty(),
-        })
+        };
+
+        Ok(Declaration::Procedure(procedure))
     }
 
     fn method_declaration(&mut self) -> ReportableResult<MethodDeclaration> {
@@ -486,7 +490,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         })
     }
 
-    fn variant_declaration(&mut self) -> ReportableResult<VariantDeclaration> {
+    fn variant(&mut self) -> ReportableResult<Declaration> {
         self.expect(Token::VariantKeyword)?;
         let name = self.expect_identifier()?;
         self.expect(Token::LeftCurly)?;
@@ -505,12 +509,14 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             }
         }
 
-        Ok(VariantDeclaration {
+        let variant = VariantDeclaration {
             name,
             cases,
             methods,
             path: Path::empty(),
-        })
+        };
+
+        Ok(Declaration::Variant(variant))
     }
 
     fn type_expression(&mut self) -> ReportableResult<Located<TypeExpression>> {
@@ -542,16 +548,17 @@ impl<'source, 'interner> Parser<'source, 'interner> {
 
     fn type_path(&mut self) -> ReportableResult<Located<TypeExpression>> {
         let identifier = self.expect_identifier()?;
-        let mut path = vec![*identifier.data()];
+        let mut parts = vec![*identifier.data()];
         let mut end = identifier.location();
         while let Some(Token::DoubleColon) = self.peek()?.map(|token| *token.data()) {
             self.advance()?;
             let idenifier = self.expect_identifier()?;
-            path.push(*idenifier.data());
+            parts.push(*idenifier.data());
             end = idenifier.location()
         }
 
-        let type_expression = TypeExpression::Path(path, Bound::Undetermined);
+        let path = PathTypeExpression { parts, bound: Bound::Undetermined };
+        let type_expression = TypeExpression::Path(path);
         Ok(Located::new(
             type_expression,
             identifier.location().extend(&end),
@@ -578,16 +585,14 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         }
 
         self.expect(Token::Colon)?;
-        let return_type = self.type_expression()?;
+        let return_type = Box::new(self.type_expression()?);
 
         let location = start.extend(&return_type.location());
-        Ok(Located::new(
-            TypeExpression::Procedure {
-                arguments,
-                return_type: Box::new(return_type),
-            },
-            location,
-        ))
+        let procedure_type = ProcedureTypeExpression {
+            arguments,
+            return_type,
+        };
+        Ok(Located::new(TypeExpression::Procedure(procedure_type), location))
     }
 
     fn typed_identifier(&mut self) -> ReportableResult<Located<TypedIdentifier>> {

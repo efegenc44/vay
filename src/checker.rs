@@ -3,11 +3,14 @@ use std::collections::HashMap;
 use crate::{
     bound::{Bound, Path},
     declaration::{Declaration, Module, ProcedureDeclaration, VariantDeclaration},
-    expression::{Expression, TypeExpression},
+    expression::{
+        Expression, ApplicationExpression, PathExpression, PathTypeExpression,
+        ProcedureTypeExpression, ProjectionExpression, TypeExpression
+    },
     interner::{InternIdx, Interner},
     location::{Located, SourceLocation},
     reportable::{Reportable, ReportableResult},
-    statement::{MatchBranch, Pattern, Statement},
+    statement::{MatchStatement, Pattern, ReturnStatement, Statement, VariantCasePattern},
     typ::Type,
 };
 
@@ -46,12 +49,14 @@ impl Checker {
         type_expression: &Located<TypeExpression>,
     ) -> ReportableResult<Type> {
         match type_expression.data() {
-            TypeExpression::Path(_, bound) => self.eval_type_path(bound),
-            TypeExpression::Procedure { arguments, return_type } => self.eval_type_procedure(arguments, return_type),
+            TypeExpression::Path(type_path) => self.eval_path_type(type_path),
+            TypeExpression::Procedure(procedure_type) => self.eval_procedure_type(procedure_type),
         }
     }
 
-    fn eval_type_path(&mut self, bound: &Bound) -> ReportableResult<Type> {
+    fn eval_path_type(&mut self, type_path: &PathTypeExpression) -> ReportableResult<Type> {
+        let PathTypeExpression { bound, .. } = type_path;
+
         match bound {
             Bound::Local(_) => todo!("Type variables."),
             Bound::Absolute(path) => Ok(self.variants[path].0.clone()),
@@ -59,11 +64,9 @@ impl Checker {
         }
     }
 
-    fn eval_type_procedure(
-        &mut self,
-        arguments: &[Located<TypeExpression>],
-        return_type: &Located<TypeExpression>
-    ) -> ReportableResult<Type> {
+    fn eval_procedure_type(&mut self, procedure_type: &ProcedureTypeExpression) -> ReportableResult<Type> {
+        let ProcedureTypeExpression { arguments, return_type } = procedure_type;
+
         let mut argument_types = vec![];
         for argument in arguments {
             argument_types.push(self.eval_type_expression(argument)?);
@@ -325,12 +328,9 @@ impl Checker {
         match statement.data() {
             Statement::Expression(_) => false,
             Statement::Return(_) => true,
-            Statement::Match {
-                expression: _,
-                branches,
-            } => {
+            Statement::Match(matc) => {
                 let mut returns = true;
-                for branch in branches {
+                for branch in &matc.branches {
                     if !Self::returns(&branch.data().statement) {
                         returns = false;
                     }
@@ -342,32 +342,24 @@ impl Checker {
 
     fn statement(&mut self, statement: &Located<Statement>) -> ReportableResult<()> {
         match statement.data() {
-            Statement::Expression(expression) => {
-                self.infer(expression)?;
-            }
-            Statement::Match {
-                expression,
-                branches,
-            } => {
-                self.matc(expression, branches)?;
-            }
-            Statement::Return(expression) => {
-                let Some(ty) = self.return_type.clone() else {
-                    unreachable!();
-                };
-                self.check(expression, ty)?;
-            },
-        };
-
-        Ok(())
+            Statement::Expression(expression) => self.infer(expression).map(|_| ()),
+            Statement::Match(matc) => self.matc(matc),
+            Statement::Return(retrn) => self.retrn(retrn),
+        }
     }
 
-    fn matc(
-        &mut self,
-        expression: &Located<Expression>,
-        branches: &[Located<MatchBranch>],
-    ) -> ReportableResult<()> {
+    fn retrn(&mut self, retrn: &ReturnStatement) -> ReportableResult<()> {
+        let ReturnStatement { expression } = retrn;
+
+        let Some(ty) = self.return_type.clone() else {
+            unreachable!();
+        };
+        self.check(expression, ty)
+    }
+
+    fn matc(&mut self, matc: &MatchStatement) -> ReportableResult<()> {
         // TODO: Exhaustiveness check
+        let MatchStatement { expression, branches } = matc;
 
         let locals_len = self.locals.len();
         let ty = self.infer(expression)?;
@@ -393,7 +385,9 @@ impl Checker {
         pattern: &Located<Pattern>,
     ) -> ReportableResult<bool> {
         match (ty, pattern.data()) {
-            (Type::Variant(path), Pattern::VariantCase { name, fields }) => {
+            (Type::Variant(path), Pattern::VariantCase(variant_case)) => {
+                let VariantCasePattern { name, fields } = variant_case;
+
                 let cases = &self.variants[&path].1;
                 if !cases.contains_key(name.data()) {
                     return self.error(
@@ -453,74 +447,85 @@ impl Checker {
 
     fn infer(&mut self, expression: &Located<Expression>) -> ReportableResult<Type> {
         match expression.data() {
-            Expression::Path(_, bound) => match bound {
-                Bound::Local(bound_idx) => {
-                    Ok(self.locals[self.locals.len() - 1 - bound_idx.idx()].clone())
-                }
-                Bound::Absolute(path) => Ok(self.names[path].clone()),
-                Bound::Undetermined => unreachable!(),
-            },
-            Expression::Application {
-                function,
-                arguments,
-            } => {
-                let ty = self.infer(function)?;
-                let Type::Procedure {
-                    arguments: arguments_type,
-                    return_type,
-                } = ty
-                else {
-                    return self.error(
-                        TypeCheckError::ExpectedAProcedure { encountered: ty },
-                        function.location()
-                    );
-                };
-
-                if arguments.len() != arguments_type.len() {
-                    return self.error(
-                        TypeCheckError::ArityMismatch {
-                            expected: arguments_type.len(),
-                            encountered: arguments.len()
-                        },
-                        function.location()
-                    );                }
-
-                for (argument, ty) in arguments.iter().zip(arguments_type) {
-                    self.check(argument, ty)?;
-                }
-
-                Ok(*return_type.clone())
-            }
-            Expression::Projection { expression, name } => {
-                let ty = self.infer(expression)?;
-
-                let Type::Variant(path) = &ty else {
-                    return self.error(
-                        TypeCheckError::HasNoMethod {
-                            ty,
-                            name: *name.data()
-                        },
-                        name.location()
-                    );
-                };
-
-                let Some(method_ty) = self.variants[path].2.get(name.data()) else {
-                    return self.error(
-                        TypeCheckError::HasNoMethod {
-                            ty,
-                            name: *name.data()
-                        },
-                        name.location()
-                    );
-                };
-
-                let encountered @ Type::Procedure { .. } = method_ty.clone() else {
-                    unreachable!();
-                };
-
-                Ok(encountered)
-            }
+            Expression::Path(path) => self.path(path),
+            Expression::Application(application) => self.application(application),
+            Expression::Projection(projection) => self.projection(projection),
         }
+    }
+
+    fn path(&mut self, path: &PathExpression) -> ReportableResult<Type> {
+        let PathExpression { bound, .. } = path;
+
+        match bound {
+            Bound::Local(bound_idx) => {
+                Ok(self.locals[self.locals.len() - 1 - bound_idx.idx()].clone())
+            }
+            Bound::Absolute(path) => Ok(self.names[path].clone()),
+            Bound::Undetermined => unreachable!(),
+        }
+    }
+
+    fn application(&mut self, application: &ApplicationExpression) -> ReportableResult<Type> {
+        let ApplicationExpression { function, arguments } = application;
+
+        let ty = self.infer(function)?;
+        let Type::Procedure {
+            arguments: arguments_type,
+            return_type,
+        } = ty
+        else {
+            return self.error(
+                TypeCheckError::ExpectedAProcedure { encountered: ty },
+                function.location()
+            );
+        };
+
+        if arguments.len() != arguments_type.len() {
+            return self.error(
+                TypeCheckError::ArityMismatch {
+                    expected: arguments_type.len(),
+                    encountered: arguments.len()
+                },
+                function.location()
+            );                }
+
+        for (argument, ty) in arguments.iter().zip(arguments_type) {
+            self.check(argument, ty)?;
+        }
+
+        Ok(*return_type.clone())
+    }
+
+    fn projection(&mut self, projection: &ProjectionExpression) -> ReportableResult<Type> {
+        let ProjectionExpression { expression, name } = projection;
+
+        let ty = self.infer(expression)?;
+
+        let Type::Variant(path) = &ty else {
+            return self.error(
+                TypeCheckError::HasNoMethod {
+                    ty,
+                    name: *name.data()
+                },
+                name.location()
+            );
+        };
+
+        let Some(method_ty) = self.variants[path].2.get(name.data()) else {
+            return self.error(
+                TypeCheckError::HasNoMethod {
+                    ty,
+                    name: *name.data()
+                },
+                name.location()
+            );
+        };
+
+        let encountered @ Type::Procedure { .. } = method_ty.clone() else {
+            unreachable!();
+        };
+
+        Ok(encountered)
     }
 
     fn error<T>(&self, error: TypeCheckError, location: SourceLocation) -> ReportableResult<T> {

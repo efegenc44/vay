@@ -3,11 +3,11 @@ use std::{collections::HashSet, vec};
 use crate::{
     bound::{Bound, Path},
     declaration::{Declaration, ImportDeclaration, MethodDeclaration, Module, ProcedureDeclaration, VariantDeclaration},
-    expression::{Expression, TypeExpression},
+    expression::{ApplicationExpression, Expression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, TypeExpression},
     interner::{InternIdx, Interner},
     location::{Located, SourceLocation},
     reportable::{Reportable, ReportableResult},
-    statement::{MatchBranch, Pattern, Statement},
+    statement::{MatchStatement, Pattern, ReturnStatement, Statement},
 };
 
 pub struct Resolver {
@@ -187,21 +187,15 @@ impl Resolver {
     fn expression(&mut self, expression: &mut Located<Expression>) -> ReportableResult<()> {
         let location = expression.location();
         match expression.data_mut() {
-            Expression::Path(parts, bound) => self.path(parts, bound, location),
-            Expression::Application {
-                function,
-                arguments,
-            } => self.application(function, arguments),
-            Expression::Projection { expression, name: _ } => self.expression(expression),
+            Expression::Path(path) => self.path(path, location),
+            Expression::Application(application) => self.application(application),
+            Expression::Projection(projection) => self.projection(projection),
         }
     }
 
-    fn path(
-        &mut self,
-        parts: &[InternIdx],
-        bound: &mut Bound,
-        location: SourceLocation,
-    ) -> ReportableResult<()> {
+    fn path(&mut self, path: &mut PathExpression, location: SourceLocation) -> ReportableResult<()> {
+        let PathExpression { parts, bound } = path;
+
         let base = self
             .find_name(&parts[0])
             .unwrap_or(Bound::Absolute(self.current_path.append(parts[0])));
@@ -224,11 +218,9 @@ impl Resolver {
         Ok(())
     }
 
-    fn application(
-        &mut self,
-        function: &mut Located<Expression>,
-        arguments: &mut [Located<Expression>],
-    ) -> ReportableResult<()> {
+    fn application(&mut self, application: &mut ApplicationExpression) -> ReportableResult<()> {
+        let ApplicationExpression { function, arguments } = application;
+
         self.expression(function)?;
         for argument in arguments {
             self.expression(argument)?;
@@ -237,23 +229,26 @@ impl Resolver {
         Ok(())
     }
 
+    fn projection(&mut self, projection: &mut ProjectionExpression) -> ReportableResult<()> {
+        let ProjectionExpression { expression, .. } = projection;
+
+        self.expression(expression)
+    }
+
     fn type_expression(
         &mut self,
         type_expression: &mut Located<TypeExpression>,
     ) -> ReportableResult<()> {
         let location = type_expression.location();
         match type_expression.data_mut() {
-            TypeExpression::Path(parts, bound) => self.type_path(parts, bound, location),
-            TypeExpression::Procedure { arguments, return_type } => self.type_procedure(arguments, return_type),
+            TypeExpression::Path(path) => self.path_type(path, location),
+            TypeExpression::Procedure(procedure_type) => self.procedure_type(procedure_type),
         }
     }
 
-    fn type_path(
-        &mut self,
-        parts: &[InternIdx],
-        bound: &mut Bound,
-        location: SourceLocation,
-    ) -> ReportableResult<()> {
+    fn path_type(&mut self, path: &mut PathTypeExpression, location: SourceLocation) -> ReportableResult<()> {
+        let PathTypeExpression { parts, bound } = path;
+
         let base = self
             .find_type_name(&parts[0])
             .unwrap_or(Bound::Absolute(self.current_path.append(parts[0])));
@@ -277,11 +272,9 @@ impl Resolver {
     }
 
 
-    fn type_procedure(
-        &mut self,
-        arguments: &mut [Located<TypeExpression>],
-        return_type: &mut Located<TypeExpression>
-    ) -> ReportableResult<()> {
+    fn procedure_type(&mut self, procdeure_type: &mut ProcedureTypeExpression) -> ReportableResult<()> {
+        let ProcedureTypeExpression { arguments, return_type } = procdeure_type;
+
         for argument in arguments {
             self.type_expression(argument)?;
         }
@@ -292,26 +285,27 @@ impl Resolver {
     fn statement(&mut self, statement: &mut Located<Statement>) -> ReportableResult<()> {
         match statement.data_mut() {
             Statement::Expression(expression) => self.expression(expression),
-            Statement::Return(expression) => self.expression(expression),
-            Statement::Match {
-                expression,
-                branches,
-            } => self.matc(expression, branches),
+            Statement::Return(retrn) => self.retrn(retrn),
+            Statement::Match(matc) => self.matc(matc),
         }
     }
 
-    fn matc(
-        &mut self,
-        expression: &mut Located<Expression>,
-        branches: &mut [Located<MatchBranch>],
-    ) -> ReportableResult<()> {
+    fn retrn(&mut self, retrn: &mut ReturnStatement) -> ReportableResult<()> {
+        let ReturnStatement { expression } = retrn;
+
+        self.expression(expression)
+    }
+
+    fn matc(&mut self, matc: &mut MatchStatement) -> ReportableResult<()> {
+        let MatchStatement { expression, branches } = matc;
+
         self.expression(expression)?;
         let locals_len = self.locals.len();
 
         for branch in branches {
             match branch.data().pattern.data() {
-                Pattern::VariantCase { name: _, fields } => {
-                    let fields = if let Some(fields) = fields {
+                Pattern::VariantCase(variant_case) => {
+                    let fields = if let Some(fields) = &variant_case.fields {
                         fields
                     } else {
                         &vec![]

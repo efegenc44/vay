@@ -1,6 +1,6 @@
 use std::{collections::HashMap, rc::Rc};
 
-use crate::{bound::{Bound, Path}, declaration::{Declaration, Module, ProcedureDeclaration, VariantDeclaration}, expression::Expression, interner::{InternIdx, Interner}, location::Located, statement::{Pattern, Statement}, value::Value};
+use crate::{bound::{Bound, Path}, declaration::{Declaration, Module, ProcedureDeclaration, VariantDeclaration}, expression::{ApplicationExpression, Expression, PathExpression, ProjectionExpression}, interner::{InternIdx, Interner}, location::Located, statement::{MatchStatement, Pattern, ReturnStatement, Statement, VariantCasePattern}, value::Value};
 
 pub struct Interpreter {
     methods: HashMap<Path, HashMap<InternIdx, Value>>,
@@ -136,22 +136,30 @@ impl Interpreter {
             Statement::Expression(expression) => {
                 self.expression(expression);
             },
-            Statement::Return(expression) => {
-                let value = self.expression(expression);
-                self.return_exception = Some(value);
-            },
-            Statement::Match { expression, branches } => {
-                let value = self.expression(expression);
-                for branch in branches {
-                    let locals_len = self.locals.len();
-                    if self.value_pattern_match(&value, &branch.data().pattern) {
-                        self.statement(&branch.data().statement);
-                        self.locals.truncate(locals_len);
-                        break;
-                    }
-                    self.locals.truncate(locals_len);
-                }
-            },
+            Statement::Return(retrn) => self.retrn(retrn),
+            Statement::Match(matc) => self.matc(matc),
+        }
+    }
+
+    fn retrn(&mut self, retrn: &ReturnStatement)  {
+        let ReturnStatement { expression } = retrn;
+
+        let value = self.expression(expression);
+        self.return_exception = Some(value);
+    }
+
+    fn matc(&mut self, matc: &MatchStatement) {
+        let MatchStatement { expression, branches } = matc;
+
+        let value = self.expression(expression);
+        for branch in branches {
+            let locals_len = self.locals.len();
+            if self.value_pattern_match(&value, &branch.data().pattern) {
+                self.statement(&branch.data().statement);
+                self.locals.truncate(locals_len);
+                break;
+            }
+            self.locals.truncate(locals_len);
         }
     }
 
@@ -161,7 +169,9 @@ impl Interpreter {
         pattern: &Located<Pattern>,
     ) -> bool {
         match (value, pattern.data()) {
-            (Value::Instance { type_path: _, case, values }, Pattern::VariantCase { name, fields }) => {
+            (Value::Instance { type_path: _, case, values }, Pattern::VariantCase(variant_case)) => {
+                let VariantCasePattern { name, fields } = variant_case;
+
                 if case != name.data() {
                     return false;
                 }
@@ -185,95 +195,106 @@ impl Interpreter {
 
     fn expression(&mut self, expression: &Located<Expression>) -> Value {
         match expression.data() {
-            Expression::Path(_, bound) => {
-                match bound {
-                    Bound::Undetermined => unreachable!(),
-                    Bound::Local(bound_idx) => {
-                        self.locals[self.locals.len() - 1 - bound_idx.idx()].clone()
-                    },
-                    Bound::Absolute(path) => self.names[path].clone(),
-                }
-            },
-            Expression::Application { function, arguments } => {
-                match self.expression(function) {
-                    Value::Procedure { body } => {
-                        let mut argument_values = vec![];
-                        for argument in arguments {
-                            let argument = self.expression(argument);
-                            argument_values.push(argument);
-                        }
-                        self.locals.extend(argument_values);
-
-                        let mut return_value = Value::None;
-                        for statement in body.iter() {
-                            self.statement(statement);
-
-                            if let Some(value) = self.return_exception.clone() {
-                                self.return_exception = None;
-                                return_value = value;
-                                break;
-                            }
-                        }
-
-                        self.locals.truncate(self.locals.len() - arguments.len());
-
-                        return_value
-                    },
-                    Value::Method { instance, body } => {
-                        let mut argument_values = vec![];
-                        for argument in arguments {
-                            let argument = self.expression(argument);
-                            argument_values.push(argument);
-                        }
-
-                        self.locals.push(*instance.clone());
-                        self.locals.extend(argument_values);
-
-                        let mut return_value = Value::None;
-                        for statement in body.iter() {
-                            self.statement(statement);
-
-                            if let Some(value) = self.return_exception.clone() {
-                                self.return_exception = None;
-                                return_value = value;
-                                break;
-                            }
-                        }
-
-                        self.locals.truncate(self.locals.len() - arguments.len());
-                        self.locals.pop();
-
-                        return_value
-                    },
-                    Value::Constructor { type_path, name } => {
-                        let mut values = vec![];
-                        for argument in arguments {
-                            let argument = self.expression(argument);
-                            values.push(argument);
-                        }
-
-                        Value::Instance {
-                            type_path,
-                            case: name,
-                            values: Rc::new(values),
-                        }
-                    },
-                    _ => unreachable!()
-                }
-
-            },
-            Expression::Projection { expression, name } => {
-                let instance = self.expression(expression);
-                let Value::Instance { type_path, case: _, values: _ } = &instance else {
-                    unreachable!();
-                };
-
-                let Value::Procedure { body } = self.methods[type_path][name.data()].clone() else {
-                    unreachable!();
-                };
-
-                Value::Method { instance: Box::new(instance), body }
-            },
+            Expression::Path(path) => self.path(path),
+            Expression::Application(application) => self.application(application),
+            Expression::Projection(projection) => self.projection(projection),
         }
+    }
+
+    fn path(&mut self, path: &PathExpression) -> Value {
+        let PathExpression { bound, .. } = path;
+
+        match bound {
+            Bound::Undetermined => unreachable!(),
+            Bound::Local(bound_idx) => {
+                self.locals[self.locals.len() - 1 - bound_idx.idx()].clone()
+            },
+            Bound::Absolute(path) => self.names[path].clone(),
+        }
+    }
+
+    fn application(&mut self, application: &ApplicationExpression) -> Value {
+        let ApplicationExpression { function, arguments } = application;
+
+        match self.expression(function) {
+            Value::Procedure { body } => {
+                let mut argument_values = vec![];
+                for argument in arguments {
+                    let argument = self.expression(argument);
+                    argument_values.push(argument);
+                }
+                self.locals.extend(argument_values);
+
+                let mut return_value = Value::None;
+                for statement in body.iter() {
+                    self.statement(statement);
+
+                    if let Some(value) = self.return_exception.clone() {
+                        self.return_exception = None;
+                        return_value = value;
+                        break;
+                    }
+                }
+
+                self.locals.truncate(self.locals.len() - arguments.len());
+
+                return_value
+            },
+            Value::Method { instance, body } => {
+                let mut argument_values = vec![];
+                for argument in arguments {
+                    let argument = self.expression(argument);
+                    argument_values.push(argument);
+                }
+
+                self.locals.push(*instance.clone());
+                self.locals.extend(argument_values);
+
+                let mut return_value = Value::None;
+                for statement in body.iter() {
+                    self.statement(statement);
+
+                    if let Some(value) = self.return_exception.clone() {
+                        self.return_exception = None;
+                        return_value = value;
+                        break;
+                    }
+                }
+
+                self.locals.truncate(self.locals.len() - arguments.len());
+                self.locals.pop();
+
+                return_value
+            },
+            Value::Constructor { type_path, name } => {
+                let mut values = vec![];
+                for argument in arguments {
+                    let argument = self.expression(argument);
+                    values.push(argument);
+                }
+
+                Value::Instance {
+                    type_path,
+                    case: name,
+                    values: Rc::new(values),
+                }
+            },
+            _ => unreachable!()
+        }
+    }
+
+    fn projection(&mut self, projection: &ProjectionExpression) -> Value {
+        let ProjectionExpression { expression, name } = projection;
+
+        let instance = self.expression(expression);
+        let Value::Instance { type_path, case: _, values: _ } = &instance else {
+            unreachable!();
+        };
+
+        let Value::Procedure { body } = self.methods[type_path][name.data()].clone() else {
+            unreachable!();
+        };
+
+        Value::Method { instance: Box::new(instance), body }
     }
 }

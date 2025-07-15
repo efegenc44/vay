@@ -3,11 +3,19 @@ use crate::{expression::Expression, interner::InternIdx, location::Located};
 #[derive(Clone)]
 pub enum Statement {
     Expression(Located<Expression>),
-    Return(Located<Expression>),
-    Match {
-        expression: Located<Expression>,
-        branches: Vec<Located<MatchBranch>>,
-    },
+    Return(ReturnStatement),
+    Match(MatchStatement),
+}
+
+#[derive(Clone)]
+pub struct ReturnStatement {
+    pub expression: Located<Expression>
+}
+
+#[derive(Clone)]
+pub struct MatchStatement {
+    pub expression: Located<Expression>,
+    pub branches: Vec<Located<MatchBranch>>,
 }
 
 #[derive(Clone)]
@@ -18,8 +26,11 @@ pub struct MatchBranch {
 
 #[derive(Clone)]
 pub enum Pattern {
-    VariantCase {
-        name: Located<InternIdx>,
-        fields: Option<Vec<Located<InternIdx>>>,
-    },
+    VariantCase(VariantCasePattern)
+}
+
+#[derive(Clone)]
+pub struct VariantCasePattern {
+    pub name: Located<InternIdx>,
+    pub fields: Option<Vec<Located<InternIdx>>>,
 }
