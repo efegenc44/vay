@@ -13,13 +13,13 @@ use crate::{
     typ::{ProcedureType, Type},
 };
 
-struct VariantData {
+struct VariantInformation {
     ty: Type,
     cases: HashMap<InternIdx, Vec<Type>>,
     methods: HashMap<InternIdx, ProcedureType>,
 }
 
-impl VariantData {
+impl VariantInformation {
     fn with_type(ty: Type) -> Self {
         Self {
             ty,
@@ -31,7 +31,7 @@ impl VariantData {
 
 pub struct Checker {
     names: HashMap<Path, Type>,
-    variants: HashMap<Path, VariantData>,
+    variants: HashMap<Path, VariantInformation>,
 
     locals: Vec<Type>,
     return_type: Option<Type>,
@@ -156,7 +156,7 @@ impl Checker {
         let VariantDeclaration { path, .. } = variant;
 
         let variant_type = Type::Variant(path.clone());
-        let variant_data = VariantData::with_type(variant_type);
+        let variant_data = VariantInformation::with_type(variant_type);
         self.variants.insert(path.clone(), variant_data);
 
         Ok(())
