@@ -14,7 +14,11 @@ use crate::{
 
 const PRIMARY_TOKEN_STARTS: &[Token] = &[Token::dummy_identifier()];
 
-const STATEMENT_KEYWORDS: &[Token] = &[Token::ReturnKeyword, Token::dummy_identifier()];
+const STATEMENT_KEYWORDS: &[Token] = &[
+    Token::MatchKeyword,
+    Token::ReturnKeyword,
+    Token::dummy_identifier()
+];
 
 const DECLARATION_KEYWORDS: &[Token] = &[
     Token::ModuleKeyword,
@@ -270,7 +274,6 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         let pattern = self.pattern()?;
         self.expect(Token::Colon)?;
         let statement = self.statement()?;
-        self.expect(Token::Semicolon)?;
 
         let location = pattern.location().extend(&statement.location());
         Ok(Located::new(MatchBranch { pattern, statement }, location))
@@ -379,7 +382,6 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     fn modul(&mut self) -> ReportableResult<Declaration> {
         self.expect(Token::ModuleKeyword)?;
         let name = self.expect_identifier()?;
-        self.expect(Token::Semicolon)?;
 
         Ok(Declaration::Module { name })
     }
@@ -387,7 +389,6 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     fn import(&mut self) -> ReportableResult<Declaration> {
         self.expect(Token::ImportKeyword)?;
         let name = self.expect_identifier()?;
-        self.expect(Token::Semicolon)?;
 
         Ok(Declaration::Import { name })
     }
@@ -422,7 +423,6 @@ impl<'source, 'interner> Parser<'source, 'interner> {
                 Some(_) => break,
                 None => {
                     body.push(self.statement()?);
-                    self.expect(Token::Semicolon)?;
                 }
             }
         }
@@ -467,7 +467,6 @@ impl<'source, 'interner> Parser<'source, 'interner> {
                 Some(_) => break,
                 None => {
                     body.push(self.statement()?);
-                    self.expect(Token::Semicolon)?;
                 }
             }
         }

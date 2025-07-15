@@ -1,6 +1,6 @@
-module TestModule;
+module TestModule
 
-import Main;
+import Main
 
 variant Test {
     Foo
@@ -8,5 +8,5 @@ variant Test {
 }
 
 proc main(x : Main::Nat) : Main::Nat {
-    return Main::Nat::Zero;
+    return Main::Nat::Zero
 }
