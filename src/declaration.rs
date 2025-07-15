@@ -35,7 +35,7 @@ pub struct VariantDeclaration {
 
 pub struct MethodDeclaration {
     pub name: Located<InternIdx>,
-    pub self_reference: Located<InternIdx>,
+    pub instance: Located<InternIdx>,
     pub arguments: Vec<Located<TypedIdentifier>>,
     pub return_type: Located<TypeExpression>,
     pub body: Vec<Located<Statement>>,

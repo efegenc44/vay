@@ -368,14 +368,14 @@ impl Resolver {
     }
 
     fn method(&mut self, method: &mut MethodDeclaration) -> ReportableResult<()> {
-        let MethodDeclaration { self_reference, arguments, return_type, body, .. } = method;
+        let MethodDeclaration { instance, arguments, return_type, body, .. } = method;
 
         for argument in arguments.iter_mut() {
             self.type_expression(argument.data_mut().type_expression_mut())?;
         }
         self.type_expression(return_type)?;
 
-        self.locals.push(*self_reference.data());
+        self.locals.push(*instance.data());
         let argument_names = arguments.iter().map(|idx| *idx.data().indentifier().data());
         self.locals.extend(argument_names);
             for statement in body {
