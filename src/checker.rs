@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     bound::{Bound, Path},
-    declaration::{Declaration, Method, Module, TypedIdentifier, VariantCase},
+    declaration::{Declaration, Module, ProcedureDeclaration, VariantDeclaration},
     expression::{Expression, TypeExpression},
     interner::{InternIdx, Interner},
     location::{Located, SourceLocation},
@@ -104,10 +104,10 @@ impl Checker {
     fn collect_types(&mut self, module: &Module) -> ReportableResult<()> {
         for declaration in module.declarations() {
             match declaration {
-                Declaration::Module { .. } => (),
-                Declaration::Import { .. } => (),
-                Declaration::Procedure { .. } => (),
-                Declaration::Variant { path, .. } => self.collect_variant_type(path.clone())?,
+                Declaration::Module(..) => (),
+                Declaration::Import(..) => (),
+                Declaration::Procedure(..) => (),
+                Declaration::Variant(variant) => self.collect_variant_type(variant)?,
             }
         }
 
@@ -117,21 +117,8 @@ impl Checker {
     fn collect_names(&mut self, module: &Module) -> ReportableResult<()> {
         for declaration in module.declarations() {
             match declaration {
-                Declaration::Variant {
-                    cases,
-                    methods,
-                    path,
-                    ..
-                } => {
-                    self.collect_variant_name(cases, methods, path.clone())?;
-                }
-                Declaration::Procedure {
-                    arguments,
-                    return_type,
-                    path,
-                    ..
-                } => self.collect_procedure_name(arguments, return_type, path.clone())?,
-
+                Declaration::Variant(variant) => self.collect_variant_name(variant)?,
+                Declaration::Procedure(procedure) => self.collect_procedure_name(procedure)?,
                 _ => (),
             }
         }
@@ -139,12 +126,9 @@ impl Checker {
         Ok(())
     }
 
-    fn collect_procedure_name(
-        &mut self,
-        arguments: &[Located<TypedIdentifier>],
-        return_type: &Located<TypeExpression>,
-        path: Path,
-    ) -> ReportableResult<()> {
+    fn collect_procedure_name(&mut self, procedure: &ProcedureDeclaration) -> ReportableResult<()> {
+        let ProcedureDeclaration { arguments, return_type, path, .. } = procedure;
+
         let mut argument_types = vec![];
         for argument in arguments {
             argument_types.push(self.eval_type_expression(argument.data().type_expression())?);
@@ -153,7 +137,7 @@ impl Checker {
         let return_type = self.eval_type_expression(return_type)?;
 
         self.names.insert(
-            path,
+            path.clone(),
             Type::Procedure {
                 arguments: argument_types,
                 return_type: Box::new(return_type),
@@ -163,20 +147,19 @@ impl Checker {
         Ok(())
     }
 
-    fn collect_variant_type(&mut self, path: Path) -> ReportableResult<()> {
+    fn collect_variant_type(&mut self, variant: &VariantDeclaration) -> ReportableResult<()> {
+        let VariantDeclaration { path, .. } = variant;
+
         let variant_type = Type::Variant(path.clone());
         let variant = (variant_type, HashMap::new(), HashMap::new());
-        self.variants.insert(path, variant);
+        self.variants.insert(path.clone(), variant);
 
         Ok(())
     }
 
-    fn collect_variant_name(
-        &mut self,
-        cases: &[Located<VariantCase>],
-        methods: &[Method],
-        path: Path,
-    ) -> ReportableResult<()> {
+    fn collect_variant_name(&mut self, variant: &VariantDeclaration) -> ReportableResult<()> {
+        let VariantDeclaration { cases, methods, path, .. } = variant;
+
         for method in methods {
             let mut argument_types = vec![];
             for argument in &method.arguments {
@@ -190,7 +173,7 @@ impl Checker {
             };
             if self
                 .variants
-                .get_mut(&path)
+                .get_mut(path)
                 .unwrap()
                 .2
                 .insert(*method.name.data(), method_type)
@@ -198,7 +181,7 @@ impl Checker {
             {
                 return self.error(
                     TypeCheckError::DuplicateMethodDeclaration {
-                        variant_path: path,
+                        variant_path: path.clone(),
                         method_name: *method.name.data(),
                     },
                     method.name.location(),
@@ -206,7 +189,7 @@ impl Checker {
             };
         }
 
-        let variant_type = self.variants[&path].0.clone();
+        let variant_type = self.variants[path].0.clone();
         for case in cases {
             if let Some(arguments) = case.data().arguments() {
                 let mut argument_types = vec![];
@@ -215,7 +198,7 @@ impl Checker {
                     argument_types.push(argument_type);
                 }
                 self.variants
-                    .get_mut(&path)
+                    .get_mut(path)
                     .unwrap()
                     .1
                     .insert(*case.data().identifier().data(), argument_types.clone());
@@ -230,7 +213,7 @@ impl Checker {
                 self.names
                     .insert(case.data().path().clone(), variant_type.clone());
                 self.variants
-                    .get_mut(&path)
+                    .get_mut(path)
                     .unwrap()
                     .1
                     .insert(*case.data().identifier().data(), vec![]);
@@ -244,15 +227,15 @@ impl Checker {
 
     fn declaration(&mut self, declaration: &Declaration) -> ReportableResult<()> {
         match declaration {
-            Declaration::Module { .. } | Declaration::Import { .. } => Ok(()),
-            Declaration::Variant { methods, path, .. } => self.variant_methods(path, methods),
-            Declaration::Procedure {
-                body, path, name, ..
-            } => self.procedure(path, body, name.location()),
+            Declaration::Module(..) | Declaration::Import(..) => Ok(()),
+            Declaration::Variant(variant) => self.variant(variant),
+            Declaration::Procedure(procedure) => self.procedure(procedure),
         }
     }
 
-    fn variant_methods(&mut self, path: &Path, methods: &[Method]) -> ReportableResult<()> {
+    fn variant(&mut self, variant: &VariantDeclaration) -> ReportableResult<()> {
+        let VariantDeclaration { methods, path, .. } = variant;
+
         for method in methods {
             let Type::Procedure {
                 arguments,
@@ -298,12 +281,9 @@ impl Checker {
         Ok(())
     }
 
-    fn procedure(
-        &mut self,
-        path: &Path,
-        body: &[Located<Statement>],
-        location: SourceLocation,
-    ) -> ReportableResult<()> {
+    fn procedure(&mut self, procedure: &ProcedureDeclaration) -> ReportableResult<()> {
+        let ProcedureDeclaration { name, body, path, .. } = procedure;
+
         let Type::Procedure {
             arguments,
             return_type,
@@ -325,7 +305,7 @@ impl Checker {
                     procedure: path.clone(),
                     expceted: *return_type,
                 },
-                location,
+                name.location(),
             );
         }
 
@@ -524,7 +504,7 @@ impl Checker {
                     );
                 };
 
-                let Some(method_ty) = self.variants[&path].2.get(name.data()) else {
+                let Some(method_ty) = self.variants[path].2.get(name.data()) else {
                     return self.error(
                         TypeCheckError::HasNoMethod {
                             ty,

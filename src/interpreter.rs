@@ -1,6 +1,6 @@
 use std::{collections::HashMap, rc::Rc};
 
-use crate::{bound::{Bound, Path}, declaration::{Declaration, Module}, expression::Expression, interner::{InternIdx, Interner}, location::Located, statement::{Pattern, Statement}, value::Value};
+use crate::{bound::{Bound, Path}, declaration::{Declaration, Module, ProcedureDeclaration, VariantDeclaration}, expression::Expression, interner::{InternIdx, Interner}, location::Located, statement::{Pattern, Statement}, value::Value};
 
 pub struct Interpreter {
     methods: HashMap<Path, HashMap<InternIdx, Value>>,
@@ -29,8 +29,8 @@ impl Interpreter {
         let mut main_module = None;
         'outer: for module in modules {
             for declaration in module.declarations() {
-                if let Declaration::Module { name } = declaration {
-                    if interner.get(name.data()) == "Main" {
+                if let Declaration::Module(moduled) = declaration {
+                    if interner.get(moduled.name.data()) == "Main" {
                         main_module = Some(module);
                         break 'outer;
                     }
@@ -43,8 +43,8 @@ impl Interpreter {
 
         let mut main_procedure = None;
         'outer: for declaration in main_module.declarations() {
-            if let Declaration::Procedure { name, .. } = declaration {
-                if interner.get(name.data()) == "main" {
+            if let Declaration::Procedure(procedure) = declaration {
+                if interner.get(procedure.name.data()) == "main" {
                     main_procedure = Some(declaration);
                     break 'outer;
                 }
@@ -54,15 +54,15 @@ impl Interpreter {
             todo!("main procedure is not declared");
         };
 
-        let Declaration::Procedure { body, arguments, .. } = main_function else {
+        let Declaration::Procedure(procedure) = main_function else {
             unreachable!();
         };
 
-        if !arguments.is_empty() {
+        if !procedure.arguments.is_empty() {
             todo!("main procedure is not supposed to take any arguments");
         }
 
-        for statement in body {
+        for statement in &procedure.body {
             self.statement(statement);
 
             if let Some(value) = self.return_exception.clone() {
@@ -76,46 +76,54 @@ impl Interpreter {
     fn collect_names(&mut self, module: &Module) {
         for declaration in module.declarations() {
             match declaration {
-                Declaration::Module { .. } => (),
-                Declaration::Import { .. } => (),
-                Declaration::Procedure { body, path, .. } => {
-                    let value = Value::Procedure {
-                        body: Rc::new(body.clone())
-                    };
-
-                    self.names.insert(path.clone(), value);
-                },
-                Declaration::Variant { cases, methods, path, .. } => {
-                    for case in cases {
-                        let value = match case.data().arguments() {
-                            Some(_arguments) => {
-                                Value::Constructor {
-                                    name: *case.data().identifier().data(),
-                                    type_path: path.clone(),
-                                }
-                            },
-                            None => {
-                                Value::Instance {
-                                    type_path: path.clone(),
-                                    case: *case.data().identifier().data(),
-                                    values: Rc::default()
-                                }
-                            },
-                        };
-
-                        self.names.insert(case.data().path().clone(), value);
-                    }
-
-                    self.methods.insert(path.clone(), HashMap::new());
-                    for method in methods {
-                        let value = Value::Procedure {
-                            body: Rc::new(method.body.clone())
-                        };
-
-                        self.methods.get_mut(path).unwrap().insert(*method.name.data(), value);
-                    }
-                },
+                Declaration::Module(..) => (),
+                Declaration::Import(..) => (),
+                Declaration::Procedure(procedure) => self.collect_procedure_name(procedure),
+                Declaration::Variant(variant) => self.collect_variant_name(variant),
             }
+        }
+    }
+
+    fn collect_procedure_name(&mut self, procedure: &ProcedureDeclaration) {
+        let ProcedureDeclaration { body, path, .. } = procedure;
+
+        let value = Value::Procedure {
+            body: Rc::new(body.clone())
+        };
+
+        self.names.insert(path.clone(), value);
+    }
+
+    fn collect_variant_name(&mut self, variant: &VariantDeclaration) {
+        let VariantDeclaration { cases, methods, path, .. } = variant;
+
+        for case in cases {
+            let value = match case.data().arguments() {
+                Some(_arguments) => {
+                    Value::Constructor {
+                        name: *case.data().identifier().data(),
+                        type_path: path.clone(),
+                    }
+                },
+                None => {
+                    Value::Instance {
+                        type_path: path.clone(),
+                        case: *case.data().identifier().data(),
+                        values: Rc::default()
+                    }
+                },
+            };
+
+            self.names.insert(case.data().path().clone(), value);
+        }
+
+        self.methods.insert(path.clone(), HashMap::new());
+        for method in methods {
+            let value = Value::Procedure {
+                body: Rc::new(method.body.clone())
+            };
+
+            self.methods.get_mut(path).unwrap().insert(*method.name.data(), value);
         }
     }
 
@@ -198,7 +206,7 @@ impl Interpreter {
 
                         let mut return_value = Value::None;
                         for statement in body.iter() {
-                            self.statement(&statement);
+                            self.statement(statement);
 
                             if let Some(value) = self.return_exception.clone() {
                                 self.return_exception = None;
@@ -223,7 +231,7 @@ impl Interpreter {
 
                         let mut return_value = Value::None;
                         for statement in body.iter() {
-                            self.statement(&statement);
+                            self.statement(statement);
 
                             if let Some(value) = self.return_exception.clone() {
                                 self.return_exception = None;
@@ -260,7 +268,7 @@ impl Interpreter {
                     unreachable!();
                 };
 
-                let Value::Procedure { body } = self.methods[&type_path][name.data()].clone() else {
+                let Value::Procedure { body } = self.methods[type_path][name.data()].clone() else {
                     unreachable!();
                 };
 

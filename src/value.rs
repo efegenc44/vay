@@ -42,7 +42,7 @@ impl Value {
                     } else {
                         string.push_str(", ");
                     }
-                    string.push_str(&format!("{}", value.as_string(interner)));
+                    string.push_str(&value.as_string(interner));
                 }
                 string.push(')');
                 string

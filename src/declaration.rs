@@ -4,51 +4,41 @@ use crate::{
 };
 
 pub enum Declaration {
-    Module {
-        name: Located<InternIdx>,
-    },
-    Import {
-        name: Located<InternIdx>,
-    },
-    Procedure {
-        name: Located<InternIdx>,
-        arguments: Vec<Located<TypedIdentifier>>,
-        return_type: Located<TypeExpression>,
-        body: Vec<Located<Statement>>,
-        path: Path,
-    },
-    Variant {
-        name: Located<InternIdx>,
-        cases: Vec<Located<VariantCase>>,
-        methods: Vec<Method>,
-        path: Path,
-    },
+    Module(ModuleDeclaration),
+    Import(ImportDeclaration),
+    Procedure(ProcedureDeclaration),
+    Variant(VariantDeclaration),
 }
 
-pub struct Method {
+pub struct ModuleDeclaration {
     pub name: Located<InternIdx>,
-    pub this: Located<InternIdx>,
+}
+
+pub struct ImportDeclaration {
+    pub name: Located<InternIdx>,
+}
+
+pub struct ProcedureDeclaration {
+    pub name: Located<InternIdx>,
     pub arguments: Vec<Located<TypedIdentifier>>,
     pub return_type: Located<TypeExpression>,
     pub body: Vec<Located<Statement>>,
+    pub path: Path,
 }
 
-impl Method {
-    pub fn new(
-        name: Located<InternIdx>,
-        this: Located<InternIdx>,
-        arguments: Vec<Located<TypedIdentifier>>,
-        return_type: Located<TypeExpression>,
-        body: Vec<Located<Statement>>,
-    ) -> Self {
-        Self {
-            name,
-            this,
-            arguments,
-            return_type,
-            body,
-        }
-    }
+pub struct VariantDeclaration {
+    pub name: Located<InternIdx>,
+    pub cases: Vec<Located<VariantCase>>,
+    pub methods: Vec<MethodDeclaration>,
+    pub path: Path,
+}
+
+pub struct MethodDeclaration {
+    pub name: Located<InternIdx>,
+    pub self_reference: Located<InternIdx>,
+    pub arguments: Vec<Located<TypedIdentifier>>,
+    pub return_type: Located<TypeExpression>,
+    pub body: Vec<Located<Statement>>,
 }
 
 pub struct VariantCase {
@@ -59,12 +49,12 @@ pub struct VariantCase {
 
 impl VariantCase {
     pub fn new(
-        name: Located<InternIdx>,
+        identifier: Located<InternIdx>,
         arguments: Option<Vec<Located<TypeExpression>>>,
         path: Path,
     ) -> Self {
         Self {
-            identifier: name,
+            identifier,
             arguments,
             path,
         }
