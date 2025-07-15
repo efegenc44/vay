@@ -1,9 +1,9 @@
 use std::{collections::HashMap, rc::Rc};
 
-use crate::{bound::{Bound, Path}, declaration::{Declaration, Module, ProcedureDeclaration, VariantDeclaration}, expression::{ApplicationExpression, Expression, PathExpression, ProjectionExpression}, interner::{InternIdx, Interner}, location::Located, statement::{MatchStatement, Pattern, ReturnStatement, Statement, VariantCasePattern}, value::Value};
+use crate::{bound::{Bound, Path}, declaration::{Declaration, MethodDeclaration, Module, ProcedureDeclaration, VariantDeclaration}, expression::{ApplicationExpression, Expression, PathExpression, ProjectionExpression}, interner::{InternIdx, Interner}, location::Located, statement::{MatchStatement, Pattern, ReturnStatement, Statement, VariantCasePattern}, value::{ConstructorInstance, InstanceInstance, MethodInstance, ProcedureInstance, Value}};
 
 pub struct Interpreter {
-    methods: HashMap<Path, HashMap<InternIdx, Value>>,
+    methods: HashMap<Path, HashMap<InternIdx, Rc<ProcedureInstance>>>,
     names: HashMap<Path, Value>,
     locals: Vec<Value>,
 
@@ -27,14 +27,10 @@ impl Interpreter {
         }
 
         let mut main_module = None;
-        'outer: for module in modules {
-            for declaration in module.declarations() {
-                if let Declaration::Module(moduled) = declaration {
-                    if interner.get(moduled.name.data()) == "Main" {
-                        main_module = Some(module);
-                        break 'outer;
-                    }
-                }
+        for module in modules {
+            if interner.get(&module.name()) == "Main" {
+                main_module = Some(module);
+                break;
             }
         }
         let Some(main_module) = main_module else {
@@ -87,9 +83,8 @@ impl Interpreter {
     fn collect_procedure_name(&mut self, procedure: &ProcedureDeclaration) {
         let ProcedureDeclaration { body, path, .. } = procedure;
 
-        let value = Value::Procedure {
-            body: Rc::new(body.clone())
-        };
+        let procedure = ProcedureInstance { body: body.clone() };
+        let value = Value::Procedure(Rc::new(procedure));
 
         self.names.insert(path.clone(), value);
     }
@@ -98,19 +93,21 @@ impl Interpreter {
         let VariantDeclaration { cases, methods, path, .. } = variant;
 
         for case in cases {
+            let constructor = ConstructorInstance {
+                type_path: path.clone(),
+                case: *case.data().identifier().data(),
+            };
+
             let value = match case.data().arguments() {
-                Some(_arguments) => {
-                    Value::Constructor {
-                        name: *case.data().identifier().data(),
-                        type_path: path.clone(),
-                    }
+                Some(..) => {
+                    Value::Constructor(Rc::new(constructor))
                 },
                 None => {
-                    Value::Instance {
-                        type_path: path.clone(),
-                        case: *case.data().identifier().data(),
-                        values: Rc::default()
-                    }
+                    let instance = InstanceInstance {
+                        constructor: Rc::new(constructor),
+                        values: vec![],
+                    };
+                    Value::Instance(Rc::new(instance))
                 },
             };
 
@@ -119,11 +116,10 @@ impl Interpreter {
 
         self.methods.insert(path.clone(), HashMap::new());
         for method in methods {
-            let value = Value::Procedure {
-                body: Rc::new(method.body.clone())
-            };
+            let MethodDeclaration { name, body, .. } = method;
 
-            self.methods.get_mut(path).unwrap().insert(*method.name.data(), value);
+            let procedure = ProcedureInstance { body: body.clone() };
+            self.methods.get_mut(path).unwrap().insert(*name.data(), Rc::new(procedure));
         }
     }
 
@@ -169,22 +165,16 @@ impl Interpreter {
         pattern: &Located<Pattern>,
     ) -> bool {
         match (value, pattern.data()) {
-            (Value::Instance { type_path: _, case, values }, Pattern::VariantCase(variant_case)) => {
-                let VariantCasePattern { name, fields } = variant_case;
+            (Value::Instance(instance), Pattern::VariantCase(variant_case)) => {
+                let VariantCasePattern { name, .. } = variant_case;
+                let InstanceInstance { constructor, values } = instance.as_ref();
 
-                if case != name.data() {
+                if &constructor.case != name.data() {
                     return false;
                 }
 
-                match fields {
-                    Some(_) => {
-                        for value in values.iter() {
-                            self.locals.push(value.clone());
-                        }
-                    },
-                    None => {
-                        assert!(values.is_empty());
-                    },
+                for value in values {
+                    self.locals.push(value.clone());
                 }
 
                 true
@@ -207,7 +197,8 @@ impl Interpreter {
         match bound {
             Bound::Undetermined => unreachable!(),
             Bound::Local(bound_idx) => {
-                self.locals[self.locals.len() - 1 - bound_idx.idx()].clone()
+                let index = self.locals.len() - 1 - bound_idx.idx();
+                self.locals[index].clone()
             },
             Bound::Absolute(path) => self.names[path].clone(),
         }
@@ -217,67 +208,62 @@ impl Interpreter {
         let ApplicationExpression { function, arguments } = application;
 
         match self.expression(function) {
-            Value::Procedure { body } => {
+            Value::Procedure(procedure) => {
+                let ProcedureInstance { body } = procedure.as_ref();
+
                 let mut argument_values = vec![];
                 for argument in arguments {
                     let argument = self.expression(argument);
                     argument_values.push(argument);
                 }
                 self.locals.extend(argument_values);
-
                 let mut return_value = Value::None;
-                for statement in body.iter() {
-                    self.statement(statement);
+                    for statement in body.iter() {
+                        self.statement(statement);
 
-                    if let Some(value) = self.return_exception.clone() {
-                        self.return_exception = None;
-                        return_value = value;
-                        break;
+                        if let Some(value) = self.return_exception.clone() {
+                            self.return_exception = None;
+                            return_value = value;
+                            break;
+                        }
                     }
-                }
-
                 self.locals.truncate(self.locals.len() - arguments.len());
 
                 return_value
             },
-            Value::Method { instance, body } => {
+            Value::Method(method) => {
+                let MethodInstance { instance, procedure } = method.as_ref();
+                let ProcedureInstance { body } = procedure.as_ref();
+
                 let mut argument_values = vec![];
                 for argument in arguments {
-                    let argument = self.expression(argument);
-                    argument_values.push(argument);
+                    argument_values.push(self.expression(argument));
                 }
-
-                self.locals.push(*instance.clone());
+                self.locals.push(instance.clone());
                 self.locals.extend(argument_values);
+                    let mut return_value = Value::None;
+                    for statement in body {
+                        self.statement(statement);
 
-                let mut return_value = Value::None;
-                for statement in body.iter() {
-                    self.statement(statement);
-
-                    if let Some(value) = self.return_exception.clone() {
-                        self.return_exception = None;
-                        return_value = value;
-                        break;
+                        if let Some(value) = self.return_exception.clone() {
+                            self.return_exception = None;
+                            return_value = value;
+                            break;
+                        }
                     }
-                }
-
                 self.locals.truncate(self.locals.len() - arguments.len());
                 self.locals.pop();
 
                 return_value
             },
-            Value::Constructor { type_path, name } => {
+            Value::Constructor(constructor) => {
                 let mut values = vec![];
                 for argument in arguments {
-                    let argument = self.expression(argument);
-                    values.push(argument);
+                    values.push(self.expression(argument));
                 }
 
-                Value::Instance {
-                    type_path,
-                    case: name,
-                    values: Rc::new(values),
-                }
+                let instance = InstanceInstance { constructor, values };
+                Value::Instance(Rc::new(instance))
             },
             _ => unreachable!()
         }
@@ -287,14 +273,15 @@ impl Interpreter {
         let ProjectionExpression { expression, name } = projection;
 
         let instance = self.expression(expression);
-        let Value::Instance { type_path, case: _, values: _ } = &instance else {
+        let Value::Instance(instanceinstance) = &instance else {
             unreachable!();
         };
 
-        let Value::Procedure { body } = self.methods[type_path][name.data()].clone() else {
-            unreachable!();
-        };
+        let InstanceInstance { constructor, .. } = instanceinstance.as_ref();
+        let ConstructorInstance { type_path, .. } = constructor.as_ref();
 
-        Value::Method { instance: Box::new(instance), body }
+        let procedure = self.methods[type_path][name.data()].clone();
+        let method = MethodInstance { instance, procedure };
+        Value::Method(Rc::new(method))
     }
 }

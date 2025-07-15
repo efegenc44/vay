@@ -4,32 +4,23 @@ use crate::{bound::Path, interner::{InternIdx, Interner}, location::Located, sta
 
 #[derive(Clone)]
 pub enum Value {
-    Procedure {
-        body: Rc<Vec<Located<Statement>>>
-    },
-    Method {
-        instance: Box<Value>,
-        body: Rc<Vec<Located<Statement>>>
-    },
-    Constructor {
-        type_path: Path,
-        name: InternIdx,
-    },
-    Instance {
-        type_path: Path,
-        case: InternIdx,
-        values: Rc<Vec<Value>>
-    },
+    Procedure(Rc<ProcedureInstance>),
+    Method(Rc<MethodInstance>),
+    Constructor(Rc<ConstructorInstance>),
+    Instance(Rc<InstanceInstance>),
     None
 }
 
 impl Value {
     pub fn as_string(&self, interner: &Interner) -> String {
         match self {
-            Value::Procedure { .. } => "<function>".into(),
-            Value::Method { .. } => "<function>".into(),
-            Value::Constructor { .. } => "<function>".into(),
-            Value::Instance { type_path: _, case, values } => {
+            Value::Procedure(..) => "<function>".into(),
+            Value::Method(..) => "<function>".into(),
+            Value::Constructor(..) => "<function>".into(),
+            Value::Instance(instance) => {
+                let InstanceInstance { constructor, values, .. } = instance.as_ref();
+                let ConstructorInstance { case, .. } = constructor.as_ref();
+
                 if values.is_empty() {
                     return interner.get(case).into();
                 }
@@ -50,4 +41,23 @@ impl Value {
             Value::None => "None".into(),
         }
     }
+}
+
+pub struct ProcedureInstance {
+    pub body: Vec<Located<Statement>>
+}
+
+pub struct MethodInstance {
+    pub instance: Value,
+    pub procedure: Rc<ProcedureInstance>
+}
+
+pub struct ConstructorInstance {
+    pub type_path: Path,
+    pub case: InternIdx
+}
+
+pub struct InstanceInstance {
+    pub constructor: Rc<ConstructorInstance>,
+    pub values: Vec<Value>
 }

@@ -135,7 +135,7 @@ impl Module {
         &self.source
     }
 
-    pub fn name(&mut self) -> InternIdx {
+    pub fn name(&self) -> InternIdx {
         self.name
     }
 
