@@ -154,8 +154,8 @@ impl Interpreter {
         let value = self.expression(expression);
         for branch in branches {
             let locals_len = self.locals.len();
-            if self.value_pattern_match(&value, &branch.data().pattern) {
-                self.statement(&branch.data().statement);
+            if self.value_pattern_match(&value, branch.data().pattern()) {
+                self.statement(branch.data().statement());
                 self.locals.truncate(locals_len);
                 break;
             }

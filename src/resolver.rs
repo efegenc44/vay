@@ -2,19 +2,19 @@ use std::{collections::HashSet, vec};
 
 use crate::{
     bound::{Bound, Path},
-    declaration::{Declaration, ImportDeclaration, MethodDeclaration, Module, ProcedureDeclaration, VariantDeclaration},
+    declaration::{Declaration, ImportDeclaration, MethodDeclaration, Module, ModuleDeclaration, ProcedureDeclaration, VariantDeclaration},
     expression::{ApplicationExpression, Expression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, TypeExpression},
     interner::{InternIdx, Interner},
     location::{Located, SourceLocation},
     reportable::{Reportable, ReportableResult},
-    statement::{MatchStatement, Pattern, ReturnStatement, Statement},
+    statement::{MatchStatement, Pattern, ReturnStatement, Statement, VariantCasePattern},
 };
 
 pub struct Resolver {
-    modules: HashSet<InternIdx>,
+    modules_names: HashSet<InternIdx>,
 
-    variants: HashSet<Path>,
-    procedures: HashSet<Path>,
+    type_names: HashSet<Path>,
+    value_names: HashSet<Path>,
 
     locals: Vec<InternIdx>,
 
@@ -26,11 +26,12 @@ pub struct Resolver {
 impl Resolver {
     pub fn new() -> Self {
         Self {
-            variants: HashSet::new(),
-            procedures: HashSet::new(),
-            locals: vec![],
+            modules_names: HashSet::new(),
 
-            modules: HashSet::new(),
+            type_names: HashSet::new(),
+            value_names: HashSet::new(),
+
+            locals: vec![],
 
             current_imports: HashSet::new(),
             current_path: Path::empty(),
@@ -40,12 +41,12 @@ impl Resolver {
 
     pub fn resolve(&mut self, mut modules: Vec<Module>) -> ReportableResult<Vec<Module>> {
         for module in &mut modules {
+            self.which_module(module, true)?;
             self.collect_names(module)?;
         }
 
         for module in &mut modules {
-            // TODO: this is a bit unnecessary
-            self.which_module(module)?;
+            self.which_module(module, false)?;
             self.module(module)?;
         }
 
@@ -60,41 +61,59 @@ impl Resolver {
         Ok(())
     }
 
-    fn which_module(&mut self, module: &Module) -> ReportableResult<()> {
-        self.current_imports.clear();
-        self.current_path = Path::empty();
+    fn which_module(&mut self, module: &mut Module, register: bool) -> ReportableResult<()> {
         self.current_source = module.source().to_string();
+        if !register {
+            self.current_imports.clear();
+        }
+
+        let mut module_name = None;
 
         let mut declared = false;
         for declaration in module.declarations() {
-            match declaration {
-                Declaration::Module(module) => {
+            if register {
+                if let Declaration::Module(module) = declaration {
+                    let ModuleDeclaration { name } = module;
+
                     if !declared {
                         declared = true;
-                        self.current_path.push(*module.name.data());
-                        self.modules.insert(*module.name.data());
+                        module_name = Some(*name.data());
+                        if !self.modules_names.insert(*name.data()) {
+                            // Without this error, behaviour is extending the existing module
+                            //   maybe that's an interesting idea!
+                            return self.error(ResolveError::CollidingModuleNames(*name.data()), name.location())
+                        }
                     } else {
-                        return self
-                            .error(ResolveError::DuplicateModuleDeclaration, module.name.location());
+                        return self.error(ResolveError::DuplicateModuleDeclaration, name.location());
                     }
                 }
-                Declaration::Import(import) => {
-                    // TODO: Check for duplicate module names
-                    self.current_imports.insert(*import.name.data());
+            } else {
+                if let Declaration::Import(import) = declaration {
+                    let ImportDeclaration { name } = import;
+
+                    self.current_imports.insert(*name.data());
                 }
-                _ => (),
             }
         }
 
-        if self.current_path.is_empty() {
-            return self.error(ResolveError::ModuleIsNotDeclared, SourceLocation::dummy());
+        if register {
+            let Some(module_name) = module_name else {
+                return self.error(ResolveError::ModuleIsNotDeclared, SourceLocation::dummy());
+            };
+
+            *module.name_mut() = module_name;
         }
+
+        self.current_path = {
+            let mut path = Path::empty();
+            path.push(module.name());
+            path
+        };
 
         Ok(())
     }
 
     fn collect_names(&mut self, module: &mut Module) -> ReportableResult<()> {
-        self.which_module(module)?;
         for declaration in module.declarations_mut() {
             match declaration {
                 Declaration::Module { .. } => {}
@@ -111,8 +130,8 @@ impl Resolver {
         let ProcedureDeclaration { name, path, .. } = procedure;
 
         let procedure_path = self.current_path.append(*name.data());
-        if !self.procedures.contains(&procedure_path) {
-            self.procedures.insert(procedure_path.clone());
+        if !self.value_names.contains(&procedure_path) {
+            self.value_names.insert(procedure_path.clone());
             *path = procedure_path;
         } else {
             return self.error(
@@ -128,7 +147,7 @@ impl Resolver {
         let VariantDeclaration { name, cases, path, .. } = variant;
 
         let variant_path = self.current_path.append(*name.data());
-        if self.variants.contains(&variant_path) {
+        if self.type_names.contains(&variant_path) {
             return self.error(
                 ResolveError::DuplicateTypeDeclaration(variant_path),
                 name.location(),
@@ -139,8 +158,8 @@ impl Resolver {
         for case in cases.iter_mut() {
             let constructor = *case.data().identifier().data();
             let constructor_path = self.current_path.append(constructor);
-            if !self.procedures.contains(&constructor_path) {
-                self.procedures.insert(constructor_path.clone());
+            if !self.value_names.contains(&constructor_path) {
+                self.value_names.insert(constructor_path.clone());
                 *case.data_mut().path_mut() = constructor_path;
             } else {
                 return self.error(
@@ -153,7 +172,7 @@ impl Resolver {
             }
         }
         self.current_path.pop();
-        self.variants.insert(variant_path.clone());
+        self.type_names.insert(variant_path.clone());
         *path = variant_path;
 
         Ok(())
@@ -207,7 +226,7 @@ impl Resolver {
             }
             Bound::Absolute(base_path) => {
                 let path = base_path.append_parts(&parts[1..]);
-                let Some(path) = self.procedures.get(&path) else {
+                let Some(path) = self.value_names.get(&path) else {
                     return self.error(ResolveError::UnboundValuePath(path), location);
                 };
                 *bound = Bound::Absolute(path.clone());
@@ -235,10 +254,7 @@ impl Resolver {
         self.expression(expression)
     }
 
-    fn type_expression(
-        &mut self,
-        type_expression: &mut Located<TypeExpression>,
-    ) -> ReportableResult<()> {
+    fn type_expression(&mut self, type_expression: &mut Located<TypeExpression>) -> ReportableResult<()> {
         let location = type_expression.location();
         match type_expression.data_mut() {
             TypeExpression::Path(path) => self.path_type(path, location),
@@ -260,7 +276,7 @@ impl Resolver {
             }
             Bound::Absolute(base_path) => {
                 let path = base_path.append_parts(&parts[1..]);
-                let Some(path) = self.variants.get(&path) else {
+                let Some(path) = self.type_names.get(&path) else {
                     return self.error(ResolveError::UnboundTypePath(path), location);
                 };
                 *bound = Bound::Absolute(path.clone());
@@ -278,7 +294,6 @@ impl Resolver {
         for argument in arguments {
             self.type_expression(argument)?;
         }
-
         self.type_expression(return_type)
     }
 
@@ -303,21 +318,18 @@ impl Resolver {
         let locals_len = self.locals.len();
 
         for branch in branches {
-            match branch.data().pattern.data() {
+            match branch.data().pattern().data() {
                 Pattern::VariantCase(variant_case) => {
-                    let fields = if let Some(fields) = &variant_case.fields {
-                        fields
-                    } else {
-                        &vec![]
-                    };
+                    let VariantCasePattern { fields, .. } = variant_case;
 
-
-                    let fields = fields.iter().map(|field| *field.data());
-                    self.locals.extend(fields);
+                    if let Some(fields) = fields {
+                        let fields = fields.iter().map(|field| *field.data());
+                        self.locals.extend(fields);
+                    }
                 }
             }
 
-            self.statement(&mut branch.data_mut().statement)?;
+            self.statement(branch.data_mut().statement_mut())?;
             self.locals.truncate(locals_len);
         }
 
@@ -339,7 +351,7 @@ impl Resolver {
     fn import(&self, import: &ImportDeclaration) -> ReportableResult<()> {
         let ImportDeclaration { name } = import;
 
-        if !self.modules.contains(name.data()) {
+        if !self.modules_names.contains(name.data()) {
             return self.error(
                 ResolveError::ModuleDoesNotExist(*name.data()),
                 name.location(),
@@ -414,6 +426,7 @@ impl Resolver {
 pub enum ResolveError {
     ModuleIsNotDeclared,
     ModuleDoesNotExist(InternIdx),
+    CollidingModuleNames(InternIdx),
     DuplicateModuleDeclaration,
     DuplicateProcedureDeclaration(Path),
     DuplicateTypeDeclaration(Path),
@@ -439,6 +452,9 @@ impl Reportable for (Located<ResolveError>, String) {
             ResolveError::ModuleIsNotDeclared => "No module declarations found.".into(),
             ResolveError::ModuleDoesNotExist(name) => {
                 format!("Imported module `{}` does not exist.", interner.get(name))
+            }
+            ResolveError::CollidingModuleNames(name) => {
+                format!("Already imported a module named `{}`.", interner.get(name))
             }
             ResolveError::DuplicateModuleDeclaration => "Duplicate declaration of module.".into(),
             ResolveError::DuplicateProcedureDeclaration(path) => {

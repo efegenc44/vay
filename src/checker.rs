@@ -331,7 +331,7 @@ impl Checker {
             Statement::Match(matc) => {
                 let mut returns = true;
                 for branch in &matc.branches {
-                    if !Self::returns(&branch.data().statement) {
+                    if !Self::returns(branch.data().statement()) {
                         returns = false;
                     }
                 }
@@ -364,15 +364,15 @@ impl Checker {
         let locals_len = self.locals.len();
         let ty = self.infer(expression)?;
         for branch in branches {
-            if !self.type_pattern_match(ty.clone(), &branch.data().pattern)? {
+            if !self.type_pattern_match(ty.clone(), branch.data().pattern())? {
                 self.locals.truncate(locals_len);
                 return self.error(
                     TypeCheckError::NotAPatternOfType { expected: ty },
-                    branch.data().pattern.location(),
+                    branch.data().pattern().location(),
                 );
             }
 
-            self.statement(&branch.data().statement)?;
+            self.statement(branch.data().statement())?;
             self.locals.truncate(locals_len);
         }
 

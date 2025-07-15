@@ -264,7 +264,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         let statement = self.statement()?;
 
         let location = pattern.location().extend(&statement.location());
-        Ok(Located::new(MatchBranch { pattern, statement }, location))
+        Ok(Located::new(MatchBranch::new(pattern, statement), location))
     }
 
     fn pattern(&mut self) -> ReportableResult<Located<Pattern>> {
@@ -398,7 +398,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         self.expect(Token::LeftCurly)?;
         let mut cases = vec![];
         let mut methods = vec![];
-        while let None = self.terminator(Token::RightCurly)? {
+        while self.terminator(Token::RightCurly)?.is_none() {
             if self.peek_is(Token::ProcKeyword)? {
                 methods.push(self.method_declaration()?);
             } else {

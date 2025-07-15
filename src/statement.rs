@@ -20,8 +20,26 @@ pub struct MatchStatement {
 
 #[derive(Clone)]
 pub struct MatchBranch {
-    pub pattern: Located<Pattern>,
-    pub statement: Located<Statement>,
+    pattern: Located<Pattern>,
+    statement: Located<Statement>,
+}
+
+impl MatchBranch {
+    pub fn new(pattern: Located<Pattern>, statement: Located<Statement>) -> Self {
+        Self { pattern, statement }
+    }
+
+    pub fn pattern(&self) -> &Located<Pattern> {
+        &self.pattern
+    }
+
+    pub fn statement(&self) -> &Located<Statement> {
+        &self.statement
+    }
+
+    pub fn statement_mut(&mut self) -> &mut Located<Statement> {
+        &mut self.statement
+    }
 }
 
 #[derive(Clone)]

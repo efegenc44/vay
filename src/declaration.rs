@@ -111,6 +111,7 @@ impl TypedIdentifier {
 pub struct Module {
     declarations: Vec<Declaration>,
     source: String,
+    name: InternIdx
 }
 
 impl Module {
@@ -118,6 +119,7 @@ impl Module {
         Self {
             declarations,
             source,
+            name: InternIdx::dummy_idx()
         }
     }
 
@@ -131,5 +133,13 @@ impl Module {
 
     pub fn source(&self) -> &str {
         &self.source
+    }
+
+    pub fn name(&mut self) -> InternIdx {
+        self.name
+    }
+
+    pub fn name_mut(&mut self) -> &mut InternIdx {
+        &mut self.name
     }
 }

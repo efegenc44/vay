@@ -34,10 +34,6 @@ impl Path {
         Self(vec![])
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
     pub fn append(&self, name: InternIdx) -> Self {
         let mut path = self.clone();
         path.0.push(name);
