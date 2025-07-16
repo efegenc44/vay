@@ -1,0 +1,12 @@
+module Main
+
+variant List(T) {
+    Nil
+    Cons(T, List(T))
+}
+
+variant Foo { Foo }
+
+proc main() : Foo {
+    return Foo::Foo
+}

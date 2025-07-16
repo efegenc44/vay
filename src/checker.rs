@@ -64,6 +64,7 @@ impl Checker {
         match type_expression.data() {
             TypeExpression::Path(type_path) => self.eval_path_type(type_path),
             TypeExpression::Procedure(procedure_type) => self.eval_procedure_type(procedure_type),
+            TypeExpression::Application(_type_application) => todo!()
         }
     }
 

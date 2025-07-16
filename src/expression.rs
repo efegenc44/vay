@@ -28,7 +28,8 @@ pub struct ProjectionExpression {
 #[derive(Clone)]
 pub enum TypeExpression {
     Path(PathTypeExpression),
-    Procedure(ProcedureTypeExpression)
+    Procedure(ProcedureTypeExpression),
+    Application(TypeApplicationExpression)
 }
 
 #[derive(Clone)]
@@ -41,4 +42,10 @@ pub struct PathTypeExpression {
 pub struct ProcedureTypeExpression {
     pub arguments: Vec<Located<TypeExpression>>,
     pub return_type: Box<Located<TypeExpression>>
+}
+
+#[derive(Clone)]
+pub struct TypeApplicationExpression {
+    pub function: Box<Located<TypeExpression>>,
+    pub arguments: Vec<Located<TypeExpression>>,
 }

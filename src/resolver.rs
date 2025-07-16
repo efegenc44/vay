@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     bound::{Bound, Path},
     declaration::{Declaration, ImportDeclaration, MethodDeclaration, Module, ModuleDeclaration, ProcedureDeclaration, VariantDeclaration},
-    expression::{ApplicationExpression, Expression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, TypeExpression},
+    expression::{ApplicationExpression, Expression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, TypeApplicationExpression, TypeExpression},
     interner::{InternIdx, Interner},
     location::{Located, SourceLocation},
     reportable::{Reportable, ReportableResult},
@@ -40,6 +40,7 @@ pub struct Resolver {
     type_names: HashSet<Path>,
     value_names: HashSet<Path>,
 
+    // TODO: Seperate type and value locals
     locals: Vec<InternIdx>,
 
     current_module_name: InternIdx,
@@ -223,7 +224,12 @@ impl Resolver {
     }
 
     fn find_type_name(&self, intern_idx: &InternIdx) -> Option<Bound> {
-        // TODO: Local Scope (type variables)
+        // Local Scope
+        for (index, name_idx) in self.locals.iter().rev().enumerate() {
+            if name_idx == intern_idx {
+                return Some(Bound::Local(index));
+            }
+        }
 
         if self.current_imports().contains(intern_idx) {
             Some(Bound::Absolute(Path::empty().append(*intern_idx)))
@@ -288,6 +294,8 @@ impl Resolver {
         match type_expression.data_mut() {
             TypeExpression::Path(path) => self.path_type(path, location),
             TypeExpression::Procedure(procedure_type) => self.procedure_type(procedure_type),
+            // TODO: Inconsistent naming?
+            TypeExpression::Application(type_application) => self.type_application(type_application),
         }
     }
 
@@ -323,6 +331,17 @@ impl Resolver {
             self.type_expression(argument)?;
         }
         self.type_expression(return_type)
+    }
+
+    fn type_application(&mut self, type_application: &mut TypeApplicationExpression) -> ReportableResult<()> {
+        let TypeApplicationExpression { function, arguments } = type_application;
+
+        self.type_expression(function)?;
+        for argument in arguments {
+            self.type_expression(argument)?;
+        }
+
+        Ok(())
     }
 
     fn statement(&mut self, statement: &mut Located<Statement>) -> ReportableResult<()> {
@@ -433,19 +452,27 @@ impl Resolver {
     }
 
     fn variant(&mut self, variant: &mut VariantDeclaration) -> ReportableResult<()> {
-        let VariantDeclaration { cases, methods, .. } = variant;
+        let VariantDeclaration { cases, methods, type_vars, .. } = variant;
 
-        for case in cases {
-            if let Some(arguments) = case.data_mut().arguments_mut() {
-                for argument in arguments {
-                    self.type_expression(argument)?;
+        scoped!(self, {
+            // TODO: These ones are leaked
+            let type_vars = type_vars.iter().map(|type_var| type_var.data());
+            self.locals.extend(type_vars);
+
+            for case in cases {
+                if let Some(arguments) = case.data_mut().arguments_mut() {
+                    for argument in arguments {
+                        self.type_expression(argument)?;
+                    }
                 }
             }
-        }
 
-        for method in methods {
-            self.method(method)?;
-        }
+            // TODO: Here we leak type variables in value names, fix
+            for method in methods {
+                self.method(method)?;
+            }
+        });
+
 
         Ok(())
     }

@@ -7,7 +7,7 @@ use crate::{
         ProcedureDeclaration, TypedIdentifier, VariantCase, VariantDeclaration,
     },
     expression::{
-        ApplicationExpression, Expression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, TypeExpression
+        ApplicationExpression, Expression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, TypeApplicationExpression, TypeExpression
     },
     interner::{InternIdx, Interner},
     lexer::Lexer,
@@ -70,13 +70,6 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         }
     }
 
-    fn peek_is(&mut self, expected: Token) -> ReportableResult<bool> {
-        match self.peek()?.map(|token| *token.data()) {
-            Some(token) => Ok(token == expected),
-            None => Ok(false),
-        }
-    }
-
     fn peek_one_of(&mut self, expected_ones: &[Token]) -> ReportableResult<Located<Token>> {
         let Some(token) = self.peek()? else {
             return self.error(
@@ -107,6 +100,10 @@ impl<'source, 'interner> Parser<'source, 'interner> {
                 token.location(),
             ),
         }
+    }
+
+    fn peek_is(&mut self, expected: Token) -> ReportableResult<bool> {
+        Ok(self.peek_one_of(&[expected]).is_ok())
     }
 
     fn expect_one_of(&mut self, expected_ones: &[Token]) -> ReportableResult<Located<Token>> {
@@ -395,6 +392,16 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     fn variant(&mut self) -> ReportableResult<Declaration> {
         self.expect(Token::VariantKeyword)?;
         let name = self.expect_identifier()?;
+        let type_vars = if self.peek_is(Token::LeftParenthesis)? {
+            self.advance()?;
+            self.until(
+                Token::RightParenthesis,
+                Self::expect_identifier,
+                Some(Token::Comma)
+            )?.0
+        } else {
+            vec![]
+        };
         self.expect(Token::LeftCurly)?;
         let mut cases = vec![];
         let mut methods = vec![];
@@ -408,6 +415,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
 
         let variant = VariantDeclaration {
             name,
+            type_vars,
             cases,
             methods,
             path: Path::empty(),
@@ -417,7 +425,32 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     }
 
     fn type_expression(&mut self) -> ReportableResult<Located<TypeExpression>> {
-        self.type_expression_primary()
+        self.type_application()
+    }
+
+    fn type_application(&mut self) -> ReportableResult<Located<TypeExpression>> {
+        let mut expression = self.type_expression_primary()?;
+        loop {
+            if self.peek_is(Token::LeftParenthesis)? {
+                self.advance()?;
+                let (arguments, end) = self.until(
+                    Token::RightParenthesis,
+                    Self::type_expression,
+                    Some(Token::Comma)
+                )?;
+
+                let location = expression.location().extend(&end);
+                let application = TypeApplicationExpression {
+                    function: Box::new(expression),
+                    arguments,
+                };
+                expression = Located::new(TypeExpression::Application(application), location);
+            } else {
+                break;
+            }
+        }
+
+        Ok(expression)
     }
 
     fn type_expression_primary(&mut self) -> ReportableResult<Located<TypeExpression>> {

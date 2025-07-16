@@ -28,6 +28,7 @@ pub struct ProcedureDeclaration {
 
 pub struct VariantDeclaration {
     pub name: Located<InternIdx>,
+    pub type_vars: Vec<Located<InternIdx>>,
     pub cases: Vec<Located<VariantCase>>,
     pub methods: Vec<MethodDeclaration>,
     pub path: Path,
