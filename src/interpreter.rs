@@ -10,6 +10,16 @@ pub struct Interpreter {
     return_exception: Option<Value>,
 }
 
+macro_rules! scoped {
+    ($self:expr, $body:block) => {
+        {
+            let locals_len = $self.locals.len();
+            $body
+            $self.locals.truncate(locals_len);
+        }
+    };
+}
+
 impl Interpreter {
     pub fn new() -> Self {
         Self {
@@ -61,8 +71,7 @@ impl Interpreter {
         for statement in &procedure.body {
             self.statement(statement);
 
-            if let Some(value) = self.return_exception.clone() {
-                self.return_exception = None;
+            if let Some(value) = self.return_exception.take() {
                 println!("\nResult = {}", value.as_string(interner));
                 break;
             }
@@ -149,35 +158,36 @@ impl Interpreter {
 
         let value = self.expression(expression);
         for branch in branches {
-            let locals_len = self.locals.len();
-            if self.value_pattern_match(&value, branch.data().pattern()) {
-                self.statement(branch.data().statement());
-                self.locals.truncate(locals_len);
+            if self.does_value_pattern_match(&value, branch.data().pattern()) {
+                scoped!(self, {
+                    self.value_pattern_match(&value, branch.data().pattern());
+                    self.statement(branch.data().statement());
+                });
                 break;
             }
-            self.locals.truncate(locals_len);
         }
     }
 
-    fn value_pattern_match(
-        &mut self,
-        value: &Value,
-        pattern: &Located<Pattern>,
-    ) -> bool {
+    fn does_value_pattern_match(&mut self, value: &Value, pattern: &Located<Pattern>) -> bool {
         match (value, pattern.data()) {
             (Value::Instance(instance), Pattern::VariantCase(variant_case)) => {
                 let VariantCasePattern { name, .. } = variant_case;
-                let InstanceInstance { constructor, values } = instance.as_ref();
+                let InstanceInstance { constructor, .. } = instance.as_ref();
 
-                if &constructor.case != name.data() {
-                    return false;
-                }
+                &constructor.case == name.data()
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn value_pattern_match(&mut self, value: &Value, pattern: &Located<Pattern>) {
+        match (value, pattern.data()) {
+            (Value::Instance(instance), Pattern::VariantCase(_)) => {
+                let InstanceInstance { values, .. } = instance.as_ref();
 
                 for value in values {
                     self.locals.push(value.clone());
                 }
-
-                true
             }
             _ => unreachable!(),
         }
@@ -211,23 +221,23 @@ impl Interpreter {
             Value::Procedure(procedure) => {
                 let ProcedureInstance { body } = procedure.as_ref();
 
-                let mut argument_values = vec![];
-                for argument in arguments {
-                    let argument = self.expression(argument);
-                    argument_values.push(argument);
-                }
-                self.locals.extend(argument_values);
                 let mut return_value = Value::None;
+                scoped!(self, {
+                    let mut argument_values = vec![];
+                    for argument in arguments {
+                        let argument = self.expression(argument);
+                        argument_values.push(argument);
+                    }
+                    self.locals.extend(argument_values);
                     for statement in body.iter() {
                         self.statement(statement);
 
-                        if let Some(value) = self.return_exception.clone() {
-                            self.return_exception = None;
+                        if let Some(value) = self.return_exception.take() {
                             return_value = value;
                             break;
                         }
                     }
-                self.locals.truncate(self.locals.len() - arguments.len());
+                });
 
                 return_value
             },
@@ -235,24 +245,24 @@ impl Interpreter {
                 let MethodInstance { instance, procedure } = method.as_ref();
                 let ProcedureInstance { body } = procedure.as_ref();
 
-                let mut argument_values = vec![];
-                for argument in arguments {
-                    argument_values.push(self.expression(argument));
-                }
-                self.locals.push(instance.clone());
-                self.locals.extend(argument_values);
-                    let mut return_value = Value::None;
+                let mut return_value = Value::None;
+                scoped!(self, {
+                    let mut argument_values = vec![];
+                    for argument in arguments {
+                        argument_values.push(self.expression(argument));
+                    }
+                    self.locals.push(instance.clone());
+                    self.locals.extend(argument_values);
                     for statement in body {
                         self.statement(statement);
 
-                        if let Some(value) = self.return_exception.clone() {
-                            self.return_exception = None;
+                        if let Some(value) = self.return_exception.take() {
                             return_value = value;
                             break;
                         }
                     }
-                self.locals.truncate(self.locals.len() - arguments.len());
-                self.locals.pop();
+                });
+
 
                 return_value
             },

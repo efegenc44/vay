@@ -13,6 +13,16 @@ use crate::{
     typ::{ProcedureType, Type},
 };
 
+macro_rules! scoped {
+    ($self:expr, $body:block) => {
+        {
+            let locals_len = $self.locals.len();
+            $body
+            $self.locals.truncate(locals_len);
+        }
+    };
+}
+
 struct VariantInformation {
     ty: Type,
     cases: HashMap<InternIdx, Vec<Type>>,
@@ -259,17 +269,15 @@ impl Checker {
 
             let variant_type = self.variants[path].ty.clone();
 
-            let arguments_len = arguments.len();
-
-            self.locals.push(variant_type);
-            self.locals.extend(arguments);
-            self.return_type = Some(*return_type.clone());
+            scoped!(self, {
+                self.locals.push(variant_type);
+                self.locals.extend(arguments);
+                self.return_type = Some(*return_type.clone());
                 for statement in body {
                     self.statement(statement)?;
                 }
-            self.return_type = None;
-            self.locals.truncate(self.locals.len() - arguments_len);
-            self.locals.pop();
+                self.return_type = None;
+            });
         }
 
         Ok(())
@@ -293,14 +301,14 @@ impl Checker {
             );
         }
 
-        let arguments_len = arguments.len();
-        self.locals.extend(arguments);
-        self.return_type = Some(*return_type.clone());
+        scoped!(self, {
+            self.locals.extend(arguments);
+            self.return_type = Some(*return_type.clone());
             for statement in body {
                 self.statement(statement)?;
             }
-        self.return_type = None;
-        self.locals.truncate(self.locals.len() - arguments_len);
+            self.return_type = None;
+        });
 
         Ok(())
     }
@@ -326,19 +334,19 @@ impl Checker {
         // TODO: Exhaustiveness check
         let MatchStatement { expression, branches } = matc;
 
-        let locals_len = self.locals.len();
         let ty = self.infer(expression)?;
         for branch in branches {
-            if !self.type_pattern_match(ty.clone(), branch.data().pattern())? {
-                self.locals.truncate(locals_len);
-                return self.error(
-                    TypeCheckError::NotAPatternOfType { expected: ty },
-                    branch.data().pattern().location(),
-                );
-            }
+            scoped!(self, {
+                if !self.type_pattern_match(ty.clone(), branch.data().pattern())? {
+                    // TODO: Remove push locals by type_pattern_match()
+                    return self.error(
+                        TypeCheckError::NotAPatternOfType { expected: ty },
+                        branch.data().pattern().location(),
+                    );
+                }
 
-            self.statement(branch.data().statement())?;
-            self.locals.truncate(locals_len);
+                self.statement(branch.data().statement())?;
+            })
         }
 
         Ok(())

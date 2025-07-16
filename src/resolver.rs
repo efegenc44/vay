@@ -10,6 +10,16 @@ use crate::{
     statement::{MatchStatement, Pattern, ReturnStatement, Statement, VariantCasePattern},
 };
 
+macro_rules! scoped {
+    ($self:expr, $body:block) => {
+        {
+            let locals_len = $self.locals.len();
+            $body
+            $self.locals.truncate(locals_len);
+        }
+    };
+}
+
 struct ModuleInformation {
     imports: HashSet<InternIdx>,
     path: Path,
@@ -333,25 +343,27 @@ impl Resolver {
         let MatchStatement { expression, branches } = matc;
 
         self.expression(expression)?;
-        let locals_len = self.locals.len();
-
         for branch in branches {
-            match branch.data().pattern().data() {
-                Pattern::VariantCase(variant_case) => {
-                    let VariantCasePattern { fields, .. } = variant_case;
-
-                    if let Some(fields) = fields {
-                        let fields = fields.iter().map(|field| *field.data());
-                        self.locals.extend(fields);
-                    }
-                }
-            }
-
-            self.statement(branch.data_mut().statement_mut())?;
-            self.locals.truncate(locals_len);
+            scoped!(self, {
+                self.name_pattern_match(branch.data().pattern().data());
+                self.statement(branch.data_mut().statement_mut())?;
+            });
         }
 
         Ok(())
+    }
+
+    fn name_pattern_match(&mut self, pattern: &Pattern) {
+        match pattern {
+            Pattern::VariantCase(variant_case) => {
+                let VariantCasePattern { fields, .. } = variant_case;
+
+                if let Some(fields) = fields {
+                    let fields = fields.iter().map(|field| *field.data());
+                    self.locals.extend(fields);
+                }
+            },
+        }
     }
 
     fn declaration(&mut self, declaration: &mut Declaration) -> ReportableResult<()> {
@@ -387,12 +399,14 @@ impl Resolver {
         }
         self.type_expression(return_type)?;
 
-        let argument_names = arguments.iter().map(|idx| *idx.data().indentifier().data());
-        self.locals.extend(argument_names);
+        scoped!(self, {
+            let argument_names = arguments.iter().map(|idx| *idx.data().indentifier().data());
+            self.locals.extend(argument_names);
+
             for statement in body {
-                self.statement(statement)?
+                self.statement(statement)?;
             }
-        self.locals.truncate(self.locals.len() - arguments.len());
+        });
 
         Ok(())
     }
@@ -405,14 +419,15 @@ impl Resolver {
         }
         self.type_expression(return_type)?;
 
-        self.locals.push(*instance.data());
-        let argument_names = arguments.iter().map(|idx| *idx.data().indentifier().data());
-        self.locals.extend(argument_names);
+        scoped!(self, {
+            self.locals.push(*instance.data());
+            let argument_names = arguments.iter().map(|idx| *idx.data().indentifier().data());
+            self.locals.extend(argument_names);
+
             for statement in body {
                 self.statement(statement)?
             }
-        self.locals.truncate(self.locals.len() - arguments.len());
-        self.locals.pop();
+        });
 
         Ok(())
     }
