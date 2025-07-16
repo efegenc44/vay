@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, vec};
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     bound::{Bound, Path},
@@ -211,12 +211,12 @@ impl Resolver {
         // Local Scope
         for (index, name_idx) in self.locals.iter().rev().enumerate() {
             if name_idx == intern_idx {
-                return Some(Bound::local(index));
+                return Some(Bound::Local(index));
             }
         }
 
         if self.current_imports().contains(intern_idx) {
-            Some(Bound::absolute(vec![*intern_idx]))
+            Some(Bound::Absolute(Path::empty().append(*intern_idx)))
         } else {
             None
         }
@@ -226,7 +226,7 @@ impl Resolver {
         // TODO: Local Scope (type variables)
 
         if self.current_imports().contains(intern_idx) {
-            Some(Bound::absolute(vec![*intern_idx]))
+            Some(Bound::Absolute(Path::empty().append(*intern_idx)))
         } else {
             None
         }

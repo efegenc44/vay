@@ -207,7 +207,7 @@ impl Interpreter {
         match bound {
             Bound::Undetermined => unreachable!(),
             Bound::Local(bound_idx) => {
-                let index = self.locals.len() - 1 - bound_idx.idx();
+                let index = self.locals.len() - 1 - bound_idx;
                 self.locals[index].clone()
             },
             Bound::Absolute(path) => self.names[path].clone(),

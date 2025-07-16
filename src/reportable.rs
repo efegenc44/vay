@@ -21,19 +21,13 @@ pub trait Reportable {
         let first_line_number = location.start().row();
 
         eprintln!();
-        eprintln!(
-            "        | [{source}:{first_line_number}:{}] (at {stage})",
-            location.start().column()
-        );
+        eprintln!("        | [{source}:{first_line_number}:{}] (at {stage})", location.start().column());
         eprintln!("        |");
 
         if location.is_on_one_line() {
             let first_line = lines.nth(first_line_number - 1).unwrap();
             eprintln!("  {first_line_number:>5} | {first_line}");
-            eprintln!(
-                "        | {:spaces$}{:^^carrots$}",
-                "",
-                "",
+            eprintln!("        | {:spaces$}{:^^carrots$}", "", "",
                 spaces = (1..location.start().column()).len(),
                 carrots = (location.start().column()..location.end().column()).len()
             );
@@ -41,10 +35,7 @@ pub trait Reportable {
         } else {
             let first_line = lines.nth(first_line_number - 1).unwrap();
             eprintln!("  {first_line_number:>5} | {first_line}");
-            eprintln!(
-                "        | {:spaces$}{:^^carrots$}",
-                "",
-                "",
+            eprintln!("        | {:spaces$}{:^^carrots$}", "", "",
                 spaces = (1..location.start().column()).len(),
                 carrots = (location.start().column()..first_line.chars().count()).len()
             );
@@ -52,18 +43,14 @@ pub trait Reportable {
             for line_number in (first_line_number + 1)..location.end().row() {
                 let line = lines.next().unwrap();
                 eprintln!("  {line_number:>5} | {line}");
-                eprintln!(
-                    "        | {:^^carrots$}",
-                    "",
+                eprintln!("        | {:^^carrots$}", "",
                     carrots = line.chars().count()
                 )
             }
 
             let last_line = lines.next().unwrap();
             eprintln!("  {:>5} | {last_line}", location.end().row());
-            eprintln!(
-                "        | {:^^carrots$}",
-                "",
+            eprintln!("        | {:^^carrots$}", "",
                 carrots = (1..location.end().column()).len()
             );
             eprintln!("        | {}", self.description(interner))

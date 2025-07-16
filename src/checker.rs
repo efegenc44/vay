@@ -427,7 +427,7 @@ impl Checker {
 
         match bound {
             Bound::Local(bound_idx) => {
-                let index = self.locals.len() - 1 - bound_idx.idx();
+                let index = self.locals.len() - 1 - bound_idx;
                 Ok(self.locals[index].clone())
             }
             Bound::Absolute(path) => Ok(self.names[path].clone()),

@@ -3,27 +3,8 @@ use crate::interner::{InternIdx, Interner};
 #[derive(Clone)]
 pub enum Bound {
     Undetermined,
-    Local(BoundIdx),
+    Local(usize),
     Absolute(Path),
-}
-
-impl Bound {
-    pub fn local(index: usize) -> Self {
-        Self::Local(BoundIdx(index))
-    }
-
-    pub fn absolute(path: Vec<InternIdx>) -> Self {
-        Self::Absolute(Path(path))
-    }
-}
-
-#[derive(Clone)]
-pub struct BoundIdx(usize);
-
-impl BoundIdx {
-    pub fn idx(&self) -> usize {
-        self.0
-    }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
