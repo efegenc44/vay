@@ -27,16 +27,14 @@ struct VariantInformation {
     ty: Type,
     cases: HashMap<InternIdx, Vec<Type>>,
     methods: HashMap<InternIdx, ProcedureType>,
-    type_vars: Vec<Type>
 }
 
 impl VariantInformation {
-    fn with_type(ty: Type, type_vars: Vec<Type>) -> Self {
+    fn with_type(ty: Type) -> Self {
         Self {
             ty,
             cases: HashMap::new(),
             methods: HashMap::new(),
-            type_vars,
         }
     }
 }
@@ -66,10 +64,58 @@ impl Checker {
         }
     }
 
+    #[allow(unused)]
     fn newvar(&mut self) -> Type {
         let idx = self.type_var_counter;
         self.type_var_counter += 1;
         Type::TypeVar(idx)
+    }
+
+    fn newvar_idx(&mut self) -> usize {
+        let idx = self.type_var_counter;
+        self.type_var_counter += 1;
+        idx
+    }
+
+    // Basically like immediate instance after generalization
+    fn rinst(&mut self, t: Type, map: &mut HashMap<usize, Type>) -> Type {
+        match t {
+            Type::Variant(path, arguments) => {
+                let mut rarguments = vec![];
+                for argument in arguments {
+                    rarguments.push(self.rinst(argument, map));
+                }
+
+                Type::Variant(path, rarguments)
+            },
+            Type::Procedure(procedure) => {
+                let ProcedureType { arguments, return_type } = procedure;
+
+                let mut rarguments = vec![];
+                for argument in arguments {
+                    rarguments.push(self.rinst(argument, map));
+                }
+
+                let rreturn = Box::new(self.rinst(*return_type, map));
+                let procedure = ProcedureType {
+                    arguments: rarguments,
+                    return_type: rreturn
+                };
+                Type::Procedure(procedure)
+            },
+
+            Type::TypeVar(idx) => {
+                if map.contains_key(&idx) {
+                    map[&idx].clone()
+                } else {
+                    let t = self.newvar();
+                    map.insert(idx, t.clone());
+                    t
+                }
+            },
+
+            Type::Forall(_, _) => unreachable!(),
+        }
     }
 
     fn eval_type_expression(&mut self, type_expression: &Located<TypeExpression>) -> ReportableResult<Type> {
@@ -111,11 +157,11 @@ impl Checker {
     fn eval_type_application(&mut self, type_application: &TypeApplicationExpression) -> ReportableResult<Type> {
         let TypeApplicationExpression { function, arguments } = &type_application;
 
-        let Type::Forall(artiy, mut ty) = self.eval_type_expression(function)? else {
+        let Type::Forall(vars, mut ty) = self.eval_type_expression(function)? else {
             todo!("not a parameterized type");
         };
 
-        if artiy != arguments.len() {
+        if vars.len() != arguments.len() {
             todo!("mismatched arity for type parameters");
         }
 
@@ -252,13 +298,14 @@ impl Checker {
             Type::Variant(path.clone(), vec![])
         } else {
             let ty = Box::new(Type::Variant(path.clone(), vec![]));
-            Type::Forall(type_vars.len(), ty)
+            let mut vars = vec![];
+            for _ in type_vars {
+                vars.push(self.newvar_idx());
+            }
+
+            Type::Forall(vars, ty)
         };
-        let mut vars = vec![];
-        for _ in type_vars {
-            vars.push(self.newvar());
-        }
-        let variant_data = VariantInformation::with_type(variant_type, vars);
+        let variant_data = VariantInformation::with_type(variant_type);
         self.variants.insert(path.clone(), variant_data);
 
         Ok(())
@@ -268,8 +315,9 @@ impl Checker {
         let VariantDeclaration { cases, methods, path, .. } = variant;
 
         scoped!(self, {
-            let type_vars = self.variants[path].type_vars.clone();
-            self.locals.extend(type_vars);
+            if let Type::Forall(vars, _) = self.variants[path].ty.clone() {
+                self.locals.extend(vars.iter().map(|var| Type::TypeVar(*var)));
+            };
 
             for method in methods {
                 let MethodDeclaration { name, arguments, return_type, .. } = method;
@@ -300,13 +348,17 @@ impl Checker {
                 };
             }
 
+            let poly;
             let variant_type = self.variants[path].ty.clone();
             let variant_type = match variant_type {
-                Type::Variant(..) => variant_type,
-                Type::Forall(_, ty) => {
-                    let Type::Variant(path, _) = ty.as_ref() else { unreachable!() };
-                    let type_vars = self.variants[path].type_vars.clone();
-                    Type::Variant(path.clone(), type_vars)
+                Type::Variant(..) => {
+                    poly = false;
+                    variant_type
+                },
+                Type::Forall(vars, _) => {
+                    poly = true;
+                    let type_vars = vars.iter().map(|var| Type::TypeVar(*var));
+                    Type::Variant(path.clone(), type_vars.collect())
                 },
                 _ => unreachable!(),
             };
@@ -332,7 +384,20 @@ impl Checker {
                         arguments: argument_types,
                         return_type: Box::new(variant_type.clone())
                     };
-                    self.names.insert(case_path, Type::Procedure(procedure_type));
+
+                    let ty = if poly {
+                        let mut map = HashMap::new();
+                        let procedure = self.rinst(Type::Procedure(procedure_type), &mut map);
+                        let vars = map.into_values().map(|t| {
+                            let Type::TypeVar(id) = t else { unreachable!() };
+                            id
+                        }).collect();
+                        Type::Forall(vars, Box::new(procedure))
+                    } else {
+                        Type::Procedure(procedure_type)
+                    };
+
+                    self.names.insert(case_path, ty);
                 } else {
                     self.variants
                         .get_mut(path)
@@ -340,8 +405,19 @@ impl Checker {
                         .cases
                         .insert(case_name, vec![]);
 
-                    self.names
-                        .insert(case_path, variant_type.clone());
+                    let ty = if poly {
+                        let mut map = HashMap::new();
+                        let t = self.rinst(variant_type.clone(), &mut map);
+                        let vars = map.into_values().map(|t| {
+                            let Type::TypeVar(id) = t else { unreachable!() };
+                            id
+                        }).collect();
+                        Type::Forall(vars, Box::new(t))
+                    } else {
+                        variant_type.clone()
+                    };
+
+                    self.names.insert(case_path, ty);
                 }
             }
         });
@@ -379,10 +455,9 @@ impl Checker {
             let variant_type = self.variants[path].ty.clone();
             let variant_type = match variant_type {
                 Type::Variant(..) => variant_type,
-                Type::Forall(_, ty) => {
-                    let Type::Variant(path, _) = ty.as_ref() else { unreachable!() };
-                    let type_vars = self.variants[path].type_vars.clone();
-                    Type::Variant(path.clone(), type_vars)
+                Type::Forall(vars, _) => {
+                    let type_vars = vars.iter().map(|var| Type::TypeVar(*var));
+                    Type::Variant(path.clone(), type_vars.collect())
                 },
                 _ => unreachable!(),
             };
@@ -476,13 +551,6 @@ impl Checker {
             (Type::Variant(path, arguments), Pattern::VariantCase(variant_case)) => {
                 let VariantCasePattern { name, fields } = variant_case;
 
-                let type_vars = &self.variants[&path].type_vars;
-                let type_vars: Vec<_> = type_vars.iter().map(|var| {
-                    let Type::TypeVar(id) = var else { unreachable!() };
-                    *id
-                }).collect();
-                let type_var_map = type_vars.into_iter().zip(arguments).collect::<HashMap<_, _>>();
-
                 let cases = &self.variants[&path].cases;
                 if !cases.contains_key(name.data()) {
                     return self.error(
@@ -510,9 +578,16 @@ impl Checker {
                     );
                 }
 
-                for ty in case_fields {
-                    let ty = Self::replace_type_vars(ty.clone(), &type_var_map);
-                    self.locals.push(ty.clone());
+                if let Type::Forall(type_vars, _) = &self.variants[&path].ty {
+                    let type_var_map = type_vars.to_owned().into_iter().zip(arguments).collect::<HashMap<_, _>>();
+                    for ty in case_fields {
+                        let ty = Self::replace_type_vars(ty.clone(), &type_var_map);
+                        self.locals.push(ty.clone());
+                    }
+                } else {
+                    for ty in case_fields {
+                        self.locals.push(ty.clone());
+                    }
                 }
 
                 Ok(true)
@@ -523,6 +598,23 @@ impl Checker {
         }
     }
 
+    fn contains_type_var(t: &Type) -> bool {
+        match t {
+            Type::Variant(_, arguments) => {
+                arguments.iter().any(Self::contains_type_var)
+            },
+            Type::Procedure(procedure) => {
+                let ProcedureType { arguments, return_type } = procedure;
+
+                arguments.iter().any(Self::contains_type_var) ||
+                Self::contains_type_var(return_type)
+            },
+            Type::TypeVar(_) => true,
+
+            Type::Forall(..) => unreachable!(),
+        }
+    }
+
     fn check(&mut self, expression: &Located<Expression>, expected: Type) -> ReportableResult<()> {
         let encountered = match expression.data() {
             Expression::Path(..) |
@@ -530,18 +622,35 @@ impl Checker {
             Expression::Projection(..) => self.infer(expression)?
         };
 
-        // let Some(map) = Self::unify(encountered.clone(), expected.clone()) else {
-        //     return self.error(
-        //         TypeCheckError::MismatchedTypes {
-        //             encountered,
-        //             expected,
-        //         },
-        //         expression.location(),
-        //     );
-        // };
+        // TODO: use generalization and insantce methods as in algorithm J
+        //   what this code essentially is `instance`
+        let encountered = if let Type::Forall(_, t) = encountered {
+            *t
+        } else {
+            encountered
+        };
 
-        // let encountered = Self::replace_type_vars(encountered, &map);
-        // let expected = Self::replace_type_vars(expected, &map);
+        // Not sure about this but seems a bit legit
+        //   because if contains a type var, they unify and we dont check equality
+        let (encountered, expected) = if !Self::contains_type_var(&expected) {
+            let mut map = HashMap::new();
+            if !Self::unify(encountered.clone(), expected.clone(), &mut map) {
+                return self.error(
+                    TypeCheckError::MismatchedTypes {
+                        encountered,
+                        expected,
+                    },
+                    expression.location(),
+                );
+            };
+
+            let encountered = Self::replace_type_vars(encountered, &map);
+            let expected = Self::replace_type_vars(expected, &map);
+
+            (encountered, expected)
+        } else {
+            (encountered, expected)
+        };
 
         if encountered != expected {
             return self.error(
@@ -570,9 +679,37 @@ impl Checker {
         match bound {
             Bound::Local(bound_idx) => {
                 let index = self.locals.len() - 1 - bound_idx;
-                Ok(self.locals[index].clone())
+                let t = self.locals[index].clone();
+                let t = if let Type::Forall(_, t) = t {
+                    let mut map = HashMap::new();
+                    let t = self.rinst(*t, &mut map);
+                    let vars = map.into_values().map(|t| {
+                        let Type::TypeVar(id) = t else { unreachable!() };
+                        id
+                    }).collect();
+                    Type::Forall(vars, Box::new(t))
+                } else {
+                    t
+                };
+
+                Ok(t)
             }
-            Bound::Absolute(path) => Ok(self.names[path].clone()),
+            Bound::Absolute(path) => {
+                let t = self.names[path].clone();
+                let t = if let Type::Forall(_, t) = t {
+                    let mut map = HashMap::new();
+                    let t = self.rinst(*t, &mut map);
+                    let vars = map.into_values().map(|t| {
+                        let Type::TypeVar(id) = t else { unreachable!() };
+                        id
+                    }).collect();
+                    Type::Forall(vars, Box::new(t))
+                } else {
+                    t
+                };
+
+                Ok(t)
+            },
             Bound::Undetermined => unreachable!(),
         }
     }
@@ -581,29 +718,84 @@ impl Checker {
         let ApplicationExpression { function, arguments } = application;
 
         let ty = self.infer(function)?;
-        let Type::Procedure(procedure) = ty else {
-            return self.error(
-                TypeCheckError::ExpectedAProcedure { encountered: ty },
-                function.location()
-            );
-        };
-        let ProcedureType { arguments: arguments_type, return_type } = procedure;
+        match ty {
+            Type::Procedure(procedure) => {
+                let ProcedureType { arguments: arguments_type, return_type } = procedure;
 
-        if arguments.len() != arguments_type.len() {
-            return self.error(
-                TypeCheckError::ArityMismatch {
-                    expected: arguments_type.len(),
-                    encountered: arguments.len()
-                },
-                function.location()
-            );
+                if arguments.len() != arguments_type.len() {
+                    return self.error(
+                        TypeCheckError::ArityMismatch {
+                            expected: arguments_type.len(),
+                            encountered: arguments.len()
+                        },
+                        function.location()
+                    );
+                }
+
+                for (argument, ty) in arguments.iter().zip(arguments_type) {
+                    self.check(argument, ty)?;
+                }
+
+                Ok(*return_type.clone())
+            },
+            Type::Forall(_, ref t) => {
+                let Type::Procedure(procedure) = t.as_ref() else {
+                    return self.error(
+                        TypeCheckError::ExpectedAProcedure { encountered: ty },
+                        function.location()
+                    );
+                };
+
+                let ProcedureType { arguments: arguments_type, return_type } = procedure;
+
+                if arguments.len() != arguments_type.len() {
+                    return self.error(
+                        TypeCheckError::ArityMismatch {
+                            expected: arguments_type.len(),
+                            encountered: arguments.len()
+                        },
+                        function.location()
+                    );
+                }
+
+                let mut value_types = vec![];
+                for argument in arguments {
+                    let a = self.infer(argument)?;
+                    if let Type::Forall(_, t) = a {
+                        value_types.push(*t);
+                    } else {
+                        value_types.push(a);
+                    };
+                }
+
+                let mut map = HashMap::new();
+                for (argument, ty) in value_types.iter().zip(arguments_type) {
+                    if !Self::unify(argument.clone(), ty.clone(), &mut map) {
+                        todo!()
+                    };
+                }
+
+                let idx = self.newvar_idx();
+                if !Self::unify(*return_type.clone(), Type::TypeVar(idx), &mut map) {
+                    todo!()
+                }
+
+                let mut new_argument_types = vec![];
+                for argument in value_types {
+                    new_argument_types.push(Self::replace_type_vars(argument, &map));
+                }
+
+                let new_return = Self::replace_type_vars(*return_type.clone(), &map);
+
+                Ok(new_return)
+            }
+            _ => {
+                return self.error(
+                    TypeCheckError::ExpectedAProcedure { encountered: ty },
+                    function.location()
+                );
+            }
         }
-
-        for (argument, ty) in arguments.iter().zip(arguments_type) {
-            self.check(argument, ty)?;
-        }
-
-        Ok(*return_type.clone())
     }
 
     fn projection(&mut self, projection: &ProjectionExpression) -> ReportableResult<Type> {
@@ -621,13 +813,6 @@ impl Checker {
             );
         };
 
-        let type_vars = &self.variants[path].type_vars;
-        let type_vars: Vec<_> = type_vars.iter().map(|var| {
-            let Type::TypeVar(id) = var else { unreachable!() };
-            *id
-        }).collect();
-        let type_var_map = type_vars.into_iter().zip(arguments.clone()).collect::<HashMap<_, _>>();
-
         let Some(method_ty) = self.variants[path].methods.get(name.data()) else {
             return self.error(
                 TypeCheckError::HasNoMethod {
@@ -638,7 +823,93 @@ impl Checker {
             );
         };
 
-        Ok(Self::replace_type_vars(Type::Procedure(method_ty.clone()), &type_var_map))
+        if let Type::Forall(type_vars, _) = &self.variants[&path].ty {
+            let type_var_map = type_vars.to_owned().into_iter().zip(arguments.clone()).collect::<HashMap<_, _>>();
+            Ok(Self::replace_type_vars(Type::Procedure(method_ty.clone()), &type_var_map))
+        } else {
+            Ok(Type::Procedure(method_ty.clone()))
+        }
+    }
+
+    fn unify(a: Type, b: Type, map: &mut HashMap<usize, Type>) -> bool {
+        match (a, b) {
+            (Type::Variant(p1, args1), Type::Variant(p2, args2)) => {
+                if p1 != p2 {
+                    return false;
+                }
+
+                for (arg1, arg2) in args1.into_iter().zip(args2) {
+                    if !Self::unify(arg1, arg2, map) {
+                        return false;
+                    }
+                }
+
+                true
+            },
+            (Type::Procedure(p1), Type::Procedure(p2)) => {
+                let ProcedureType { arguments: args1, return_type: r1 } = p1;
+                let ProcedureType { arguments: args2, return_type: r2 } = p2;
+
+                for (arg1, arg2) in args1.into_iter().zip(args2) {
+                    if !Self::unify(arg1, arg2, map) {
+                        return false;
+                    }
+                }
+
+                Self::unify(*r1, *r2, map)
+            },
+
+            (Type::TypeVar(idx1), Type::TypeVar(idx2)) => {
+                if map.contains_key(&idx1) {
+                    if let Some(v) = map.insert(idx2, map[&idx1].clone()) {
+                        if v != map[&idx1].clone() {
+                            return false;
+                        }
+                    }
+                } else {
+                    map.insert(idx1, Type::TypeVar(idx2));
+                }
+
+                true
+            },
+
+            (a, Type::Forall(_, b)) => Self::unify(a, *b, map),
+            (Type::Forall(_, a), b) => Self::unify(*a, b, map),
+
+            (t, Type::TypeVar(idx)) |
+            (Type::TypeVar(idx), t) => {
+                if !Self::occurs(idx, &t) {
+                    if let Some(v) = map.insert(idx, t.clone()) {
+                        if v != t {
+                            return false;
+                        }
+                    }
+
+                    true
+                } else {
+                    false
+                }
+            },
+            _ => false
+        }
+    }
+
+    fn occurs(var: usize, t: &Type) -> bool {
+        match t {
+            Type::Variant(_, arguments) => {
+                arguments.iter().any(|t| Self::occurs(var, t))
+            },
+            Type::Procedure(procedure) => {
+                let ProcedureType { arguments, return_type } = procedure;
+
+                arguments.iter().any(|t| Self::occurs(var, t)) ||
+                Self::occurs(var, return_type)
+
+            },
+            Type::TypeVar(idx) => idx == &var,
+
+            Type::Forall(..) => unreachable!(),
+        }
     }
 
     fn error<T>(&self, error: TypeCheckError, location: SourceLocation) -> ReportableResult<T> {

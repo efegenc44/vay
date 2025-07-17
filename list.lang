@@ -12,6 +12,24 @@ variant List(T) {
     }
 }
 
+variant Cell(C) {
+    Cell(C)
+
+    proc get(this) : C {
+        match this {
+            Cell(c) : return c
+        }
+    }
+}
+
+proc deneme() : List(Foo) {
+    return List::Nil
+}
+
+proc test(x : List(Foo)) : List(Foo) {
+    return List::Cons(Foo::Foo, List::Nil)
+}
+
 proc bar(list : List(Foo)) : Foo {
     match list {
         Nil         : return Foo::Foo

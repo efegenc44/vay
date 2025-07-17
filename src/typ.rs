@@ -4,7 +4,7 @@ use crate::{bound::Path, interner::Interner};
 pub enum Type {
     Variant(Path, Vec<Type>),
     Procedure(ProcedureType),
-    Forall(usize, Box<Type>),
+    Forall(Vec<usize>, Box<Type>),
     TypeVar(usize)
 }
 
@@ -53,7 +53,13 @@ impl Type {
                 type_string.push_str(&format!(" -> {}", return_type.display(interner)));
                 type_string
             }
-            Type::Forall(arity, ty) => format!("forall {arity}; {}", ty.display(interner)),
+            Type::Forall(vars, ty) => {
+                format!(
+                    "forall {}; {}",
+                    vars.iter().map(|id| format!("a{id}")).collect::<Vec<_>>().join(","),
+                    ty.display(interner),
+                )
+            },
             Type::TypeVar(idx) => format!("a{idx}"),
         }
     }
