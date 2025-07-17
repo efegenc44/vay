@@ -2,8 +2,10 @@ use crate::{bound::Path, interner::Interner};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
-    Variant(Path),
-    Procedure(ProcedureType)
+    Variant(Path, Vec<Type>),
+    Procedure(ProcedureType),
+    Forall(usize, Box<Type>),
+    TypeVar(usize)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,7 +17,23 @@ pub struct ProcedureType {
 impl Type {
     pub fn display(&self, interner: &Interner) -> String {
         match self {
-            Type::Variant(path) => path.as_string(interner),
+            Type::Variant(path, arguments) => {
+                let mut type_string = path.as_string(interner);
+                match &arguments[..] {
+                    [] => (),
+                    [typ] => {
+                        type_string.push_str(&format!("({})", typ.display(interner)));
+                    }
+                    [init @ .., last] => {
+                        type_string.push('(');
+                        for t in init {
+                            type_string.push_str(&format!("{}, ", t.display(interner)));
+                        }
+                        type_string.push_str(&format!("{})", last.display(interner)));
+                    }
+                };
+                type_string
+            },
             Type::Procedure(procedure) => {
                 let ProcedureType { arguments, return_type } = procedure;
 
@@ -35,6 +53,8 @@ impl Type {
                 type_string.push_str(&format!(" -> {}", return_type.display(interner)));
                 type_string
             }
+            Type::Forall(arity, ty) => format!("forall {arity}; {}", ty.display(interner)),
+            Type::TypeVar(idx) => format!("a{idx}"),
         }
     }
 }

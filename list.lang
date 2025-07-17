@@ -3,6 +3,24 @@ module Main
 variant List(T) {
     Nil
     Cons(T, List(T))
+
+    proc foo(this, y : T) : T {
+        match this {
+            Nil         : return y
+            Cons(x, xs) : return x
+        }
+    }
+}
+
+proc bar(list : List(Foo)) : Foo {
+    match list {
+        Nil         : return Foo::Foo
+        Cons(x, xs) : return x
+    }
+}
+
+proc foo(list : List(Foo)) : Foo {
+    return list.foo(Foo::Foo)
 }
 
 variant Foo { Foo }

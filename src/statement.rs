@@ -13,13 +13,12 @@ impl Statement {
             Statement::Expression(_) => false,
             Statement::Return(_) => true,
             Statement::Match(matc) => {
-                let mut returns = true;
                 for branch in &matc.branches {
                     if !branch.data().statement().data().returns() {
-                        returns = false;
+                        return false;
                     }
                 }
-                returns
+                true
             },
         }
     }
