@@ -273,20 +273,35 @@ impl Checker {
     }
 
     fn collect_procedure_name(&mut self, procedure: &ProcedureDeclaration) -> ReportableResult<()> {
-        let ProcedureDeclaration { arguments, return_type, path, .. } = procedure;
+        let ProcedureDeclaration { type_vars, arguments, return_type, path, .. } = procedure;
 
-        let mut argument_types = vec![];
-        for argument in arguments {
-            argument_types.push(self.eval_type_expression(argument.data().type_expression())?);
-        }
+        scoped!(self, {
+            let mut vars = vec![];
+            for _ in type_vars {
+                let newvar = self.newvar_idx();
+                vars.push(newvar);
+                self.locals.push(Type::TypeVar(newvar));
+            }
 
-        let return_type = Box::new(self.eval_type_expression(return_type)?);
+            let mut argument_types = vec![];
+            for argument in arguments {
+                argument_types.push(self.eval_type_expression(argument.data().type_expression())?);
+            }
 
-        let procedure_type = ProcedureType { arguments: argument_types, return_type };
-        self.names.insert(
-            path.clone(),
-            Type::Procedure(procedure_type),
-        );
+            let return_type = Box::new(self.eval_type_expression(return_type)?);
+
+            let procedure_type = ProcedureType { arguments: argument_types, return_type };
+            let procedure = Type::Procedure(procedure_type);
+            let t = if type_vars.is_empty() {
+                procedure
+            } else {
+                // rinst is called when the name is retrieved so no need to
+                //   rinst here like in algorithm J, I think
+                Type::Forall(vars, Box::new(procedure))
+            };
+
+            self.names.insert(path.clone(), t);
+        });
 
         Ok(())
     }
@@ -479,8 +494,17 @@ impl Checker {
     fn procedure(&mut self, procedure: &ProcedureDeclaration) -> ReportableResult<()> {
         let ProcedureDeclaration { name, body, path, .. } = procedure;
 
-        let Type::Procedure(procedure) = self.names[path].clone() else {
-            unreachable!();
+        let procedure = match self.names[path].clone() {
+            Type::Procedure(procedure) => procedure,
+            Type::Forall(_, t) => {
+                let Type::Procedure(procedure) = t.as_ref() else {
+                    unreachable!()
+                };
+                procedure.clone()
+            }
+            _ => {
+                unreachable!();
+            }
         };
         let ProcedureType { arguments, return_type } = procedure;
 

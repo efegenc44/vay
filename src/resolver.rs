@@ -411,12 +411,18 @@ impl Resolver {
     }
 
     fn procedure(&mut self, procedure: &mut ProcedureDeclaration) -> ReportableResult<()> {
-        let ProcedureDeclaration { arguments, return_type, body, .. } = procedure;
+        let ProcedureDeclaration { type_vars, arguments, return_type, body, .. } = procedure;
 
-        for argument in arguments.iter_mut() {
-            self.type_expression(argument.data_mut().type_expression_mut())?;
-        }
-        self.type_expression(return_type)?;
+        scoped!(self, {
+            for type_var in type_vars {
+                self.locals.push(*type_var.data());
+            }
+
+            for argument in arguments.iter_mut() {
+                self.type_expression(argument.data_mut().type_expression_mut())?;
+            }
+            self.type_expression(return_type)?;
+        });
 
         scoped!(self, {
             let argument_names = arguments.iter().map(|idx| *idx.data().indentifier().data());

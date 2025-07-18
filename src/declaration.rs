@@ -20,6 +20,7 @@ pub struct ImportDeclaration {
 
 pub struct ProcedureDeclaration {
     pub name: Located<InternIdx>,
+    pub type_vars: Vec<Located<InternIdx>>,
     pub arguments: Vec<Located<TypedIdentifier>>,
     pub return_type: Located<TypeExpression>,
     pub body: Vec<Located<Statement>>,

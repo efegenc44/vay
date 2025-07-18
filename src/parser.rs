@@ -337,6 +337,19 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     fn procedure(&mut self) -> ReportableResult<Declaration> {
         self.expect(Token::ProcKeyword)?;
         let name = self.expect_identifier()?;
+
+        let type_vars = if self.peek_is(Token::Colon)? {
+            self.advance()?;
+            self.expect(Token::LeftParenthesis)?;
+            self.until(
+                Token::RightParenthesis,
+                Self::expect_identifier,
+                Some(Token::Comma)
+            )?.0
+        } else {
+            vec![]
+        };
+
         self.expect(Token::LeftParenthesis)?;
         let (arguments, _) = self.until(
             Token::RightParenthesis,
@@ -350,6 +363,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
 
         let procedure = ProcedureDeclaration {
             name,
+            type_vars,
             arguments,
             return_type,
             body,

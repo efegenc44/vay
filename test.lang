@@ -4,10 +4,14 @@ import TestModule
 import Main
 
 proc main() : Main::Nat {
-    return foo(
+    return id(foo(
         Nat::Succ(Nat::Succ(Nat::Zero)),
         Nat::Succ(Nat::Zero)
-    )
+    ))
+}
+
+proc id:(T)(x : T) : T {
+    return x
 }
 
 variant Nat {
