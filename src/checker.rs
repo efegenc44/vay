@@ -567,11 +567,16 @@ impl Checker {
 
         let procedure = match self.names[path].clone() {
             Type::Procedure(procedure) => procedure,
-            Type::Forall(_, t) => {
+            Type::Forall(vars, t) => {
                 let Type::Procedure(procedure) = t.as_ref() else {
                     unreachable!()
                 };
-                procedure.clone()
+                let map = vars.iter().map(|&var| (var, Type::Constant(var))).collect();
+                let t = Self::replace_type_vars(Type::Procedure(procedure.clone()), &map);
+                let Type::Procedure(procedure) = t else {
+                    unreachable!()
+                };
+                procedure
             }
             _ => {
                 unreachable!();
