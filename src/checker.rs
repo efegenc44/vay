@@ -113,6 +113,7 @@ impl Checker {
                     t
                 }
             },
+            Type::Constant(idx) => Type::Constant(idx),
 
             Type::Forall(_, _) => unreachable!(),
         }
@@ -174,6 +175,7 @@ impl Checker {
             },
             Type::Procedure(_procedure_type) => todo!(),
             Type::Forall(_, _) |
+            Type::Constant(_) |
             Type::TypeVar(_) => unreachable!(),
         };
 
@@ -210,9 +212,61 @@ impl Checker {
             },
             Type::TypeVar(id) => {
                 if type_var_map.contains_key(&id) {
-                    type_var_map[&id].clone()
+                    let t = type_var_map[&id].clone();
+                    if Self::contains_type_var(&t) {
+                        Self::replace_type_vars(t, type_var_map)
+                    } else {
+                        t
+                    }
                 } else {
                     Type::TypeVar(id)
+                }
+            },
+            Type::Constant(idx) => Type::Constant(idx),
+
+            Type::Forall(_, _) => unreachable!(),
+        }
+    }
+
+    fn replace_type_constants(ty: Type, type_var_map: &HashMap<usize, Type>) -> Type {
+        match ty {
+            Type::Variant(path, arguments) => {
+                let mut new_arguments = vec![];
+                for argument in arguments {
+                    let ntype = Self::replace_type_constants(argument, type_var_map);
+                    new_arguments.push(ntype);
+                }
+
+                Type::Variant(path, new_arguments)
+            },
+            Type::Procedure(procedure_type) => {
+                let ProcedureType { arguments, return_type } = procedure_type;
+
+                let mut new_arguments = vec![];
+                for argument in arguments {
+                    let ntype = Self::replace_type_constants(argument, type_var_map);
+                    new_arguments.push(ntype);
+                }
+
+                let new_return = Self::replace_type_constants(*return_type, type_var_map);
+                let new_procdeure = ProcedureType {
+                    arguments: new_arguments,
+                    return_type: Box::new(new_return),
+                };
+
+                Type::Procedure(new_procdeure)
+            },
+            Type::TypeVar(id) => Type::TypeVar(id),
+            Type::Constant(id) => {
+                if type_var_map.contains_key(&id) {
+                    let t = type_var_map[&id].clone();
+                    if Self::contains_type_var(&t) {
+                        Self::replace_type_constants(t, type_var_map)
+                    } else {
+                        t
+                    }
+                } else {
+                    panic!();
                 }
             },
 
@@ -331,7 +385,7 @@ impl Checker {
 
         scoped!(self, {
             if let Type::Forall(vars, _) = self.variants[path].ty.clone() {
-                self.locals.extend(vars.iter().map(|var| Type::TypeVar(*var)));
+                self.locals.extend(vars.iter().map(|var| Type::Constant(*var)));
             };
 
             for method in methods {
@@ -362,6 +416,12 @@ impl Checker {
                     );
                 };
             }
+        });
+
+        scoped!(self, {
+            if let Type::Forall(vars, _) = self.variants[path].ty.clone() {
+                self.locals.extend(vars.iter().map(|var| Type::TypeVar(*var)));
+            };
 
             let poly;
             let variant_type = self.variants[path].ty.clone();
@@ -602,8 +662,20 @@ impl Checker {
                     );
                 }
 
+                let mut constant_arguments = vec![];
+                for argument in arguments {
+                    if let Type::TypeVar(id) = argument {
+                        constant_arguments.push(Type::Constant(id));
+                    } else {
+                        constant_arguments.push(argument);
+                    }
+                }
+
                 if let Type::Forall(type_vars, _) = &self.variants[&path].ty {
-                    let type_var_map = type_vars.to_owned().into_iter().zip(arguments).collect::<HashMap<_, _>>();
+                    let type_var_map = type_vars.to_owned().into_iter().zip(constant_arguments).collect::<HashMap<_, _>>();
+
+                    dbg!(&type_var_map);
+
                     for ty in case_fields {
                         let ty = Self::replace_type_vars(ty.clone(), &type_var_map);
                         self.locals.push(ty.clone());
@@ -616,9 +688,10 @@ impl Checker {
 
                 Ok(true)
             }
-            (Type::Procedure { .. }, _) => Ok(false),
-            (Type::Forall { .. }, _) => Ok(false),
-            (Type::TypeVar { .. }, _) => Ok(false),
+            (Type::Procedure(..), _) => Ok(false),
+            (Type::Forall(..), _) => Ok(false),
+            (Type::TypeVar(..), _) => Ok(false),
+            (Type::Constant(..), _) => Ok(false),
         }
     }
 
@@ -634,6 +707,7 @@ impl Checker {
                 Self::contains_type_var(return_type)
             },
             Type::TypeVar(_) => true,
+            Type::Constant(_) => false,
 
             Type::Forall(..) => unreachable!(),
         }
@@ -654,27 +728,19 @@ impl Checker {
             encountered
         };
 
-        // Not sure about this but seems a bit legit
-        //   because if contains a type var, they unify and we dont check equality
-        let (encountered, expected) = if !Self::contains_type_var(&expected) {
-            let mut map = HashMap::new();
-            if !Self::unify(encountered.clone(), expected.clone(), &mut map) {
-                return self.error(
-                    TypeCheckError::MismatchedTypes {
-                        encountered,
-                        expected,
-                    },
-                    expression.location(),
-                );
-            };
-
-            let encountered = Self::replace_type_vars(encountered, &map);
-            let expected = Self::replace_type_vars(expected, &map);
-
-            (encountered, expected)
-        } else {
-            (encountered, expected)
+        let mut map = HashMap::new();
+        if !Self::unify(encountered.clone(), expected.clone(), &mut map) {
+            return self.error(
+                TypeCheckError::MismatchedTypes {
+                    encountered,
+                    expected,
+                },
+                expression.location(),
+            );
         };
+
+        let encountered = Self::replace_type_vars(encountered, &map);
+        let expected = Self::replace_type_vars(expected, &map);
 
         if encountered != expected {
             return self.error(
@@ -855,7 +921,7 @@ impl Checker {
 
         if let Type::Forall(type_vars, _) = &self.variants[&path].ty {
             let type_var_map = type_vars.to_owned().into_iter().zip(arguments.clone()).collect::<HashMap<_, _>>();
-            Ok(Self::replace_type_vars(Type::Procedure(method_ty.clone()), &type_var_map))
+            Ok(Self::replace_type_constants(Type::Procedure(method_ty.clone()), &type_var_map))
         } else {
             Ok(Type::Procedure(method_ty.clone()))
         }
@@ -888,6 +954,8 @@ impl Checker {
 
                 Self::unify(*r1, *r2, map)
             },
+
+            (Type::Constant(idx1), Type::Constant(idx2)) => idx1 == idx2,
 
             (Type::TypeVar(idx1), Type::TypeVar(idx2)) => {
                 if map.contains_key(&idx1) {
@@ -937,6 +1005,7 @@ impl Checker {
 
             },
             Type::TypeVar(idx) => idx == &var,
+            Type::Constant(_) => false,
 
             Type::Forall(..) => unreachable!(),
         }

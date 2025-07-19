@@ -5,6 +5,7 @@ pub enum Type {
     Variant(Path, Vec<Type>),
     Procedure(ProcedureType),
     Forall(Vec<usize>, Box<Type>),
+    Constant(usize),
     TypeVar(usize)
 }
 
@@ -61,6 +62,7 @@ impl Type {
                 )
             },
             Type::TypeVar(idx) => format!("a{idx}"),
+            Type::Constant(idx) => format!("c{idx}"),
         }
     }
 }

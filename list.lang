@@ -7,7 +7,7 @@ variant List(T) {
     proc foo(this, y : T) : T {
         match this {
             Nil         : return y
-            Cons(x, xs) : return x
+            Cons(x, xs) : return List::Nil
         }
     }
 }
@@ -22,7 +22,7 @@ variant Cell(C) {
     }
 }
 
-proc deneme() : List(Foo) {
+proc deneme:(T)() : List(T) {
     return List::Nil
 }
 
