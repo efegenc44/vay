@@ -1,0 +1,55 @@
+module Main
+
+variant Unit    { Unit    }
+variant Unit2   { Unit2   }
+variant Cell(T) {
+    Cell(T)
+    Empty
+
+    proc cell(this, x : T) : Cell(T) {
+        return Cell::Cell(x)
+    }
+}
+
+proc h:(T)(f : proc(T) : Cell(T), x : T) : Cell(T) {
+    return f(x)
+}
+
+proc h2:(T)(f : proc(Cell(T)) : Cell(Cell(T)), x : T) : Cell(Cell(T)) {
+    return f(Cell::Cell(x))
+}
+
+proc h3:(T, R)(f : proc(T) : Cell(R), x : T) : Cell(R) {
+    return f(x)
+}
+
+proc g(u : Unit) : Cell(Unit) {
+    return Cell::Cell(u)
+}
+
+proc j(x : Unit) : Cell(Unit2) {
+    return Cell::Empty
+}
+
+proc test() : Cell(Unit) {
+    return h(g, Unit::Unit)
+    return h(Cell::Cell, Unit::Unit)
+    return h(Cell::Empty.cell, Unit::Unit)
+
+    return h3(g, Unit::Unit)
+    return h3(Cell::Cell, Unit::Unit)
+    return h3(Cell::Empty.cell, Unit::Unit)
+}
+
+proc test2() : Cell(Unit2) {
+    return h3(j, Unit::Unit)
+    return h(Cell::Cell, Unit2::Unit2)
+}
+
+proc test3() : Cell(Cell(Unit)) {
+    return h2(Cell::Cell(Cell::Empty).cell, Unit::Unit)
+}
+
+proc main() : Unit {
+    return Unit::Unit
+}

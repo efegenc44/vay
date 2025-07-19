@@ -699,8 +699,6 @@ impl Checker {
                 if let Type::Forall(type_vars, _) = &self.variants[&path].ty {
                     let type_var_map = type_vars.to_owned().into_iter().zip(constant_arguments).collect::<HashMap<_, _>>();
 
-                    dbg!(&type_var_map);
-
                     for ty in case_fields {
                         let ty = Self::replace_type_vars(ty.clone(), &type_var_map);
                         self.locals.push(ty.clone());
@@ -924,14 +922,29 @@ impl Checker {
 
         let ty = self.infer(expression)?;
 
-        let Type::Variant(path, arguments) = &ty else {
-            return self.error(
-                TypeCheckError::HasNoMethod {
-                    ty,
-                    name: *name.data()
-                },
-                name.location()
-            );
+        let (path, arguments) = match &ty {
+            Type::Variant(path, arguments) => (path, arguments),
+            Type::Forall(_, t) => {
+                let Type::Variant(path, arguments) = t.as_ref() else {
+                    return self.error(
+                        TypeCheckError::HasNoMethod {
+                            ty,
+                            name: *name.data()
+                        },
+                        name.location()
+                    );
+                };
+                (path, arguments)
+            },
+            _ => {
+                return self.error(
+                    TypeCheckError::HasNoMethod {
+                        ty,
+                        name: *name.data()
+                    },
+                    name.location()
+                );
+            }
         };
 
         let Some(method_ty) = self.variants[path].methods.get(name.data()) else {
@@ -983,8 +996,13 @@ impl Checker {
             (Type::Constant(idx1), Type::Constant(idx2)) => idx1 == idx2,
 
             (Type::TypeVar(idx1), Type::TypeVar(idx2)) => {
+
                 if map.contains_key(&idx1) {
-                    if let Some(v) = map.insert(idx2, map[&idx1].clone()) {
+                    if let Some(mut v) = map.insert(idx2, map[&idx1].clone()) {
+                        while let Type::TypeVar(var) = v {
+                            v = map[&var].clone()
+                        }
+
                         if v != map[&idx1].clone() {
                             return false;
                         }
@@ -1002,7 +1020,11 @@ impl Checker {
             (t, Type::TypeVar(idx)) |
             (Type::TypeVar(idx), t) => {
                 if !Self::occurs(idx, &t) {
-                    if let Some(v) = map.insert(idx, t.clone()) {
+                    if let Some(mut v) = map.insert(idx, t.clone()) {
+                        while let Type::TypeVar(var) = v {
+                            v = map[&var].clone()
+                        }
+
                         if v != t {
                             return false;
                         }
