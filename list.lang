@@ -5,9 +5,11 @@ variant List(T) {
     Cons(T, List(T))
 
     proc foo(this, y : T) : T {
+        List::Nil
+
         match this {
             Nil         : return y
-            Cons(x, xs) : return List::Nil
+            Cons(x, xs) : return x
         }
     }
 }

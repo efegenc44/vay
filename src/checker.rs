@@ -516,7 +516,18 @@ impl Checker {
 
             let ProcedureType { arguments, return_type } = self.variants[path].methods[name.data()].clone();
 
-            if !body.iter().all(|statement| statement.data().returns()) {
+            if let Some(statement) = body.last() {
+                if !statement.data().returns() {
+                    return self.error(
+                        TypeCheckError::MethodDoesNotReturn {
+                            type_path: path.clone(),
+                            method: *method.name.data(),
+                            expceted: *return_type,
+                        },
+                        method.name.location(),
+                    );
+                }
+            } else {
                 return self.error(
                     TypeCheckError::MethodDoesNotReturn {
                         type_path: path.clone(),
@@ -568,8 +579,17 @@ impl Checker {
         };
         let ProcedureType { arguments, return_type } = procedure;
 
-        // TODO: When the body is empty .all return true
-        if !body.iter().all(|statement| statement.data().returns()) {
+        if let Some(statement) = body.last() {
+            if !statement.data().returns() {
+                return self.error(
+                    TypeCheckError::ProcedureDoesNotReturn {
+                        procedure: path.clone(),
+                        expceted: *return_type,
+                    },
+                    name.location(),
+                );
+            }
+        } else {
             return self.error(
                 TypeCheckError::ProcedureDoesNotReturn {
                     procedure: path.clone(),
