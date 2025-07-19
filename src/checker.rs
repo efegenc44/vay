@@ -705,13 +705,17 @@ impl Checker {
                 let index = self.locals.len() - 1 - bound_idx;
                 let t = self.locals[index].clone();
                 let t = if let Type::Forall(_, t) = t {
-                    let mut map = HashMap::new();
-                    let t = self.rinst(*t, &mut map);
-                    let vars = map.into_values().map(|t| {
-                        let Type::TypeVar(id) = t else { unreachable!() };
-                        id
-                    }).collect();
-                    Type::Forall(vars, Box::new(t))
+                    if let Type::Procedure(_) = t.as_ref() {
+                        let mut map = HashMap::new();
+                        let t = self.rinst(*t, &mut map);
+                        let vars = map.into_values().map(|t| {
+                            let Type::TypeVar(id) = t else { unreachable!() };
+                            id
+                        }).collect();
+                        Type::Forall(vars, Box::new(t))
+                    } else {
+                        *t
+                    }
                 } else {
                     t
                 };
@@ -720,6 +724,8 @@ impl Checker {
             }
             Bound::Absolute(path) => {
                 let t = self.names[path].clone();
+                // TODO: We will have problems when we have global constants
+                //   this is need but for polymorphic constant variant cases
                 let t = if let Type::Forall(_, t) = t {
                     let mut map = HashMap::new();
                     let t = self.rinst(*t, &mut map);
