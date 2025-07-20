@@ -20,6 +20,7 @@ pub enum Token {
     VariantKeyword,
     ReturnKeyword,
     MatchKeyword,
+    InterfaceKeyword,
 }
 
 impl Token {
@@ -47,6 +48,7 @@ impl Token {
             Token::VariantKeyword => "keyword `variant`",
             Token::ReturnKeyword => "keyword `return`",
             Token::MatchKeyword => "keyword `match`",
+            Token::InterfaceKeyword => "keyword `interface`",
         }
     }
 }

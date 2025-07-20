@@ -3,8 +3,7 @@ use std::iter::Peekable;
 use crate::{
     bound::{Bound, Path},
     declaration::{
-        Declaration, ImportDeclaration, MethodDeclaration, Module, ModuleDeclaration,
-        ProcedureDeclaration, TypedIdentifier, VariantCase, VariantDeclaration,
+        Declaration, ImportDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, ProcedureDeclaration, TypeVar, TypedIdentifier, VariantCase, VariantDeclaration
     },
     expression::{
         ApplicationExpression, Expression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, TypeApplicationExpression, TypeExpression
@@ -35,6 +34,7 @@ const DECLARATION_KEYWORDS: &[Token] = &[
     Token::ProcKeyword,
     Token::VariantKeyword,
     Token::ImportKeyword,
+    Token::InterfaceKeyword,
 ];
 
 const PATTERN_TOKEN_STARTS: &[Token] = &[Token::dummy_identifier()];
@@ -306,6 +306,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             Token::ImportKeyword => self.import(),
             Token::ProcKeyword => self.procedure(),
             Token::VariantKeyword => self.variant(),
+            Token::InterfaceKeyword => self.interface(),
             _ => unreachable!()
         }
     }
@@ -316,6 +317,25 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             declarations.push(self.declaration()?);
         }
         Ok(Module::new(declarations, self.source.clone()))
+    }
+
+    fn type_var(&mut self) -> ReportableResult<Located<TypeVar>> {
+        let name = self.expect_identifier()?;
+        let (interfaces, end) = if self.peek_is(Token::LeftParenthesis)? {
+            self.advance()?;
+            self.until(
+                Token::RightParenthesis,
+                |parser| {
+                    Ok((parser.expect_identifier()?, Path::empty()))
+                },
+                Some(Token::Comma)
+            )?
+        } else {
+            (vec![], name.location())
+        };
+
+        let type_var = TypeVar { name, interfaces };
+        Ok(Located::new(type_var, name.location().extend(&end)))
     }
 
     fn modul(&mut self) -> ReportableResult<Declaration> {
@@ -343,7 +363,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             self.expect(Token::LeftParenthesis)?;
             self.until(
                 Token::RightParenthesis,
-                Self::expect_identifier,
+                Self::type_var,
                 Some(Token::Comma)
             )?.0
         } else {
@@ -410,7 +430,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             self.advance()?;
             self.until(
                 Token::RightParenthesis,
-                Self::expect_identifier,
+                Self::type_var,
                 Some(Token::Comma)
             )?.0
         } else {
@@ -436,6 +456,33 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         };
 
         Ok(Declaration::Variant(variant))
+    }
+
+    fn method_signature(&mut self) -> ReportableResult<MethodSignature> {
+        self.expect(Token::ProcKeyword)?;
+        let name = self.expect_identifier()?;
+        self.expect(Token::LeftParenthesis)?;
+        let (arguments, _) = self.until(
+            Token::RightParenthesis,
+            Self::typed_identifier,
+            Some(Token::Comma)
+        )?;
+        self.expect(Token::Colon)?;
+        let return_type = self.type_expression()?;
+
+        Ok(MethodSignature { name, arguments, return_type })
+    }
+
+    fn interface(&mut self) -> ReportableResult<Declaration> {
+        self.expect(Token::InterfaceKeyword)?;
+        let name = self.expect_identifier()?;
+        let type_name = self.expect_identifier()?;
+        self.expect(Token::LeftCurly)?;
+        let (methods, _) = self.until(Token::RightCurly, Self::method_signature, None)?;
+
+
+        let interface = InterfaceDeclaration { name, type_name, methods, path: Path::empty() };
+        Ok(Declaration::Interface(interface))
     }
 
     fn type_expression(&mut self) -> ReportableResult<Located<TypeExpression>> {

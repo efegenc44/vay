@@ -8,6 +8,12 @@ pub enum Declaration {
     Import(ImportDeclaration),
     Procedure(ProcedureDeclaration),
     Variant(VariantDeclaration),
+    Interface(InterfaceDeclaration)
+}
+
+pub struct TypeVar {
+    pub name: Located<InternIdx>,
+    pub interfaces: Vec<(Located<InternIdx>, Path)>
 }
 
 pub struct ModuleDeclaration {
@@ -20,7 +26,7 @@ pub struct ImportDeclaration {
 
 pub struct ProcedureDeclaration {
     pub name: Located<InternIdx>,
-    pub type_vars: Vec<Located<InternIdx>>,
+    pub type_vars: Vec<Located<TypeVar>>,
     pub arguments: Vec<Located<TypedIdentifier>>,
     pub return_type: Located<TypeExpression>,
     pub body: Vec<Located<Statement>>,
@@ -29,10 +35,23 @@ pub struct ProcedureDeclaration {
 
 pub struct VariantDeclaration {
     pub name: Located<InternIdx>,
-    pub type_vars: Vec<Located<InternIdx>>,
+    pub type_vars: Vec<Located<TypeVar>>,
     pub cases: Vec<Located<VariantCase>>,
     pub methods: Vec<MethodDeclaration>,
     pub path: Path,
+}
+
+pub struct InterfaceDeclaration {
+    pub name: Located<InternIdx>,
+    pub type_name: Located<InternIdx>,
+    pub methods: Vec<MethodSignature>,
+    pub path: Path,
+}
+
+pub struct MethodSignature {
+    pub name: Located<InternIdx>,
+    pub arguments: Vec<Located<TypedIdentifier>>,
+    pub return_type: Located<TypeExpression>
 }
 
 pub struct MethodDeclaration {

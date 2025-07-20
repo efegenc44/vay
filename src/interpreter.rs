@@ -83,6 +83,7 @@ impl Interpreter {
             match declaration {
                 Declaration::Module(..) => (),
                 Declaration::Import(..) => (),
+                Declaration::Interface(..) => (),
                 Declaration::Procedure(procedure) => self.collect_procedure_name(procedure),
                 Declaration::Variant(variant) => self.collect_variant_name(variant),
             }

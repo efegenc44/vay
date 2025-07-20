@@ -1,0 +1,56 @@
+module Main
+
+variant Bool {
+    True
+    False
+
+    proc eq(this, that : Bool) : Bool {
+        return that
+    }
+
+    proc add(this, that : Bool) : Bool {
+        return Bool::True
+    }
+}
+
+interface Eq t {
+    proc eq(that : t) : Bool
+}
+
+interface Add t {
+    proc add(that : t) : t
+}
+
+variant Vector2(T (Add)) {
+    new(T, T)
+
+    proc add(this, that : Vector2(T)) : Vector2(T) {
+        match this { new(x1, y1) :
+        match that { new(x2, y2) :
+            return Vector2::new(x1.add(x2), y1.add(y2))
+        }}
+    }
+}
+
+proc add:( A (Add) ) (v : A, u : A) : A {
+    return v.add(u)
+}
+
+proc test1(u : Vector2(Bool) ) : Vector2(Bool) {
+    return u.add(u)
+}
+
+proc test2:(T (Eq), F) (x : T, b : F) : Bool {
+    return x.eq(x)
+}
+
+proc test3:(T (Add), U (Eq)) (f : proc(T) : U) : Bool {
+    return Bool::True
+}
+
+proc main() : Vector2(Bool) {
+    test3(Bool::True.add)
+
+    return test1(Vector2::new(Bool::True, Bool::False))
+}
+

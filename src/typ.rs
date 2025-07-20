@@ -1,18 +1,33 @@
-use crate::{bound::Path, interner::Interner};
+use std::collections::HashMap;
+
+use crate::{bound::Path, interner::{InternIdx, Interner}};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Variant(Path, Vec<Type>),
     Procedure(ProcedureType),
-    Forall(Vec<usize>, Box<Type>),
-    Constant(usize),
-    TypeVar(usize)
+    Forall(Vec<TypeVar>, Box<Type>),
+    Constant(TypeVar),
+    TypeVar(TypeVar)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcedureType {
     pub arguments: Vec<Type>,
     pub return_type: Box<Type>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Interface {
+    pub methods: HashMap<InternIdx, ProcedureType>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeVar {
+    // TODO: Can probably unify idx and instance
+    pub idx: usize,
+    pub instance: usize,
+    pub methods: HashMap<InternIdx, ProcedureType>,
 }
 
 impl Type {
@@ -57,12 +72,12 @@ impl Type {
             Type::Forall(vars, ty) => {
                 format!(
                     "forall {}; {}",
-                    vars.iter().map(|id| format!("a{id}")).collect::<Vec<_>>().join(","),
+                    vars.iter().map(|id| format!("a{}", id.idx)).collect::<Vec<_>>().join(","),
                     ty.display(interner),
                 )
             },
-            Type::TypeVar(idx) => format!("a{idx}"),
-            Type::Constant(idx) => format!("c{idx}"),
+            Type::TypeVar(type_var) => format!("a{}", type_var.idx),
+            Type::Constant(type_var) => format!("c{}", type_var.idx),
         }
     }
 }

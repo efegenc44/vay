@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     bound::{Bound, Path},
-    declaration::{Declaration, ImportDeclaration, MethodDeclaration, Module, ModuleDeclaration, ProcedureDeclaration, VariantDeclaration},
+    declaration::{Declaration, ImportDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, ProcedureDeclaration, TypeVar, VariantDeclaration},
     expression::{ApplicationExpression, Expression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, TypeApplicationExpression, TypeExpression},
     interner::{InternIdx, Interner},
     location::{Located, SourceLocation},
@@ -37,6 +37,7 @@ impl ModuleInformation {
 pub struct Resolver {
     modules: HashMap<InternIdx, ModuleInformation>,
 
+    // TODO: Seperete interface and type names
     type_names: HashSet<Path>,
     value_names: HashSet<Path>,
 
@@ -146,10 +147,11 @@ impl Resolver {
     fn collect_names(&mut self, module: &mut Module) -> ReportableResult<()> {
         for declaration in module.declarations_mut() {
             match declaration {
-                Declaration::Module { .. } => {}
-                Declaration::Import { .. } => {}
+                Declaration::Module(..) => {}
+                Declaration::Import(..) => {}
                 Declaration::Procedure(precodure) => self.collect_procedure_name(precodure)?,
                 Declaration::Variant(variant) => self.collect_variant_name(variant)?,
+                Declaration::Interface(interface) => self.collect_interface_name(interface)?,
             }
         }
 
@@ -208,6 +210,22 @@ impl Resolver {
         Ok(())
     }
 
+    fn collect_interface_name(&mut self, interface: &mut InterfaceDeclaration) -> ReportableResult<()> {
+        let InterfaceDeclaration { name, path, .. } = interface;
+
+        let interface_path = self.current_path().append(*name.data());
+        if self.type_names.contains(&interface_path) {
+            return self.error(
+                ResolveError::DuplicateTypeDeclaration(interface_path),
+                name.location(),
+            );
+        }
+
+        self.type_names.insert(interface_path.clone());
+        *path = interface_path;
+        Ok(())
+    }
+
     fn find_name(&self, intern_idx: &InternIdx) -> Option<Bound> {
         // Local Scope
         for (index, name_idx) in self.locals.iter().rev().enumerate() {
@@ -236,6 +254,21 @@ impl Resolver {
         } else {
             None
         }
+    }
+
+    fn find_interface_path(&self, parts: &Vec<InternIdx>) -> ReportableResult<Path> {
+        let base = if self.current_imports().contains(&parts[0]) {
+            Path::empty().append(parts[0])
+        } else {
+            self.current_path().append(parts[0])
+        };
+
+        let path = base.append_parts(&parts[1..]);
+        let Some(path) = self.type_names.get(&path) else {
+            todo!("Unbound interface")
+        };
+
+        Ok(path.clone())
     }
 
     fn expression(&mut self, expression: &mut Located<Expression>) -> ReportableResult<()> {
@@ -388,11 +421,22 @@ impl Resolver {
     fn declaration(&mut self, declaration: &mut Declaration) -> ReportableResult<()> {
         // TODO: maybe take Located<Declaration> for better error reporting
         match declaration {
-            Declaration::Module { .. } => {}
+            Declaration::Module(..) => {}
             Declaration::Import(import) => self.import(import)?,
             Declaration::Procedure(procedure) => self.procedure(procedure)?,
             Declaration::Variant(variant) => self.variant(variant)?,
+            Declaration::Interface(interface) => self.interface(interface)?,
         };
+
+        Ok(())
+    }
+
+    fn type_var(&mut self, type_var: &mut Located<TypeVar>) -> ReportableResult<()> {
+        let TypeVar { interfaces, .. } = type_var.data_mut();
+
+        for (interface, path) in interfaces.iter_mut() {
+            *path = self.find_interface_path(&vec![*interface.data()])?;
+        }
 
         Ok(())
     }
@@ -413,9 +457,13 @@ impl Resolver {
     fn procedure(&mut self, procedure: &mut ProcedureDeclaration) -> ReportableResult<()> {
         let ProcedureDeclaration { type_vars, arguments, return_type, body, .. } = procedure;
 
+        for type_var in type_vars.iter_mut() {
+            self.type_var(type_var)?;
+        }
+
         scoped!(self, {
             for type_var in type_vars {
-                self.locals.push(*type_var.data());
+                self.locals.push(*type_var.data().name.data());
             }
 
             for argument in arguments.iter_mut() {
@@ -460,9 +508,13 @@ impl Resolver {
     fn variant(&mut self, variant: &mut VariantDeclaration) -> ReportableResult<()> {
         let VariantDeclaration { cases, methods, type_vars, .. } = variant;
 
+        for type_var in type_vars.iter_mut() {
+            self.type_var(type_var)?;
+        }
+
         scoped!(self, {
             // TODO: These ones are leaked
-            let type_vars = type_vars.iter().map(|type_var| type_var.data());
+            let type_vars = type_vars.iter().map(|type_var| type_var.data().name.data());
             self.locals.extend(type_vars);
 
             for case in cases {
@@ -479,6 +531,25 @@ impl Resolver {
             }
         });
 
+        Ok(())
+    }
+
+    fn interface(&mut self, interface: &mut InterfaceDeclaration) -> ReportableResult<()> {
+        let InterfaceDeclaration { methods, type_name, .. } = interface;
+
+        scoped!(self, {
+            self.locals.push(*type_name.data());
+
+            for method in methods {
+                let MethodSignature { arguments, return_type, .. } = method;
+
+                for argument in arguments {
+                    self.type_expression(argument.data_mut().type_expression_mut())?;
+                }
+
+                self.type_expression(return_type)?;
+            }
+        });
 
         Ok(())
     }
