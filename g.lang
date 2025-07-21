@@ -1,0 +1,24 @@
+module Main
+
+variant Unit  { Unit  }
+variant Unit2 { Unit2 }
+
+variant C(t) { A(t) B(t) C }
+
+proc g(x : Unit) : Unit {
+    return Unit::Unit
+}
+
+proc j(x : Unit2) : Unit {
+    return Unit::Unit
+}
+
+proc main() : Unit {
+    match C::C {
+        C    : return Unit::Unit
+        A(x) : return g(x)
+        B(x) : return j(x)
+    }
+
+    return Unit::Unit
+}

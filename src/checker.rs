@@ -51,6 +51,8 @@ pub struct Checker {
     type_var_counter: usize,
 
     current_source: String,
+
+    lastest_unification: HashMap<usize, Type>
 }
 
 impl Checker {
@@ -63,6 +65,7 @@ impl Checker {
             return_type: None,
             type_var_counter: 0,
             current_source: String::new(),
+            lastest_unification: HashMap::new(),
         }
     }
 
@@ -636,7 +639,7 @@ impl Checker {
             let variant_type = match variant_type {
                 Type::Variant(..) => variant_type,
                 Type::Forall(vars, _) => {
-                    let type_vars = vars.iter().map(|var| Type::TypeVar(var.clone()));
+                    let type_vars = vars.iter().map(|var| Type::Constant(var.clone()));
                     Type::Variant(path.clone(), type_vars.collect())
                 },
                 _ => unreachable!(),
@@ -761,7 +764,7 @@ impl Checker {
         // TODO: Exhaustiveness check
         let MatchStatement { expression, branches } = matc;
 
-        let ty = self.infer(expression)?;
+        let mut ty = self.infer(expression)?;
         for branch in branches {
             scoped!(self, {
                 if !self.type_pattern_match(ty.clone(), branch.data().pattern())? {
@@ -773,6 +776,10 @@ impl Checker {
                 }
 
                 self.statement(branch.data().statement())?;
+
+                if Self::contains_type_var(&ty) {
+                    ty = Self::replace_type_vars(ty, &self.lastest_unification);
+                }
             })
         }
 
@@ -811,21 +818,12 @@ impl Checker {
                     );
                 }
 
-                let mut constant_arguments = vec![];
-                for argument in arguments {
-                    if let Type::TypeVar(_) = argument {
-                        // constant_arguments.push(Type::Constant(var));
-                    } else {
-                        constant_arguments.push(argument);
-                    }
-                }
-
                 if let Type::Forall(type_vars, _) = &self.variants[&path].ty {
                     let type_var_map = type_vars
                         .to_owned()
                         .into_iter()
                         .map(|var| var.idx)
-                        .zip(constant_arguments)
+                        .zip(arguments)
                         .collect();
 
                     for ty in case_fields {
@@ -1001,12 +999,7 @@ impl Checker {
                 let t = self.locals[index].clone();
                 let t = if let Type::Forall(_, t) = t {
                     let mut map = HashMap::new();
-                    let t = self.rinst(*t, &mut map);
-                    let vars = map.into_values().map(|t| {
-                        let Type::TypeVar(var) = t else { unreachable!() };
-                        var
-                    }).collect();
-                    Type::Forall(vars, Box::new(t))
+                    self.rinst(*t, &mut map)
                 } else {
                     t
                 };
@@ -1015,16 +1008,9 @@ impl Checker {
             }
             Bound::Absolute(path) => {
                 let t = self.names[path].clone();
-                // TODO: We will have problems when we have global constants
-                //   this is need but for polymorphic constant variant cases
                 let t = if let Type::Forall(_, t) = t {
                     let mut map = HashMap::new();
-                    let t = self.rinst(*t, &mut map);
-                    let vars = map.into_values().map(|t| {
-                        let Type::TypeVar(var) = t else { unreachable!() };
-                        var
-                    }).collect();
-                    Type::Forall(vars, Box::new(t))
+                    self.rinst(*t, &mut map)
                 } else {
                     t
                 };
@@ -1053,31 +1039,14 @@ impl Checker {
                     );
                 }
 
-                for (argument, ty) in arguments.iter().zip(arguments_type) {
-                    self.check(argument, ty)?;
+                if !arguments_type.iter().any(Self::contains_type_var) && !Self::contains_type_var(&return_type) {
+                    for (argument, ty) in arguments.iter().zip(arguments_type) {
+                        self.check(argument, ty)?;
+                    }
+
+                    return Ok(*return_type.clone())
                 }
 
-                Ok(*return_type.clone())
-            },
-            Type::Forall(_, ref t) => {
-                let Type::Procedure(procedure) = t.as_ref() else {
-                    return self.error(
-                        TypeCheckError::ExpectedAProcedure { encountered: ty },
-                        function.location()
-                    );
-                };
-
-                let ProcedureType { arguments: arguments_type, return_type } = procedure;
-
-                if arguments.len() != arguments_type.len() {
-                    return self.error(
-                        TypeCheckError::ArityMismatch {
-                            expected: arguments_type.len(),
-                            encountered: arguments.len()
-                        },
-                        function.location()
-                    );
-                }
 
                 let mut value_types = vec![];
                 for argument in arguments {
@@ -1305,6 +1274,8 @@ impl Checker {
                         todo!()
                     }
 
+                    map.insert(idx, t);
+
                     true
                 } else {
                     false
@@ -1318,6 +1289,8 @@ impl Checker {
                 *local = Self::replace_type_vars(local.clone(), &map);
             }
         }
+
+        self.lastest_unification.extend(map.clone());
 
         result
     }
