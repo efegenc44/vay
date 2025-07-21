@@ -813,8 +813,8 @@ impl Checker {
 
                 let mut constant_arguments = vec![];
                 for argument in arguments {
-                    if let Type::TypeVar(var) = argument {
-                        constant_arguments.push(Type::Constant(var));
+                    if let Type::TypeVar(_) = argument {
+                        // constant_arguments.push(Type::Constant(var));
                     } else {
                         constant_arguments.push(argument);
                     }
@@ -840,8 +840,8 @@ impl Checker {
 
                 Ok(true)
             }
+            (Type::Forall(_, t), _) => self.type_pattern_match(*t, pattern),
             (Type::Procedure(..), _) => Ok(false),
-            (Type::Forall(..), _) => Ok(false),
             (Type::TypeVar(..), _) => Ok(false),
             (Type::Constant(..), _) => Ok(false),
         }
@@ -1000,17 +1000,13 @@ impl Checker {
                 let index = self.locals.len() - 1 - bound_idx;
                 let t = self.locals[index].clone();
                 let t = if let Type::Forall(_, t) = t {
-                    if let Type::Procedure(_) = t.as_ref() {
-                        let mut map = HashMap::new();
-                        let t = self.rinst(*t, &mut map);
-                        let vars = map.into_values().map(|t| {
-                            let Type::TypeVar(var) = t else { unreachable!() };
-                            var
-                        }).collect();
-                        Type::Forall(vars, Box::new(t))
-                    } else {
-                        *t
-                    }
+                    let mut map = HashMap::new();
+                    let t = self.rinst(*t, &mut map);
+                    let vars = map.into_values().map(|t| {
+                        let Type::TypeVar(var) = t else { unreachable!() };
+                        var
+                    }).collect();
+                    Type::Forall(vars, Box::new(t))
                 } else {
                     t
                 };
@@ -1142,7 +1138,7 @@ impl Checker {
                 };
                 (path, arguments)
             },
-            Type::Constant(type_var) => {
+            Type::Constant(type_var) | Type::TypeVar(type_var) => {
                 let TypeVar { idx: _, instance, methods } = type_var;
 
                 let Some(method_ty) = methods.get(name.data()) else {
@@ -1195,8 +1191,8 @@ impl Checker {
         }
     }
 
-    fn unify(&self, a: Type, b: Type, map: &mut HashMap<usize, Type>) -> bool {
-        match (a, b) {
+    fn unify(&mut self, a: Type, b: Type, map: &mut HashMap<usize, Type>) -> bool {
+        let result = match (a, b) {
             (Type::Variant(p1, args1), Type::Variant(p2, args2)) => {
                 if p1 != p2 {
                     return false;
@@ -1315,7 +1311,15 @@ impl Checker {
                 }
             },
             _ => false
+        };
+
+        if result {
+            for local in self.locals.iter_mut() {
+                *local = Self::replace_type_vars(local.clone(), &map);
+            }
         }
+
+        result
     }
 
     fn occurs(var: usize, t: &Type) -> bool {
