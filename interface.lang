@@ -53,4 +53,3 @@ proc main() : Vector2(Bool) {
 
     return test1(Vector2::new(Bool::True, Bool::False))
 }
-

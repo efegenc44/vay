@@ -5,7 +5,7 @@ use crate::{bound::Path, interner::{InternIdx, Interner}};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Mono(MonoType),
-    Forall(Vec<TypeVar>, Box<MonoType>),
+    Forall(Vec<TypeVar>, MonoType),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,9 +29,7 @@ pub struct Interface {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeVar {
-    // TODO: Can probably unify idx and instance
     pub idx: usize,
-    pub instance: usize,
     pub methods: HashMap<InternIdx, ProcedureType>,
 }
 
@@ -122,6 +120,32 @@ impl MonoType {
             MonoType::Var(_) => true,
             MonoType::Constant(_) => false,
         }
+    }
+
+    pub fn occuring_type_vars(&self) -> Vec<TypeVar> {
+        fn collect_type_vars(m: &MonoType, vars: &mut Vec<TypeVar>) {
+            match m {
+                MonoType::Variant(_, arguments) => {
+                    for argument in arguments {
+                        collect_type_vars(argument, vars);
+                    }
+                },
+                MonoType::Procedure(t) => {
+                    let ProcedureType { arguments, return_type } = t;
+
+                    for argument in arguments {
+                        collect_type_vars(argument, vars);
+                    }
+                    collect_type_vars(return_type, vars);
+                },
+                MonoType::Constant(_) => (),
+                MonoType::Var(var) => vars.push(var.clone()),
+            }
+        }
+
+        let mut type_vars = vec![];
+        collect_type_vars(self, &mut type_vars);
+        type_vars
     }
 
     pub fn occurs(&self, idx: usize) -> bool {
