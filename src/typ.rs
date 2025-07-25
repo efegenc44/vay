@@ -36,6 +36,110 @@ pub struct TypeVar {
 }
 
 impl MonoType {
+    pub fn replace_type_vars(self, map: &HashMap<usize, MonoType>) -> MonoType {
+        match self {
+            MonoType::Variant(path, arguments) => {
+                let arguments = arguments
+                    .into_iter()
+                    .map(|arg| arg.replace_type_vars(map))
+                    .collect();
+
+                MonoType::Variant(path, arguments)
+            },
+            MonoType::Procedure(procedure_type) => {
+                let ProcedureType { arguments, return_type } = procedure_type;
+
+                let arguments = arguments
+                    .into_iter()
+                    .map(|arg| arg.replace_type_vars(map))
+                    .collect();
+
+                let return_type = Box::new(return_type.replace_type_vars(map));
+
+                let procedure = ProcedureType { arguments, return_type };
+                MonoType::Procedure(procedure)
+            },
+            MonoType::Var(var) => {
+                let TypeVar { idx, .. } = var;
+
+                if let Some(t) = map.get(&idx).cloned() {
+                    t.replace_type_vars(map)
+                } else {
+                    MonoType::Var(var)
+                }
+            },
+            MonoType::Constant(c) => MonoType::Constant(c),
+        }
+    }
+
+    pub fn replace_type_constants(self, map: &HashMap<usize, MonoType>) -> MonoType {
+        match self {
+            MonoType::Variant(path, arguments) => {
+                let arguments = arguments
+                    .into_iter()
+                    .map(|arg| arg.replace_type_constants(map))
+                    .collect();
+
+                MonoType::Variant(path, arguments)
+            },
+            MonoType::Procedure(procedure_type) => {
+                let ProcedureType { arguments, return_type } = procedure_type;
+
+                let arguments = arguments
+                    .into_iter()
+                    .map(|arg| arg.replace_type_constants(map))
+                    .collect();
+
+                let return_type = Box::new(return_type.replace_type_constants(map));
+
+                let procedure = ProcedureType { arguments, return_type };
+                MonoType::Procedure(procedure)
+            },
+            MonoType::Var(var) => MonoType::Var(var),
+            MonoType::Constant(c) => {
+                let TypeVar { idx, .. } = c;
+
+                let Some(t) = map.get(&idx).cloned() else {
+                    panic!()
+                };
+
+                t.replace_type_vars(map)
+            },
+        }
+    }
+
+    pub fn contains_type_var(&self) -> bool {
+        match self {
+            MonoType::Variant(_, arguments) => {
+                arguments.iter().any(Self::contains_type_var)
+            },
+            MonoType::Procedure(procedure) => {
+                let ProcedureType { arguments, return_type } = procedure;
+
+                arguments.iter().any(Self::contains_type_var) ||
+                return_type.contains_type_var()
+            },
+            MonoType::Var(_) => true,
+            MonoType::Constant(_) => false,
+        }
+    }
+
+    pub fn occurs(&self, idx: usize) -> bool {
+        match self {
+            MonoType::Variant(_, arguments) => {
+                arguments.iter().any(|t| t.occurs(idx))
+            },
+            MonoType::Procedure(procedure) => {
+                let ProcedureType { arguments, return_type } = procedure;
+
+                arguments.iter().any(|t| t.occurs(idx)) ||
+                return_type.occurs(idx)
+            },
+            MonoType::Var(var) => var.idx == idx,
+            MonoType::Constant(_) => false,
+        }
+    }
+
     pub fn display(&self, interner: &Interner) -> String {
         match self {
             MonoType::Variant(path, arguments) => {

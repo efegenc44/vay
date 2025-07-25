@@ -194,96 +194,6 @@ impl Checker {
         Ok(Type::Mono(*ty))
     }
 
-    fn replace_type_vars(t: MonoType, type_var_map: &HashMap<usize, MonoType>) -> MonoType {
-        match t {
-            MonoType::Variant(path, arguments) => {
-                let mut new_arguments = vec![];
-                for argument in arguments {
-                    let ntype = Self::replace_type_vars(argument, type_var_map);
-                    new_arguments.push(ntype);
-                }
-
-                MonoType::Variant(path, new_arguments)
-            },
-            MonoType::Procedure(procedure_type) => {
-                let ProcedureType { arguments, return_type } = procedure_type;
-
-                let mut new_arguments = vec![];
-                for argument in arguments {
-                    let ntype = Self::replace_type_vars(argument, type_var_map);
-                    new_arguments.push(ntype);
-                }
-
-                let new_return = Self::replace_type_vars(*return_type, type_var_map);
-                let new_procdeure = ProcedureType {
-                    arguments: new_arguments,
-                    return_type: Box::new(new_return),
-                };
-
-                MonoType::Procedure(new_procdeure)
-            },
-            MonoType::Var(type_var) => {
-                let TypeVar { idx, .. } = type_var;
-
-                if type_var_map.contains_key(&idx) {
-                    let t = type_var_map[&idx].clone();
-                    if Self::contains_type_var(&t) {
-                        Self::replace_type_vars(t, type_var_map)
-                    } else {
-                        t
-                    }
-                } else {
-                    MonoType::Var(type_var)
-                }
-            },
-            MonoType::Constant(idx) => MonoType::Constant(idx),
-        }
-    }
-
-    fn replace_type_constants(t: MonoType, type_var_map: &HashMap<usize, MonoType>) -> MonoType {
-        match t {
-            MonoType::Variant(path, arguments) => {
-                let mut new_arguments = vec![];
-                for argument in arguments {
-                    let ntype = Self::replace_type_constants(argument, type_var_map);
-                    new_arguments.push(ntype);
-                }
-
-                MonoType::Variant(path, new_arguments)
-            },
-            MonoType::Procedure(procedure_type) => {
-                let ProcedureType { arguments, return_type } = procedure_type;
-
-                let mut new_arguments = vec![];
-                for argument in arguments {
-                    let ntype = Self::replace_type_constants(argument, type_var_map);
-                    new_arguments.push(ntype);
-                }
-
-                let new_return = Self::replace_type_constants(*return_type, type_var_map);
-                let new_procdeure = ProcedureType {
-                    arguments: new_arguments,
-                    return_type: Box::new(new_return),
-                };
-
-                MonoType::Procedure(new_procdeure)
-            },
-            MonoType::Var(type_var) => MonoType::Var(type_var),
-            MonoType::Constant(type_var) => {
-                if type_var_map.contains_key(&type_var.idx) {
-                    let t = type_var_map[&type_var.idx].clone();
-                    if Self::contains_type_var(&t) {
-                        Self::replace_type_constants(t, type_var_map)
-                    } else {
-                        t
-                    }
-                } else {
-                    panic!();
-                }
-            },
-        }
-    }
-
     pub fn type_check(&mut self, modules: &[Module]) -> ReportableResult<()> {
         for module in modules {
             self.current_source = module.source().to_string();
@@ -371,7 +281,7 @@ impl Checker {
 
                     for (name, method) in &i.methods {
                         let MonoType::Procedure(procedure) =
-                            Self::replace_type_constants(MonoType::Procedure(method.clone()), &map) else {
+                            MonoType::Procedure(method.clone()).replace_type_constants(&map) else {
                             unreachable!()
                         };
 
@@ -467,7 +377,7 @@ impl Checker {
 
                         for (name, method) in &i.methods {
                             let MonoType::Procedure(procedure) =
-                                Self::replace_type_constants(MonoType::Procedure(method.clone()), &map) else {
+                            MonoType::Procedure(method.clone()).replace_type_constants(&map) else {
                                 unreachable!()
                             };
 
@@ -677,7 +587,7 @@ impl Checker {
                     unreachable!()
                 };
                 let map = vars.iter().map(|var| (var.idx, MonoType::Constant(var.clone()))).collect();
-                let t = Self::replace_type_vars(MonoType::Procedure(procedure.clone()), &map);
+                let t = MonoType::Procedure(procedure.clone()).replace_type_vars(&map);
                 let MonoType::Procedure(procedure) = t else {
                     unreachable!()
                 };
@@ -775,6 +685,9 @@ impl Checker {
 
         let mut t = self.infer(expression)?;
         for branch in branches {
+
+            println!("{:?}", t);
+
             scoped!(self, {
                 if !self.type_pattern_match(t.clone(), branch.data().pattern())? {
                     // TODO: Remove push locals by type_pattern_match()
@@ -786,8 +699,8 @@ impl Checker {
 
                 self.statement(branch.data().statement())?;
 
-                if Self::contains_type_var(&t) {
-                    t = Self::replace_type_vars(t, &self.lastest_unification);
+                if t.contains_type_var() {
+                    t = t.replace_type_vars(&self.lastest_unification);
                 }
             })
         }
@@ -836,7 +749,7 @@ impl Checker {
                         .collect();
 
                     for ty in case_fields {
-                        let ty = Self::replace_type_vars(ty.clone(), &type_var_map);
+                        let ty = ty.clone().replace_type_vars(&type_var_map);
                         self.locals.push(ty.clone());
                     }
                 } else {
@@ -850,22 +763,6 @@ impl Checker {
             (MonoType::Procedure(..), _) => Ok(false),
             (MonoType::Var(..), _) => Ok(false),
             (MonoType::Constant(..), _) => Ok(false),
-        }
-    }
-
-    fn contains_type_var(t: &MonoType) -> bool {
-        match t {
-            MonoType::Variant(_, arguments) => {
-                arguments.iter().any(Self::contains_type_var)
-            },
-            MonoType::Procedure(procedure) => {
-                let ProcedureType { arguments, return_type } = procedure;
-
-                arguments.iter().any(Self::contains_type_var) ||
-                Self::contains_type_var(return_type)
-            },
-            MonoType::Var(_) => true,
-            MonoType::Constant(_) => false,
         }
     }
 
@@ -887,8 +784,8 @@ impl Checker {
             );
         };
 
-        let encountered = Self::replace_type_vars(encountered, &map);
-        let expected = Self::replace_type_vars(expected, &map);
+        let encountered = encountered.replace_type_vars(&map);
+        let expected = expected.replace_type_vars(&map);
 
         if encountered != expected {
             return self.error(
@@ -912,7 +809,7 @@ impl Checker {
                     type_var_map.insert(instance, t.clone());
 
                     let MonoType::Procedure(procedure) =
-                    Self::replace_type_constants(MonoType::Procedure(procedure.clone()), &type_var_map) else {
+                    MonoType::Procedure(procedure.clone()).replace_type_constants(&type_var_map) else {
                         unreachable!()
                     };
 
@@ -930,7 +827,7 @@ impl Checker {
                             .collect::<HashMap<_, _>>();
 
                         let MonoType::Procedure(method_ty) =
-                            Self::replace_type_constants(MonoType::Procedure(method_ty.clone()), &type_var_map) else {
+                            MonoType::Procedure(method_ty.clone()).replace_type_constants(&type_var_map) else {
                             unreachable!()
                         };
                         method_ty
@@ -952,7 +849,7 @@ impl Checker {
                     type_var_map.insert(instance, t.clone());
 
                     let MonoType::Procedure(procedure) =
-                        Self::replace_type_constants(MonoType::Procedure(procedure.clone()), &type_var_map) else {
+                    MonoType::Procedure(procedure.clone()).replace_type_constants(&type_var_map) else {
                         unreachable!()
                     };
 
@@ -964,7 +861,7 @@ impl Checker {
                     type_var_map.insert(type_var.instance, t.clone());
 
                     let MonoType::Procedure(method_ty) =
-                        Self::replace_type_constants(MonoType::Procedure(method_ty.clone()), &type_var_map) else {
+                        MonoType::Procedure(method_ty.clone()).replace_type_constants(&type_var_map) else {
                         unreachable!()
                     };
 
@@ -1031,7 +928,7 @@ impl Checker {
                     );
                 }
 
-                if !arguments_type.iter().any(Self::contains_type_var) && !Self::contains_type_var(&return_type) {
+                if !arguments_type.iter().any(MonoType::contains_type_var) && !return_type.contains_type_var() {
                     for (argument, ty) in arguments.iter().zip(arguments_type) {
                         self.check(argument, ty)?;
                     }
@@ -1059,10 +956,10 @@ impl Checker {
 
                 let mut new_argument_types = vec![];
                 for argument in value_types {
-                    new_argument_types.push(Self::replace_type_vars(argument, &map));
+                    new_argument_types.push(argument.replace_type_vars(&map));
                 }
 
-                let new_return = Self::replace_type_vars(*return_type.clone(), &map);
+                let new_return = return_type.clone().replace_type_vars(&map);
 
                 Ok(new_return)
             }
@@ -1098,7 +995,7 @@ impl Checker {
                 let mut map = HashMap::new();
                 map.insert(*instance, t.clone());
 
-                return Ok(Self::replace_type_constants(MonoType::Procedure(method_ty.clone()), &map));
+                return Ok(MonoType::Procedure(method_ty.clone()).replace_type_constants(&map));
             }
             _ => {
                 return self.error(
@@ -1129,7 +1026,7 @@ impl Checker {
                 .zip(arguments.clone())
                 .collect();
 
-            Ok(Self::replace_type_constants(MonoType::Procedure(method_ty.clone()), &type_var_map))
+            Ok(MonoType::Procedure(method_ty.clone()).replace_type_constants(&type_var_map))
         } else {
             Ok(MonoType::Procedure(method_ty.clone()))
         }
@@ -1178,7 +1075,7 @@ impl Checker {
 
                             for (name, method) in var.methods {
                                 let MonoType::Procedure(procedure) =
-                                    Self::replace_type_constants(MonoType::Procedure(method), &map) else {
+                                MonoType::Procedure(method).replace_type_constants(&map) else {
                                     unreachable!()
                                 };
 
@@ -1201,7 +1098,7 @@ impl Checker {
 
                     for (name, method) in methods2 {
                         let MonoType::Procedure(procedure) =
-                            Self::replace_type_constants(MonoType::Procedure(method), &map) else {
+                            MonoType::Procedure(method).replace_type_constants(&map) else {
                             unreachable!()
                         };
 
@@ -1218,7 +1115,7 @@ impl Checker {
             (t, MonoType::Var(var)) | (MonoType::Var(var), t) => {
                 let TypeVar { idx, mut methods, instance } = var.clone();
 
-                if !Self::occurs(idx, &t) {
+                if !t.occurs(idx) {
                     if let Some(mut v) = map.insert(idx, t.clone()) {
                         while let MonoType::Var(var) = v {
                             let mut map = HashMap::new();
@@ -1226,7 +1123,7 @@ impl Checker {
 
                             for (name, method) in var.methods {
                                 let MonoType::Procedure(procedure) =
-                                    Self::replace_type_constants(MonoType::Procedure(method), &map) else {
+                                MonoType::Procedure(method).replace_type_constants(&map) else {
                                     unreachable!()
                                 };
 
@@ -1258,30 +1155,13 @@ impl Checker {
 
         if result {
             for local in self.locals.iter_mut() {
-                *local = Self::replace_type_vars(local.clone(), &map);
+                *local = local.clone().replace_type_vars(&map);
             }
         }
 
         self.lastest_unification.extend(map.clone());
 
         result
-    }
-
-    fn occurs(var: usize, t: &MonoType) -> bool {
-        match t {
-            MonoType::Variant(_, arguments) => {
-                arguments.iter().any(|t| Self::occurs(var, t))
-            },
-            MonoType::Procedure(procedure) => {
-                let ProcedureType { arguments, return_type } = procedure;
-
-                arguments.iter().any(|t| Self::occurs(var, t)) ||
-                Self::occurs(var, return_type)
-
-            },
-            MonoType::Var(type_var) => type_var.idx == var,
-            MonoType::Constant(_) => false,
-        }
     }
 
     fn error<T>(&self, error: TypeCheckError, location: SourceLocation) -> ReportableResult<T> {
