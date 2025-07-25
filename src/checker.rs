@@ -45,7 +45,7 @@ pub struct Checker {
     interfaces: HashMap<Path, (Interface, usize)>,
 
     // TODO: Seperate type locals and value locals
-    locals: Vec<MonoType>,
+    locals: Vec<Type>,
     return_type: Option<MonoType>,
 
     type_var_counter: usize,
@@ -134,7 +134,7 @@ impl Checker {
         match bound {
             Bound::Local(bound_idx) => {
                 let index = self.locals.len() - 1 - bound_idx;
-                Ok(Type::Mono(self.locals[index].clone()))
+                Ok(self.locals[index].clone())
             }
             Bound::Absolute(path) => Ok(self.variants[path].ty.clone()),
             Bound::Undetermined => unreachable!(),
@@ -294,7 +294,7 @@ impl Checker {
         }
 
         scoped!(self, {
-            self.locals.extend(vars.iter().map(|var| MonoType::Var(var.clone())));
+            self.locals.extend(vars.iter().map(|var| Type::Mono(MonoType::Var(var.clone()))));
 
             let mut argument_types = vec![];
             for argument in arguments {
@@ -390,7 +390,7 @@ impl Checker {
 
         scoped!(self, {
             if let Type::Forall(vars, _) = self.variants[path].ty.clone() {
-                self.locals.extend(vars.iter().map(|var| MonoType::Constant(var.clone())));
+                self.locals.extend(vars.iter().map(|var| Type::Mono(MonoType::Constant(var.clone()))));
             }
 
             for method in methods {
@@ -429,7 +429,7 @@ impl Checker {
 
         scoped!(self, {
             if let Type::Forall(vars, _) = self.variants[path].ty.clone() {
-                self.locals.extend(vars.iter().map(|var| MonoType::Var(var.clone())));
+                self.locals.extend(vars.iter().map(|var| Type::Mono(MonoType::Var(var.clone()))));
             };
 
             let poly;
@@ -559,8 +559,8 @@ impl Checker {
             };
 
             scoped!(self, {
-                self.locals.push(variant_type);
-                self.locals.extend(arguments);
+                self.locals.push(Type::Mono(variant_type));
+                self.locals.extend(arguments.into_iter().map(Type::Mono));
                 self.return_type = Some(*return_type.clone());
                 for statement in body {
                     self.statement(statement)?;
@@ -617,7 +617,7 @@ impl Checker {
         }
 
         scoped!(self, {
-            self.locals.extend(arguments);
+            self.locals.extend(arguments.into_iter().map(Type::Mono));
             self.return_type = Some(*return_type.clone());
             for statement in body {
                 self.statement(statement)?;
@@ -633,7 +633,7 @@ impl Checker {
 
         scoped!(self, {
             let t = self.interfaces.get_mut(path).unwrap().1;
-            self.locals.push(MonoType::Constant(TypeVar { idx: t, instance: t, methods: HashMap::new() }));
+            self.locals.push(Type::Mono(MonoType::Constant(TypeVar { idx: t, instance: t, methods: HashMap::new() })));
 
             for method in methods {
                 let MethodSignature { name, arguments, return_type } = method;
@@ -685,9 +685,6 @@ impl Checker {
 
         let mut t = self.infer(expression)?;
         for branch in branches {
-
-            println!("{:?}", t);
-
             scoped!(self, {
                 if !self.type_pattern_match(t.clone(), branch.data().pattern())? {
                     // TODO: Remove push locals by type_pattern_match()
@@ -750,11 +747,11 @@ impl Checker {
 
                     for ty in case_fields {
                         let ty = ty.clone().replace_type_vars(&type_var_map);
-                        self.locals.push(ty.clone());
+                        self.locals.push(Type::Mono(ty.clone()));
                     }
                 } else {
                     for ty in case_fields {
-                        self.locals.push(ty.clone());
+                        self.locals.push(Type::Mono(ty.clone()));
                     }
                 }
 
@@ -892,7 +889,15 @@ impl Checker {
             Bound::Local(bound_idx) => {
                 let index = self.locals.len() - 1 - bound_idx;
                 let t = self.locals[index].clone();
-                Ok(self.rinst(t, &mut HashMap::new()))
+                let t = match t {
+                    Type::Forall(_, t) => {
+                        let mut map = HashMap::new();
+                        self.rinst(*t, &mut map)
+                    }
+                    Type::Mono(m) => m,
+                };
+
+                Ok(t)
             }
             Bound::Absolute(path) => {
                 let t = self.names[path].clone();
@@ -1155,7 +1160,9 @@ impl Checker {
 
         if result {
             for local in self.locals.iter_mut() {
-                *local = local.clone().replace_type_vars(&map);
+                if let Type::Mono(m) = local.clone() {
+                    *local = Type::Mono(m.replace_type_vars(&map));
+                }
             }
         }
 
