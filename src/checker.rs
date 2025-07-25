@@ -139,16 +139,10 @@ impl Checker {
 
         let mut argument_types = vec![];
         for argument in arguments {
-            let Type::Mono(t) = self.eval_type_expression(argument)? else {
-                todo!("Expected mono type");
-            };
-            argument_types.push(t);
+            argument_types.push(self.eval_to_mono(argument)?);
         }
 
-        let Type::Mono(return_type) = self.eval_type_expression(return_type)? else {
-            todo!("Expected mono type");
-        };
-        let return_type = Box::new(return_type);
+        let return_type = Box::new(self.eval_to_mono(return_type)?);
 
         let procedure_type = ProcedureType { arguments: argument_types, return_type };
         Ok(Type::Mono(MonoType::Procedure(procedure_type)))
@@ -157,26 +151,41 @@ impl Checker {
     fn eval_type_application(&mut self, type_application: &TypeApplicationExpression) -> ReportableResult<Type> {
         let TypeApplicationExpression { function, arguments } = &type_application;
 
-        let Type::Forall(vars, mut ty) = self.eval_type_expression(function)? else {
-            todo!("not a parameterized type");
+        let t = self.eval_type_expression(function)?;
+        let Type::Forall(vars, mut m) = t else {
+            return self.error(
+                TypeCheckError::NotAPolyType {
+                    encountered: t
+                },
+                function.location()
+            )
         };
 
         if vars.len() != arguments.len() {
-            todo!("mismatched arity for type parameters");
+            return self.error(
+                TypeCheckError::TypeArityMismatch {
+                    expected: vars.len(),
+                    encountered: arguments.len()
+                },
+                function.location()
+            )
         }
 
-        match ty {
+        match m {
             MonoType::Variant(_, ref mut variant_arguments) => {
                 variant_arguments.clear();
                 for (argument, var) in arguments.iter().zip(vars) {
-                    let Type::Mono(t) = self.eval_type_expression(argument)? else {
-                        todo!("Expected mono type");
-                    };
-
-                    if !self.is_supertype_of_interface(t.clone(), &var.interfaces) {
-                        todo!("Constraint error");
+                    let m = self.eval_to_mono(argument)?;
+                    if !self.is_supertype_of_interface(m.clone(), &var.interfaces) {
+                        return self.error(
+                            TypeCheckError::DontImplementInterfaces {
+                                t: Type::Mono(m),
+                                interfaces: var.interfaces
+                            },
+                            argument.location()
+                        );
                     }
-                    variant_arguments.push(t);
+                    variant_arguments.push(m);
                 }
             },
             MonoType::Procedure(_procedure_type) => todo!(),
@@ -185,7 +194,7 @@ impl Checker {
             MonoType::Var(..) => unreachable!(),
         };
 
-        Ok(Type::Mono(ty))
+        Ok(Type::Mono(m))
     }
 
     pub fn type_check(&mut self, modules: &[Module]) -> ReportableResult<()> {
@@ -309,16 +318,10 @@ impl Checker {
 
             let mut argument_types = vec![];
             for argument in arguments {
-                let Type::Mono(t) = self.eval_type_expression(argument.data().type_expression())? else {
-                    todo!("Expected mono type");
-                };
-                argument_types.push(t);
+                argument_types.push(self.eval_to_mono(argument.data().type_expression())?);
             }
 
-            let Type::Mono(t) = self.eval_type_expression(return_type)? else {
-                todo!("Expected mono type");
-            };
-            let return_type = Box::new(t);
+            let return_type = Box::new(self.eval_to_mono(return_type)?);
 
             let procedure_type = ProcedureType { arguments: argument_types, return_type };
             let procedure = MonoType::Procedure(procedure_type);
@@ -370,16 +373,10 @@ impl Checker {
 
                 let mut argument_types = vec![];
                 for argument in arguments {
-                    let Type::Mono(t) = self.eval_type_expression(argument.data().type_expression())? else {
-                        todo!("Expected mono type");
-                    };
-                    argument_types.push(t);
+                    argument_types.push(self.eval_to_mono(argument.data().type_expression())?);
                 }
 
-                let Type::Mono(t) = self.eval_type_expression(return_type)? else {
-                    todo!("Expected mono type");
-                };
-                let return_type = Box::new(t);
+                let return_type = Box::new(self.eval_to_mono(return_type)?);
                 let procedure_type = ProcedureType { arguments: argument_types, return_type };
                 if self.variants
                     .get_mut(path)
@@ -419,10 +416,7 @@ impl Checker {
                 if let Some(arguments) = case.data().arguments() {
                     let mut argument_types = vec![];
                     for argument in arguments {
-                        let Type::Mono(t) = self.eval_type_expression(argument)? else {
-                            todo!("Expected mono type");
-                        };
-                        argument_types.push(t);
+                        argument_types.push(self.eval_to_mono(argument)?);
                     }
 
                     self.variants
@@ -599,16 +593,10 @@ impl Checker {
 
                 let mut new_arguments = vec![];
                 for argument in arguments {
-                    let Type::Mono(t) = self.eval_type_expression(argument.data().type_expression())? else {
-                        todo!("Expected mono type");
-                    };
-                    new_arguments.push(t)
+                    new_arguments.push(self.eval_to_mono(argument.data().type_expression())?)
                 }
 
-                let Type::Mono(t) = self.eval_type_expression(return_type)? else {
-                    todo!("Expected mono type");
-                };
-                let new_return_type = Box::new(t);
+                let new_return_type = Box::new(self.eval_to_mono(return_type)?);
 
                 let method_ty = ProcedureType {
                     arguments: new_arguments,
@@ -897,23 +885,28 @@ impl Checker {
 
                 let mut value_types = vec![];
                 for argument in arguments {
-                    value_types.push(self.infer(argument)?);
+                    value_types.push((self.infer(argument)?, argument.location()));
                 }
 
                 let mut map = HashMap::new();
-                for (argument, ty) in value_types.iter().zip(arguments_type) {
+                for ((argument, location), ty) in value_types.iter().zip(arguments_type) {
+                    let old_map = map.clone();
                     if !self.unify(argument.clone(), ty.clone(), &mut map) {
-                        todo!()
+                        return self.error(
+                            TypeCheckError::MismatchedTypes {
+                                encountered: Type::Mono(argument.clone().replace_type_vars(&map)),
+                                expected: Type::Mono(ty.replace_type_vars(&old_map))
+                            },
+                            *location
+                        );
                     };
                 }
 
                 let idx = self.newvar();
-                if !self.unify(*return_type.clone(), MonoType::Var(idx), &mut map) {
-                    todo!()
-                }
+                self.unify(*return_type.clone(), MonoType::Var(idx.clone()), &mut map);
 
                 let mut new_argument_types = vec![];
-                for argument in value_types {
+                for (argument, _) in value_types {
                     new_argument_types.push(argument.replace_type_vars(&map));
                 }
 
@@ -1073,7 +1066,7 @@ impl Checker {
                     }
 
                     if !self.is_supertype_of_interface(t.clone(), &interfaces) {
-                        todo!()
+                        return false
                     }
 
                     map.insert(idx, t);
@@ -1097,6 +1090,18 @@ impl Checker {
         self.lastest_unification.extend(map.clone());
 
         result
+    }
+
+    fn eval_to_mono(&mut self, type_expression: &Located<TypeExpression>) -> ReportableResult<MonoType> {
+        let t = self.eval_type_expression(type_expression)?;
+        let Type::Mono(m) = t else {
+            return self.error(
+                TypeCheckError::ExpectedMonoType { encountered: t },
+                type_expression.location()
+            );
+        };
+
+        Ok(m)
     }
 
     fn error<T>(&self, error: TypeCheckError, location: SourceLocation) -> ReportableResult<T> {
@@ -1147,6 +1152,20 @@ pub enum TypeCheckError {
         ty: Type,
         name: InternIdx,
     },
+    ExpectedMonoType {
+        encountered: Type,
+    },
+    NotAPolyType {
+        encountered: Type,
+    },
+    TypeArityMismatch {
+        expected: usize,
+        encountered: usize,
+    },
+    DontImplementInterfaces {
+        t: Type,
+        interfaces: HashSet<Path>,
+    }
 }
 
 impl Reportable for (Located<TypeCheckError>, String) {
@@ -1240,6 +1259,22 @@ impl Reportable for (Located<TypeCheckError>, String) {
             TypeCheckError::HasNoMethod { ty, name } => {
                 format!("`{}` has no method named `{}`.",
                     ty.display(interner), interner.get(name)
+                )
+            }
+            TypeCheckError::ExpectedMonoType { encountered } => {
+                format!("Type is not mono : `{}`.", encountered.display(interner))
+            }
+            TypeCheckError::NotAPolyType { encountered } => {
+                format!("Type is not poly : `{}`.", encountered.display(interner))
+            }
+            TypeCheckError::TypeArityMismatch { encountered, expected } => {
+                format!("Type is of arity {} but supplied {} arguments.",
+                    expected, encountered
+                )
+            }
+            TypeCheckError::DontImplementInterfaces { t, interfaces } => {
+                format!("Type `{}` does not implement interfaces: {}.",
+                    t.display(interner), interfaces.iter().map(|path| path.as_string(interner)).collect::<Vec<_>>().join(" ")
                 )
             }
         }
