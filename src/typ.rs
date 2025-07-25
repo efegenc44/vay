@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::{bound::Path, interner::{InternIdx, Interner}};
 
@@ -30,7 +30,7 @@ pub struct Interface {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeVar {
     pub idx: usize,
-    pub methods: HashMap<InternIdx, ProcedureType>,
+    pub interfaces: HashSet<Path>
 }
 
 impl MonoType {

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     bound::{Bound, Path},
@@ -75,7 +75,7 @@ impl Checker {
     fn newvar(&mut self) -> TypeVar {
         let idx = self.type_var_counter;
         self.type_var_counter += 1;
-        TypeVar { idx, methods: HashMap::new() }
+        TypeVar { idx, interfaces: HashSet::new() }
     }
 
     fn instantiate(&mut self, t: Type) -> MonoType {
@@ -102,9 +102,8 @@ impl Checker {
         let mut vars = vec![];
         for var in type_vars {
             let mut newvar = self.newvar();
-            for interface in &var.data().interfaces {
-                let interface = &self.interfaces[&interface.1];
-                newvar.methods.extend(interface.methods.clone());
+            for (_, path) in &var.data().interfaces {
+                newvar.interfaces.insert(path.clone());
             }
 
             vars.push(newvar);
@@ -173,7 +172,8 @@ impl Checker {
                     let Type::Mono(t) = self.eval_type_expression(argument)? else {
                         todo!("Expected mono type");
                     };
-                    if !self.is_supertype_of_interface(t.clone(), &var.methods) {
+
+                    if !self.is_supertype_of_interface(t.clone(), &var.interfaces) {
                         todo!("Constraint error");
                     }
                     variant_arguments.push(t);
@@ -218,33 +218,80 @@ impl Checker {
     fn collect_types(&mut self, module: &Module) -> ReportableResult<()> {
         for declaration in module.declarations() {
             match declaration {
-                Declaration::Module(..) => (),
-                Declaration::Import(..) => (),
-                Declaration::Procedure(..) => (),
-                Declaration::Variant(..) => (),
                 Declaration::Interface(interface) => self.collect_interface_type(interface)?,
-            }
-        }
-
-        for declaration in module.declarations() {
-            match declaration {
-                Declaration::Module(..) => (),
-                Declaration::Import(..) => (),
-                Declaration::Procedure(..) => (),
-                Declaration::Interface(..) => (),
                 Declaration::Variant(variant) => self.collect_variant_type(variant)?,
+                _ => ()
             }
         }
 
         Ok(())
     }
 
+    // TODO: This is probably not a solution, proper way is to build a some sort of dependecy graph, I guess
     fn collect_names(&mut self, module: &Module) -> ReportableResult<()> {
+        let mut tricky_ones_interface = vec![];
+        'declaration: for declaration in module.declarations() {
+            match declaration {
+                Declaration::Interface(interface) => {
+                    let InterfaceDeclaration { name, methods, .. } = interface;
+                    for MethodSignature { arguments, return_type, .. } in methods {
+                        if arguments.iter().any(|arg| arg.data().type_expression().data().contains_application())
+                        || return_type.data().contains_application() {
+                            tricky_ones_interface.push(*name.data());
+                            continue 'declaration;
+                        }
+                    }
+                    self.collect_interface_name(interface)?
+                },
+                _ => (),
+            }
+        }
+
+        let mut tricky_ones_variant = vec![];
+        'declaration: for declaration in module.declarations() {
+            match declaration {
+                Declaration::Variant(variant) => {
+                    let VariantDeclaration { name, methods, .. } = variant;
+                    for MethodDeclaration { arguments, return_type, .. } in methods {
+                        if arguments.iter().any(|arg| arg.data().type_expression().data().contains_application())
+                        || return_type.data().contains_application() {
+                            tricky_ones_variant.push(*name.data());
+                            continue 'declaration;
+                        }
+                    }
+                    self.collect_variant_name(variant)?
+                },
+                _ => (),
+            }
+        }
+
         for declaration in module.declarations() {
             match declaration {
-                Declaration::Variant(variant) => self.collect_variant_name(variant)?,
+                Declaration::Interface(interface) => {
+                    let InterfaceDeclaration { name, .. } = interface;
+                    if tricky_ones_interface.contains(name.data()) {
+                        self.collect_interface_name(interface)?
+                    }
+                },
+                _ => (),
+            }
+        }
+
+        for declaration in module.declarations() {
+            match declaration {
+                Declaration::Variant(variant) => {
+                    let VariantDeclaration { name, .. } = variant;
+                    if tricky_ones_variant.contains(name.data()) {
+                        self.collect_variant_name(variant)?
+                    }
+                },
+                _ => (),
+            }
+        }
+
+        for declaration in module.declarations() {
+            match declaration {
                 Declaration::Procedure(procedure) => self.collect_procedure_name(procedure)?,
-                Declaration::Interface(interface) => self.interface(interface)?,
                 _ => (),
             }
         }
@@ -293,7 +340,8 @@ impl Checker {
         let variant_type = if type_vars.is_empty() {
             Type::Mono(MonoType::Variant(path.clone(), vec![]))
         } else {
-            Type::Forall(vec![], MonoType::Variant(path.clone(), vec![]))
+            let vars = self.type_vars(type_vars);
+            Type::Forall(vars, MonoType::Variant(path.clone(), vec![]))
         };
         let variant_data = VariantInformation::with_type(variant_type);
         self.variants.insert(path.clone(), variant_data);
@@ -310,12 +358,7 @@ impl Checker {
     }
 
     fn collect_variant_name(&mut self, variant: &VariantDeclaration) -> ReportableResult<()> {
-        let VariantDeclaration { type_vars, cases, methods, path, .. } = variant;
-
-        if let Type::Forall(_, m) = self.variants.get_mut(path).unwrap().ty.clone() {
-            let vars = self.type_vars(type_vars);
-            self.variants.get_mut(path).unwrap().ty = Type::Forall(vars, m.clone())
-        };
+        let VariantDeclaration { cases, methods, path, .. } = variant;
 
         scoped!(self, {
             if let Type::Forall(vars, _) = self.variants[path].ty.clone() {
@@ -425,10 +468,11 @@ impl Checker {
 
     fn declaration(&mut self, declaration: &Declaration) -> ReportableResult<()> {
         match declaration {
-            Declaration::Module(..) | Declaration::Import(..) => Ok(()),
+            Declaration::Module(..) |
+            Declaration::Import(..) |
+            Declaration::Interface(..) => Ok(()),
             Declaration::Variant(variant) => self.variant(variant),
             Declaration::Procedure(procedure) => self.procedure(procedure),
-            Declaration::Interface(interface) => self.interface(interface),
         }
     }
 
@@ -541,13 +585,13 @@ impl Checker {
         Ok(())
     }
 
-    fn interface(&mut self, interface: &InterfaceDeclaration) -> ReportableResult<()> {
+    fn collect_interface_name(&mut self, interface: &InterfaceDeclaration) -> ReportableResult<()> {
         let InterfaceDeclaration { methods, path, .. } = interface;
 
         scoped!(self, {
             self.locals.push(Type::Mono(MonoType::Constant(TypeVar {
                 idx: INTERFACE_CONSTANT_IDX,
-                methods: HashMap::new()
+                interfaces: HashSet::new()
             })));
 
             for method in methods {
@@ -712,76 +756,90 @@ impl Checker {
         Ok(())
     }
 
-    fn is_supertype_of_interface(&self, t: MonoType, interface_methods: &HashMap<InternIdx, ProcedureType>) -> bool {
+    fn is_supertype_of_interface(&self, t: MonoType, interfaces: &HashSet<Path>) -> bool {
         match &t {
             MonoType::Variant(path, arguments) => {
-                for interface_method in interface_methods {
-                    let (name, interface_procedure) = interface_method;
-                    let map = HashMap::from([(INTERFACE_CONSTANT_IDX, t.clone())]);
+                for interface_path in interfaces {
+                    let interface = &self.interfaces[interface_path];
 
-                    let MonoType::Procedure(interface_procedure) =
-                        MonoType::Procedure(interface_procedure.clone()).replace_type_constants(&map) else {
-                        unreachable!()
-                    };
+                    for (name, interface_procedure) in &interface.methods {
+                        let map = HashMap::from([(INTERFACE_CONSTANT_IDX, t.clone())]);
 
-                    let Some(variant_procedure) = self.variants[&path].methods.get(name) else {
-                        return false;
-                    };
-
-                    let variant_procedure = if let Type::Forall(type_vars, _) = &self.variants[&path].ty {
-                        let map = type_vars
-                            .iter()
-                            .cloned()
-                            .map(|var| var.idx)
-                            .zip(arguments.clone())
-                            .collect();
-
-                        let MonoType::Procedure(variant_procedure) =
-                            MonoType::Procedure(variant_procedure.clone()).replace_type_constants(&map) else {
+                        let MonoType::Procedure(interface_procedure) =
+                            MonoType::Procedure(interface_procedure.clone()).replace_type_constants(&map) else {
                             unreachable!()
                         };
 
-                        variant_procedure
-                    } else {
-                        variant_procedure.clone()
-                    };
+                        let Some(variant_procedure) = self.variants[&path].methods.get(&name) else {
+                            return false;
+                        };
 
-                    if variant_procedure != interface_procedure {
-                        return false;
+                        let variant_procedure = if let Type::Forall(type_vars, _) = &self.variants[&path].ty {
+                            let map = type_vars
+                                .iter()
+                                .cloned()
+                                .map(|var| var.idx)
+                                .zip(arguments.clone())
+                                .collect();
+
+                            let MonoType::Procedure(variant_procedure) =
+                                MonoType::Procedure(variant_procedure.clone()).replace_type_constants(&map) else {
+                                unreachable!()
+                            };
+
+                            variant_procedure
+                        } else {
+                            variant_procedure.clone()
+                        };
+
+                        if variant_procedure != interface_procedure {
+                            return false;
+                        }
                     }
                 }
 
                 true
             },
             MonoType::Var(type_var) | MonoType::Constant(type_var) => {
-                for interface_method in interface_methods {
-                    let (name, interface_procedure) = interface_method;
-                    let map = HashMap::from([(INTERFACE_CONSTANT_IDX, t.clone())]);
+                for path in interfaces {
+                    let interface = &self.interfaces[path];
 
-                    let MonoType::Procedure(interface_procedure) =
-                    MonoType::Procedure(interface_procedure.clone()).replace_type_constants(&map) else {
-                        unreachable!()
-                    };
+                    for (name, interface_procedure) in &interface.methods {
+                        let map = HashMap::from([(INTERFACE_CONSTANT_IDX, t.clone())]);
 
-                    let Some(var_procedure) = type_var.methods.get(name) else {
-                        return false;
-                    };
+                        let MonoType::Procedure(interface_procedure) =
+                        MonoType::Procedure(interface_procedure.clone()).replace_type_constants(&map) else {
+                            unreachable!()
+                        };
 
-                    let map = HashMap::from([(INTERFACE_CONSTANT_IDX, t.clone())]);
+                        let mut var_procedure = None;
+                        'interface: for path in &type_var.interfaces {
+                            for (method_name, procedure) in &self.interfaces[path].methods {
+                                if name == method_name {
+                                    var_procedure = Some(procedure);
+                                    break 'interface;
+                                }
+                            }
+                        }
+                        let Some(var_procedure) = var_procedure.take() else {
+                            return false;
+                        };
 
-                    let MonoType::Procedure(var_procedure) =
-                    MonoType::Procedure(var_procedure.clone()).replace_type_constants(&map) else {
-                        unreachable!()
-                    };
+                        let map = HashMap::from([(INTERFACE_CONSTANT_IDX, t.clone())]);
 
-                    if var_procedure != interface_procedure {
-                        return false;
+                        let MonoType::Procedure(var_procedure) =
+                        MonoType::Procedure(var_procedure.clone()).replace_type_constants(&map) else {
+                            unreachable!()
+                        };
+
+                        if var_procedure != interface_procedure {
+                            return false;
+                        }
                     }
                 }
-
                 true
             }
-            _ => interface_methods.is_empty()
+            _ => interfaces.is_empty()
         }
     }
 
@@ -880,9 +938,18 @@ impl Checker {
         let (path, arguments) = match &t {
             MonoType::Variant(path, arguments) => (path, arguments),
             MonoType::Constant(type_var) | MonoType::Var(type_var) => {
-                let TypeVar { methods, .. } = type_var;
+                let TypeVar { interfaces, .. } = type_var;
 
-                let Some(var_procedure) = methods.get(name.data()) else {
+                let mut var_procedure = None;
+                'interface: for path in interfaces {
+                    for (method_name, procedure) in &self.interfaces[path].methods {
+                        if name.data() == method_name {
+                            var_procedure = Some(procedure);
+                            break 'interface;
+                        }
+                    }
+                }
+                let Some(var_procedure) = var_procedure.take() else {
                     return self.error(
                         TypeCheckError::HasNoMethod {
                             ty: Type::Mono(t),
@@ -962,15 +1029,15 @@ impl Checker {
             (MonoType::Constant(idx1), MonoType::Constant(idx2)) => idx1 == idx2,
 
             (MonoType::Var(var1), MonoType::Var(var2)) => {
-                let TypeVar { idx: idx1, methods: methods1 } = var1.clone();
-                let TypeVar { idx: idx2, methods: methods2 } = var2;
+                let TypeVar { idx: idx1, interfaces: interfaces1 } = var1;
+                let TypeVar { idx: idx2, interfaces: interfaces2 } = var2;
 
-                let mut methods = methods1.clone();
+                let mut interfaces = interfaces1.clone();
                 if map.contains_key(&idx1) {
                     if let Some(mut v) = map.insert(idx2, map[&idx1].clone()) {
                         while let MonoType::Var(var) = v {
                             // TODO: check colisions here
-                            methods.extend(var.methods);
+                            interfaces.extend(var.interfaces);
                             v = map[&var.idx].clone()
                         }
 
@@ -978,25 +1045,25 @@ impl Checker {
                             return false;
                         }
 
-                        map.insert(idx1, MonoType::Var(TypeVar { idx: idx2, methods }));
+                        map.insert(idx1, MonoType::Var(TypeVar { idx: idx2, interfaces }));
                     }
                 } else {
                     // TODO: check colisions here
-                    methods.extend(methods2);
-                    map.insert(idx1, MonoType::Var(TypeVar { idx: idx2, methods }));
+                    interfaces.extend(interfaces2);
+                    map.insert(idx1, MonoType::Var(TypeVar { idx: idx2, interfaces }));
                 }
 
                 true
             },
 
             (t, MonoType::Var(var)) | (MonoType::Var(var), t) => {
-                let TypeVar { idx, mut methods } = var.clone();
+                let TypeVar { idx, mut interfaces } = var.clone();
 
                 if !t.occurs(idx) {
                     if let Some(mut v) = map.insert(idx, t.clone()) {
                         while let MonoType::Var(var) = v {
                             // TODO: check confilicts here
-                            methods.extend(var.methods);
+                            interfaces.extend(var.interfaces);
                             v = map[&var.idx].clone()
                         }
 
@@ -1005,7 +1072,7 @@ impl Checker {
                         }
                     }
 
-                    if !self.is_supertype_of_interface(t.clone(), &methods) {
+                    if !self.is_supertype_of_interface(t.clone(), &interfaces) {
                         todo!()
                     }
 
