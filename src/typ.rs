@@ -4,17 +4,22 @@ use crate::{bound::Path, interner::{InternIdx, Interner}};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
-    Variant(Path, Vec<Type>),
+    Mono(MonoType),
+    Forall(Vec<TypeVar>, Box<MonoType>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MonoType {
+    Variant(Path, Vec<MonoType>),
     Procedure(ProcedureType),
-    Forall(Vec<TypeVar>, Box<Type>),
     Constant(TypeVar),
-    TypeVar(TypeVar)
+    Var(TypeVar)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcedureType {
-    pub arguments: Vec<Type>,
-    pub return_type: Box<Type>,
+    pub arguments: Vec<MonoType>,
+    pub return_type: Box<MonoType>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,10 +35,10 @@ pub struct TypeVar {
     pub methods: HashMap<InternIdx, ProcedureType>,
 }
 
-impl Type {
+impl MonoType {
     pub fn display(&self, interner: &Interner) -> String {
         match self {
-            Type::Variant(path, arguments) => {
+            MonoType::Variant(path, arguments) => {
                 let mut type_string = path.as_string(interner);
                 match &arguments[..] {
                     [] => (),
@@ -50,7 +55,7 @@ impl Type {
                 };
                 type_string
             },
-            Type::Procedure(procedure) => {
+            MonoType::Procedure(procedure) => {
                 let ProcedureType { arguments, return_type } = procedure;
 
                 let mut type_string = String::from("proc(");
@@ -69,15 +74,23 @@ impl Type {
                 type_string.push_str(&format!(" -> {}", return_type.display(interner)));
                 type_string
             }
+            MonoType::Var(type_var) => format!("a{}", type_var.idx),
+            MonoType::Constant(type_var) => format!("c{}", type_var.idx),
+        }
+    }
+}
+
+impl Type {
+    pub fn display(&self, interner: &Interner) -> String {
+        match self {
+            Type::Mono(t) => t.display(interner),
             Type::Forall(vars, ty) => {
                 format!(
                     "forall {}; {}",
                     vars.iter().map(|id| format!("a{}", id.idx)).collect::<Vec<_>>().join(","),
                     ty.display(interner),
                 )
-            },
-            Type::TypeVar(type_var) => format!("a{}", type_var.idx),
-            Type::Constant(type_var) => format!("c{}", type_var.idx),
+            }
         }
     }
 }

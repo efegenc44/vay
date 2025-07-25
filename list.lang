@@ -1,8 +1,17 @@
 module Main
 
+import Nat
+
 variant List(T) {
     Nil
     Cons(T, List(T))
+
+    proc map(this, f: proc(T) : T) : List(T) {
+        match this {
+            Nil         : return List::Nil
+            Cons(x, xs) : return List::Cons(f(x), xs.map(f))
+        }
+    }
 
     proc foo(this, y : T) : T {
         List::Nil
@@ -45,6 +54,7 @@ proc foo(list : List(Foo)) : Foo {
 
 variant Foo { Foo }
 
-proc main() : Foo {
-    return Foo::Foo
+proc main() : List(Nat::Nat) {
+    return List::Cons(Nat::Nat::Succ(Nat::Nat::Zero), List::Nil)
+        .map(Nat::inc)
 }

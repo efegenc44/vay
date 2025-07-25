@@ -1,12 +1,12 @@
 module TestModule
 
-import Main
+import Nat
 
 variant Test {
     Foo
     Bar
 }
 
-proc main(x : Main::Nat) : Main::Nat {
-    return Main::Nat::Zero
+proc main(x : Nat::Nat) : Nat::Nat {
+    return Nat::Nat::Zero
 }

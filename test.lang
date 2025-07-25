@@ -1,12 +1,11 @@
 module Main
 
-import TestModule
-import Main
+import Nat
 
-proc main() : Main::Nat {
+proc main() : Nat::Nat {
     return id(foo(
-        Nat::Succ(Nat::Succ(Nat::Zero)),
-        Nat::Succ(Nat::Zero)
+        Nat::Nat::Succ(Nat::Nat::Succ(Nat::Nat::Zero)),
+        Nat::Nat::Succ(Nat::Nat::Zero)
     ))
 }
 
@@ -14,27 +13,8 @@ proc id:(T)(x : T) : T {
     return x
 }
 
-variant Nat {
-    Zero
-    Succ(Nat)
-
-    proc add(this, that : Nat) : Nat {
-        match that {
-            Zero    : return this
-            Succ(n) : return Nat::Succ(this.add(n))
-        }
-    }
-
-    proc mul(this, that : Nat) : Nat {
-        match that {
-            Zero    : return Nat::Zero
-            Succ(n) : return this.add(this.mul(n))
-        }
-    }
-}
-
-proc foo(x : Nat, y : Nat) : Nat {
+proc foo(x : Nat::Nat, y : Nat::Nat) : Nat::Nat {
     return x
         .add(y)
-        .mul(Nat::Succ(Nat::Succ(Nat::Succ(Nat::Zero))))
+        .mul(Nat::Nat::Succ(Nat::Nat::Succ(Nat::Nat::Succ(Nat::Nat::Zero))))
 }
