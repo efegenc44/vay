@@ -485,7 +485,11 @@ impl Resolver {
     }
 
     fn method(&mut self, method: &mut MethodDeclaration) -> ReportableResult<()> {
-        let MethodDeclaration { instance, arguments, return_type, body, .. } = method;
+        let MethodDeclaration { constraints, instance, arguments, return_type, body, .. } = method;
+
+        for constraint in constraints.iter_mut() {
+            self.constraint(constraint)?;
+        }
 
         for argument in arguments.iter_mut() {
             self.type_expression(argument.data_mut().type_expression_mut())?;
@@ -505,16 +509,32 @@ impl Resolver {
         Ok(())
     }
 
+    fn constraint(&mut self, constraint: &mut (Located<TypeVar>, usize)) -> ReportableResult<()> {
+        // NOTE: At this point we only have type parameters of the type
+        //   so index represent the order of the type parameter
+        let mut found = false;
+        for (index, name_idx) in self.locals.iter().enumerate() {
+            if name_idx == constraint.0.data().name.data() {
+                *&mut constraint.1 = index;
+                found = true;
+            }
+        }
+
+        if !found {
+            todo!("Not a type var of type");
+        }
+
+        self.type_var(&mut constraint.0)?;
+
+        Ok(())
+    }
+
     fn variant(&mut self, variant: &mut VariantDeclaration) -> ReportableResult<()> {
         let VariantDeclaration { cases, methods, type_vars, .. } = variant;
 
-        for type_var in type_vars.iter_mut() {
-            self.type_var(type_var)?;
-        }
-
         scoped!(self, {
             // TODO: These ones are leaked
-            let type_vars = type_vars.iter().map(|type_var| type_var.data().name.data());
+            let type_vars = type_vars.iter().map(|type_var| type_var.data());
             self.locals.extend(type_vars);
 
             for case in cases {

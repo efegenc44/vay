@@ -35,7 +35,7 @@ pub struct ProcedureDeclaration {
 
 pub struct VariantDeclaration {
     pub name: Located<InternIdx>,
-    pub type_vars: Vec<Located<TypeVar>>,
+    pub type_vars: Vec<Located<InternIdx>>,
     pub cases: Vec<Located<VariantCase>>,
     pub methods: Vec<MethodDeclaration>,
     pub path: Path,
@@ -56,6 +56,7 @@ pub struct MethodSignature {
 
 pub struct MethodDeclaration {
     pub name: Located<InternIdx>,
+    pub constraints: Vec<(Located<TypeVar>, usize)>,
     pub instance: Located<InternIdx>,
     pub arguments: Vec<Located<TypedIdentifier>>,
     pub return_type: Located<TypeExpression>,

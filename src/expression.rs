@@ -49,18 +49,3 @@ pub struct TypeApplicationExpression {
     pub function: Box<Located<TypeExpression>>,
     pub arguments: Vec<Located<TypeExpression>>,
 }
-
-impl TypeExpression {
-    pub fn contains_application(&self) -> bool {
-        match self {
-            TypeExpression::Path(_) => false,
-            TypeExpression::Procedure(procedure) => {
-                let ProcedureTypeExpression { arguments, return_type } = procedure;
-
-                arguments.iter().any(|arg| arg.data().contains_application()) ||
-                return_type.data().contains_application()
-            },
-            TypeExpression::Application(_) => true,
-        }
-    }
-}

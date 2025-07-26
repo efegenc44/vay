@@ -1,9 +1,9 @@
 module Main
 
-variant Vector2(T (Add)) {
+variant Vector2(T) {
     new(T, T)
 
-    proc add(this, that : Vector2(T)) : Vector2(T) {
+    proc:(T (Add)) add(this, that : Vector2(T)) : Vector2(T) {
         match this { new(x1, y1) :
         match that { new(x2, y2) :
             return Vector2::new(x1.add(x2), y1.add(y2))

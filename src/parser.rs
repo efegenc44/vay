@@ -395,6 +395,19 @@ impl<'source, 'interner> Parser<'source, 'interner> {
 
     fn method_declaration(&mut self) -> ReportableResult<MethodDeclaration> {
         self.expect(Token::ProcKeyword)?;
+
+        let constraints = if self.peek_is(Token::Colon)? {
+            self.advance()?;
+            self.expect(Token::LeftParenthesis)?;
+            self.until(
+                Token::RightParenthesis,
+                |parser| Ok((parser.type_var()?, 0)),
+                Some(Token::Comma)
+            )?.0
+        } else {
+            vec![]
+        };
+
         let name = self.expect_identifier()?;
         self.expect(Token::LeftParenthesis)?;
 
@@ -416,6 +429,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
 
         Ok(MethodDeclaration {
             name,
+            constraints,
             instance,
             arguments,
             return_type,
@@ -430,7 +444,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             self.advance()?;
             self.until(
                 Token::RightParenthesis,
-                Self::type_var,
+                Self::expect_identifier,
                 Some(Token::Comma)
             )?.0
         } else {

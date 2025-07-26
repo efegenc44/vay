@@ -63,8 +63,6 @@ fn main() -> io::Result<()> {
         }
     };
 
-    println!("{:?}", interner);
-
     let mut checker = Checker::new();
     match checker.type_check(&modules) {
         Ok(()) => println!("Type Checking: OK"),

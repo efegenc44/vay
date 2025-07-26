@@ -202,7 +202,10 @@ impl MonoType {
                 type_string.push_str(&format!(" -> {}", return_type.display(interner)));
                 type_string
             }
-            MonoType::Var(type_var) => format!("a{}", type_var.idx),
+            MonoType::Var(type_var) => format!("a{} ({})", type_var.idx, type_var.interfaces
+                .iter().map(|path| path.as_string(interner))
+                .collect::<Vec<_>>().join(",")
+            ),
             MonoType::Constant(type_var) => format!("c{}", type_var.idx),
         }
     }
@@ -215,7 +218,12 @@ impl Type {
             Type::Forall(vars, ty) => {
                 format!(
                     "forall {}; {}",
-                    vars.iter().map(|id| format!("a{}", id.idx)).collect::<Vec<_>>().join(","),
+                    vars.iter().map(|var| format!("a{} ({})", var.idx,
+                        var.interfaces
+                            .iter().map(|path| path.as_string(interner))
+                            .collect::<Vec<_>>().join(","))
+                        )
+                        .collect::<Vec<_>>().join(","),
                     ty.display(interner),
                 )
             }
