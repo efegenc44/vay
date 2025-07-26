@@ -56,11 +56,16 @@ pub struct MethodSignature {
 
 pub struct MethodDeclaration {
     pub name: Located<InternIdx>,
-    pub constraints: Vec<(Located<TypeVar>, usize)>,
+    pub constraints: Vec<Constraint>,
     pub instance: Located<InternIdx>,
     pub arguments: Vec<Located<TypedIdentifier>>,
     pub return_type: Located<TypeExpression>,
     pub body: Vec<Located<Statement>>,
+}
+
+pub struct Constraint {
+    pub nth: usize,
+    pub type_var: Located<TypeVar>
 }
 
 pub struct VariantCase {

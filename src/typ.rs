@@ -34,12 +34,19 @@ pub struct TypeVar {
 }
 
 impl MonoType {
-    pub fn replace_type_vars(self, map: &HashMap<usize, MonoType>) -> MonoType {
+    pub fn into_procedure(self) -> ProcedureType {
+        let Self::Procedure(procedure) = self else {
+            panic!()
+        };
+        procedure
+    }
+
+    pub fn substitute(self, map: &HashMap<usize, MonoType>) -> MonoType {
         match self {
             MonoType::Variant(path, arguments) => {
                 let arguments = arguments
                     .into_iter()
-                    .map(|arg| arg.replace_type_vars(map))
+                    .map(|arg| arg.substitute(map))
                     .collect();
 
                 MonoType::Variant(path, arguments)
@@ -49,10 +56,10 @@ impl MonoType {
 
                 let arguments = arguments
                     .into_iter()
-                    .map(|arg| arg.replace_type_vars(map))
+                    .map(|arg| arg.substitute(map))
                     .collect();
 
-                let return_type = Box::new(return_type.replace_type_vars(map));
+                let return_type = Box::new(return_type.substitute(map));
 
                 let procedure = ProcedureType { arguments, return_type };
                 MonoType::Procedure(procedure)
@@ -60,8 +67,8 @@ impl MonoType {
             MonoType::Var(var) => {
                 let TypeVar { idx, .. } = var;
 
-                if let Some(t) = map.get(&idx).cloned() {
-                    t.replace_type_vars(map)
+                if let Some(m) = map.get(&idx).cloned() {
+                    m.substitute(map)
                 } else {
                     MonoType::Var(var)
                 }
@@ -101,24 +108,8 @@ impl MonoType {
                     panic!()
                 };
 
-                t.replace_type_vars(map)
+                t.substitute(map)
             },
-        }
-    }
-
-    pub fn contains_type_var(&self) -> bool {
-        match self {
-            MonoType::Variant(_, arguments) => {
-                arguments.iter().any(Self::contains_type_var)
-            },
-            MonoType::Procedure(procedure) => {
-                let ProcedureType { arguments, return_type } = procedure;
-
-                arguments.iter().any(Self::contains_type_var) ||
-                return_type.contains_type_var()
-            },
-            MonoType::Var(_) => true,
-            MonoType::Constant(_) => false,
         }
     }
 

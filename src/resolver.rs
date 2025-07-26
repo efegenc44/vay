@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     bound::{Bound, Path},
-    declaration::{Declaration, ImportDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, ProcedureDeclaration, TypeVar, VariantDeclaration},
+    declaration::{Constraint, Declaration, ImportDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, ProcedureDeclaration, TypeVar, VariantDeclaration},
     expression::{ApplicationExpression, Expression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, TypeApplicationExpression, TypeExpression},
     interner::{InternIdx, Interner},
     location::{Located, SourceLocation},
@@ -256,7 +256,7 @@ impl Resolver {
         }
     }
 
-    fn find_interface_path(&self, parts: &Vec<InternIdx>) -> ReportableResult<Path> {
+    fn find_interface_path(&self, parts: &[InternIdx]) -> ReportableResult<Path> {
         let base = if self.current_imports().contains(&parts[0]) {
             Path::empty().append(parts[0])
         } else {
@@ -435,7 +435,7 @@ impl Resolver {
         let TypeVar { interfaces, .. } = type_var.data_mut();
 
         for (interface, path) in interfaces.iter_mut() {
-            *path = self.find_interface_path(&vec![*interface.data()])?;
+            *path = self.find_interface_path(&[*interface.data()])?;
         }
 
         Ok(())
@@ -509,13 +509,13 @@ impl Resolver {
         Ok(())
     }
 
-    fn constraint(&mut self, constraint: &mut (Located<TypeVar>, usize)) -> ReportableResult<()> {
+    fn constraint(&mut self, constraint: &mut Constraint) -> ReportableResult<()> {
         // NOTE: At this point we only have type parameters of the type
         //   so index represent the order of the type parameter
         let mut found = false;
         for (index, name_idx) in self.locals.iter().enumerate() {
-            if name_idx == constraint.0.data().name.data() {
-                *&mut constraint.1 = index;
+            if name_idx == constraint.type_var.data().name.data() {
+                constraint.nth = index;
                 found = true;
             }
         }
@@ -524,7 +524,7 @@ impl Resolver {
             todo!("Not a type var of type");
         }
 
-        self.type_var(&mut constraint.0)?;
+        self.type_var(&mut constraint.type_var)?;
 
         Ok(())
     }

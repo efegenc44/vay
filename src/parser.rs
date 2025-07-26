@@ -3,7 +3,7 @@ use std::iter::Peekable;
 use crate::{
     bound::{Bound, Path},
     declaration::{
-        Declaration, ImportDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, ProcedureDeclaration, TypeVar, TypedIdentifier, VariantCase, VariantDeclaration
+        Constraint, Declaration, ImportDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, ProcedureDeclaration, TypeVar, TypedIdentifier, VariantCase, VariantDeclaration
     },
     expression::{
         ApplicationExpression, Expression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, TypeApplicationExpression, TypeExpression
@@ -401,7 +401,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             self.expect(Token::LeftParenthesis)?;
             self.until(
                 Token::RightParenthesis,
-                |parser| Ok((parser.type_var()?, 0)),
+                Self::constraint,
                 Some(Token::Comma)
             )?.0
         } else {
@@ -435,6 +435,17 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             return_type,
             body,
         })
+    }
+
+    fn constraint(&mut self) -> ReportableResult<Constraint> {
+        let type_var = self.type_var()?;
+
+        let constraint = Constraint {
+            nth: usize::default(),
+            type_var,
+        };
+
+        Ok(constraint)
     }
 
     fn variant(&mut self) -> ReportableResult<Declaration> {

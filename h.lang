@@ -23,6 +23,15 @@ proc h3:(T, R)(f : proc(T) : Cell(R), x : T) : Cell(R) {
     return f(x)
 }
 
+proc h4:(T)(f : proc(T) : Cell(T)) : Cell(T) {
+    return Cell::Empty
+}
+
+proc h5:(F)(x : F) : Cell(F) {
+    return Cell::Empty
+}
+
+
 proc g(u : Unit) : Cell(Unit) {
     return Cell::Cell(u)
 }
@@ -35,6 +44,8 @@ proc test() : Cell(Unit) {
     return h(g, Unit::Unit)
     return h(Cell::Cell, Unit::Unit)
     return h(Cell::Empty.cell, Unit::Unit)
+
+    return h4(h5)
 
     return h3(g, Unit::Unit)
     return h3(Cell::Cell, Unit::Unit)
