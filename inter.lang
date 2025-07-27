@@ -1,0 +1,23 @@
+module Inter
+
+interface Eq t {
+    proc eq(that : t) : Bool
+}
+
+interface Add t {
+    proc add(that : t) : t
+}
+
+variant Bool {
+    True
+    False
+
+    proc eq(this, that : Bool) : Bool {
+        return that
+    }
+
+    proc add(this, that : Bool) : Bool {
+        return Bool::True
+    }
+}
+

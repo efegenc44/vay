@@ -221,7 +221,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         }
     }
 
-    fn path(&mut self) -> ReportableResult<Located<Expression>> {
+    fn path_parts(&mut self) -> ReportableResult<Located<Vec<InternIdx>>> {
         let identifier = self.expect_identifier()?;
         let mut parts = vec![*identifier.data()];
         let mut end = identifier.location();
@@ -232,9 +232,15 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             end = identifier.location();
         }
 
-        let path = PathExpression { parts, bound: Bound::Undetermined };
+        Ok(Located::new(parts, identifier.location().extend(&end)))
+    }
+
+    fn path(&mut self) -> ReportableResult<Located<Expression>> {
+        let parts = self.path_parts()?;
+
+        let path = PathExpression { parts: parts.data().to_owned(), bound: Bound::Undetermined };
         let expression = Expression::Path(path);
-        Ok(Located::new(expression, identifier.location().extend(&end)))
+        Ok(Located::new(expression, parts.location()))
     }
 
     fn lett(&mut self) -> ReportableResult<Located<Expression>> {
@@ -380,7 +386,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             self.until(
                 Token::RightParenthesis,
                 |parser| {
-                    Ok((parser.expect_identifier()?, Path::empty()))
+                    Ok((parser.path_parts()?, Path::empty()))
                 },
                 Some(Token::Comma)
             )?
@@ -603,21 +609,12 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     }
 
     fn type_path(&mut self) -> ReportableResult<Located<TypeExpression>> {
-        let identifier = self.expect_identifier()?;
-        let mut parts = vec![*identifier.data()];
-        let mut end = identifier.location();
-        while self.peek_is(Token::DoubleColon)? {
-            self.advance()?;
-            let idenifier = self.expect_identifier()?;
-            parts.push(*idenifier.data());
-            end = idenifier.location()
-        }
-
-        let path = PathTypeExpression { parts, bound: Bound::Undetermined };
+        let parts = self.path_parts()?;
+        let path = PathTypeExpression { parts: parts.data().to_owned(), bound: Bound::Undetermined };
         let type_expression = TypeExpression::Path(path);
         Ok(Located::new(
             type_expression,
-            identifier.location().extend(&end),
+            parts.location(),
         ))
     }
 

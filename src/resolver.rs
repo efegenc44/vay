@@ -256,7 +256,7 @@ impl Resolver {
         }
     }
 
-    fn find_interface_path(&self, parts: &[InternIdx]) -> ReportableResult<Path> {
+    fn find_interface_path(&self, parts: &[InternIdx], location: SourceLocation) -> ReportableResult<Path> {
         let base = if self.current_imports().contains(&parts[0]) {
             Path::empty().append(parts[0])
         } else {
@@ -265,7 +265,10 @@ impl Resolver {
 
         let path = base.append_parts(&parts[1..]);
         let Some(path) = self.type_names.get(&path) else {
-            todo!("Unbound interface")
+            return self.error(
+                ResolveError::UnboundInterfacePath(Path::empty().append_parts(parts)),
+                location
+            );
         };
 
         Ok(path.clone())
@@ -473,7 +476,7 @@ impl Resolver {
         let TypeVar { interfaces, .. } = type_var.data_mut();
 
         for (interface, path) in interfaces.iter_mut() {
-            *path = self.find_interface_path(&[*interface.data()])?;
+            *path = self.find_interface_path(interface.data(), interface.location())?;
         }
 
         Ok(())
@@ -631,6 +634,7 @@ pub enum ResolveError {
     },
     UnboundValuePath(Path),
     UnboundTypePath(Path),
+    UnboundInterfacePath(Path),
 }
 
 impl Reportable for (Located<ResolveError>, String) {
@@ -679,6 +683,9 @@ impl Reportable for (Located<ResolveError>, String) {
             }
             ResolveError::UnboundTypePath(path) => {
                 format!("`{}` is not bound to a type.", path.as_string(interner))
+            }
+            ResolveError::UnboundInterfacePath(path) => {
+                format!("`{}` is not bound to an interface.", path.as_string(interner))
             }
         }
     }

@@ -13,7 +13,7 @@ pub enum Declaration {
 
 pub struct TypeVar {
     pub name: Located<InternIdx>,
-    pub interfaces: Vec<(Located<InternIdx>, Path)>
+    pub interfaces: Vec<(Located<Vec<InternIdx>>, Path)>
 }
 
 pub struct ModuleDeclaration {

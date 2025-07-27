@@ -1,32 +1,26 @@
 module Main
 
+import Inter
+
 variant Unit {
     Unit
 
-    proc a(this, that : Unit) : Unit {
+    proc add(this, that : Unit) : Unit {
         return that
     }
 
-    proc b(this, that : Unit) : Unit {
-        return that
+    proc eq(this, that : Unit) : Inter::Bool {
+        return Inter::Bool::True
     }
 }
 
 variant Unit2 { Unit2 }
 
-interface A t {
-    proc a(that : t) : t
-}
-
-interface B t {
-    proc b(that : t) : t
-}
-
-proc f:(T (A))(x : T) : T {
+proc f:(T (Inter::Add))(x : T) : T {
     return x
 }
 
-proc g:(T (B))(x : T) : T {
+proc g:(T (Inter::Eq))(x : T) : T {
     return x
 }
 
@@ -36,5 +30,5 @@ proc main() : Unit {
         id(Unit::Unit)
     )
 
-    return (proc(x) (g(x) f(x) x.a(x)))(Unit::Unit)
+    return (proc(x) (g(x) f(x) x.add(x)))(Unit::Unit)
 }
