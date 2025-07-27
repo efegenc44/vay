@@ -1026,17 +1026,25 @@ impl Checker {
                 interfaces.extend(interfaces2);
                 if map.contains_key(&idx1) {
                     let mut m1 = map[&idx1].clone();
-                    while let MonoType::Var(var) = m1  {
+                    while let MonoType::Var(var) = &m1  {
                         // TODO: check colisions here
-                        interfaces.extend(var.interfaces);
-                        m1 = map[&var.idx].clone()
+                        interfaces.extend(var.interfaces.clone());
+                        if map.contains_key(&var.idx) {
+                            m1 = map[&var.idx].clone()
+                        } else {
+                            break;
+                        }
                     }
 
                     if let Some(mut m2) = map.get(&idx2).cloned() {
-                        while let MonoType::Var(var) = m2 {
+                        while let MonoType::Var(var) = &m2 {
                             // TODO: check colisions here
-                            interfaces.extend(var.interfaces);
-                            m2 = map[&var.idx].clone()
+                            interfaces.extend(var.interfaces.clone());
+                            if map.contains_key(&var.idx) {
+                                m2 = map[&var.idx].clone()
+                            } else {
+                                break
+                            }
                         }
 
                         if m2 != m1 {
@@ -1064,10 +1072,14 @@ impl Checker {
 
                 if !t.occurs(idx) {
                     if let Some(mut m) = map.get(&idx).cloned() {
-                        while let MonoType::Var(var) = m {
+                        while let MonoType::Var(var) = &m {
                             // TODO: check confilicts here
-                            interfaces.extend(var.interfaces);
-                            m = map[&var.idx].clone()
+                            interfaces.extend(var.interfaces.clone());
+                            if map.contains_key(&var.idx) {
+                                m = map[&var.idx].clone()
+                            } else {
+                                break
+                            }
                         }
 
                         if m != t {
