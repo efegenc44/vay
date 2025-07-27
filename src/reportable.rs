@@ -37,7 +37,7 @@ pub trait Reportable {
             eprintln!("  {first_line_number:>5} | {first_line}");
             eprintln!("        | {:spaces$}{:^^carrots$}", "", "",
                 spaces = (1..location.start().column()).len(),
-                carrots = (location.start().column()..first_line.chars().count()).len()
+                carrots = (location.start().column()..first_line.chars().count() + 1).len()
             );
 
             for line_number in (first_line_number + 1)..location.end().row() {

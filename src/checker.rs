@@ -448,7 +448,7 @@ impl Checker {
             let (method_type, constraints) = &self.variants[path].methods[name.data()];
             let ProcedureType { arguments, return_type } = method_type.clone();
 
-            if body.last().is_none() || !body.last().unwrap().data().returns() {
+            if !body.iter().any(|statement| statement.data().returns()) {
                 return self.error(
                     TypeCheckError::MethodDoesNotReturn {
                         type_path: path.clone(),
@@ -511,7 +511,7 @@ impl Checker {
         };
         let ProcedureType { arguments, return_type } = procedure_type;
 
-        if body.last().is_none() || !body.last().unwrap().data().returns() {
+        if !body.iter().any(|statement| statement.data().returns()) {
             return self.error(
                 TypeCheckError::ProcedureDoesNotReturn {
                     procedure: path.clone(),
