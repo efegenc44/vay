@@ -1,6 +1,6 @@
 use std::{collections::HashMap, rc::Rc};
 
-use crate::{bound::{Bound, Path}, declaration::{Declaration, MethodDeclaration, Module, ProcedureDeclaration, VariantDeclaration}, expression::{ApplicationExpression, Expression, PathExpression, ProjectionExpression}, interner::{InternIdx, Interner}, location::Located, statement::{MatchStatement, Pattern, ReturnStatement, Statement, VariantCasePattern}, value::{ConstructorInstance, InstanceInstance, MethodInstance, ProcedureInstance, Value}};
+use crate::{bound::{Bound, Path}, declaration::{Declaration, MethodDeclaration, Module, ProcedureDeclaration, VariantDeclaration}, expression::{ApplicationExpression, Expression, LetExpression, PathExpression, ProjectionExpression, SequenceExpression}, interner::{InternIdx, Interner}, location::Located, statement::{MatchStatement, Pattern, ReturnStatement, Statement, VariantCasePattern}, value::{ConstructorInstance, InstanceInstance, MethodInstance, ProcedureInstance, Value}};
 
 pub struct Interpreter {
     methods: HashMap<Path, HashMap<InternIdx, Rc<ProcedureInstance>>>,
@@ -199,6 +199,8 @@ impl Interpreter {
             Expression::Path(path) => self.path(path),
             Expression::Application(application) => self.application(application),
             Expression::Projection(projection) => self.projection(projection),
+            Expression::Let(lett) => self.lett(lett),
+            Expression::Sequence(sequence) => self.sequence(sequence),
         }
     }
 
@@ -294,5 +296,34 @@ impl Interpreter {
         let procedure = self.methods[type_path][name.data()].clone();
         let method = MethodInstance { instance, procedure };
         Value::Method(Rc::new(method))
+    }
+
+    fn lett(&mut self, lett: &LetExpression) -> Value {
+        let LetExpression { value_expression, body_expression, .. } = lett;
+
+        let value = self.expression(value_expression);
+
+        let return_value;
+        scoped!(self, {
+            self.locals.push(value);
+            return_value = self.expression(body_expression);
+        });
+
+        return_value
+    }
+
+    fn sequence(&mut self, sequence: &SequenceExpression) -> Value {
+        let SequenceExpression { expressions } = sequence;
+
+        match &expressions[..] {
+            [] => todo!("Return Unit value"),
+            [init@.., last] => {
+                let _ = init
+                    .iter().map(|expression| self.expression(expression))
+                    .collect::<Vec<_>>();
+
+                self.expression(last)
+            }
+        }
     }
 }

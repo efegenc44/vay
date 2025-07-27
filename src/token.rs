@@ -13,6 +13,7 @@ pub enum Token {
     LeftCurly,
     RightCurly,
     Dot,
+    Equals,
 
     ModuleKeyword,
     ImportKeyword,
@@ -21,6 +22,8 @@ pub enum Token {
     ReturnKeyword,
     MatchKeyword,
     InterfaceKeyword,
+    LetKeyword,
+    InKeyword,
 }
 
 impl Token {
@@ -41,6 +44,7 @@ impl Token {
             Token::LeftCurly => "`{`",
             Token::RightCurly => "`}`",
             Token::Dot => "`.`",
+            Token::Equals => "`=`",
 
             Token::ModuleKeyword => "keyword `module`",
             Token::ImportKeyword => "keyword `import`",
@@ -49,6 +53,8 @@ impl Token {
             Token::ReturnKeyword => "keyword `return`",
             Token::MatchKeyword => "keyword `match`",
             Token::InterfaceKeyword => "keyword `interface`",
+            Token::LetKeyword => "keyword `let`",
+            Token::InKeyword => "keyword `in`",
         }
     }
 }

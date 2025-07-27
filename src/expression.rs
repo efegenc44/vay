@@ -4,7 +4,9 @@ use crate::{bound::Bound, interner::InternIdx, location::Located};
 pub enum Expression {
     Path(PathExpression),
     Application(ApplicationExpression),
-    Projection(ProjectionExpression)
+    Projection(ProjectionExpression),
+    Let(LetExpression),
+    Sequence(SequenceExpression),
 }
 
 #[derive(Clone)]
@@ -23,6 +25,18 @@ pub struct ApplicationExpression {
 pub struct ProjectionExpression {
     pub expression: Box<Located<Expression>>,
     pub name: Located<InternIdx>
+}
+
+#[derive(Clone)]
+pub struct LetExpression {
+    pub name: Located<InternIdx>,
+    pub value_expression: Box<Located<Expression>>,
+    pub body_expression: Box<Located<Expression>>,
+}
+
+#[derive(Clone)]
+pub struct SequenceExpression {
+    pub expressions: Vec<Located<Expression>>,
 }
 
 #[derive(Clone)]

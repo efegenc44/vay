@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     bound::{Bound, Path},
     declaration::{Constraint, Declaration, ImportDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, ProcedureDeclaration, TypeVar, VariantDeclaration},
-    expression::{ApplicationExpression, Expression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, TypeApplicationExpression, TypeExpression},
+    expression::{ApplicationExpression, Expression, LetExpression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, SequenceExpression, TypeApplicationExpression, TypeExpression},
     interner::{InternIdx, Interner},
     location::{Located, SourceLocation},
     reportable::{Reportable, ReportableResult},
@@ -277,6 +277,8 @@ impl Resolver {
             Expression::Path(path) => self.path(path, location),
             Expression::Application(application) => self.application(application),
             Expression::Projection(projection) => self.projection(projection),
+            Expression::Let(lett) => self.lett(lett),
+            Expression::Sequence(sequence) => self.sequence(sequence),
         }
     }
 
@@ -320,6 +322,28 @@ impl Resolver {
         let ProjectionExpression { expression, .. } = projection;
 
         self.expression(expression)
+    }
+
+    fn lett(&mut self, lett: &mut LetExpression) -> ReportableResult<()> {
+        let LetExpression { name, value_expression, body_expression } = lett;
+
+        self.expression(value_expression)?;
+
+        scoped!(self, {
+            self.locals.push(*name.data());
+            self.expression(body_expression)?;
+        });
+
+        Ok(())
+    }
+
+    fn sequence(&mut self, sequence: &mut SequenceExpression) -> ReportableResult<()> {
+        let SequenceExpression { expressions } = sequence;
+
+        expressions
+            .iter_mut().map(|expression| self.expression(expression))
+            .collect::<ReportableResult<Vec<_>>>()
+            .map(|_| ())
     }
 
     fn type_expression(&mut self, type_expression: &mut Located<TypeExpression>) -> ReportableResult<()> {

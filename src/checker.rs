@@ -4,7 +4,7 @@ use crate::{
     bound::{Bound, Path},
     declaration::{self, Declaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ProcedureDeclaration, VariantDeclaration},
     expression::{
-        ApplicationExpression, Expression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, TypeApplicationExpression, TypeExpression
+        ApplicationExpression, Expression, LetExpression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, SequenceExpression, TypeApplicationExpression, TypeExpression
     },
     interner::{InternIdx, Interner},
     location::{Located, SourceLocation},
@@ -96,10 +96,12 @@ impl Checker {
         }
     }
 
-    #[allow(unused)]
     fn generalize(&mut self, m: MonoType) -> Type {
-        let vars = m.occuring_type_vars();
-        Type::Forall(vars, m)
+        if matches!(m, MonoType::Procedure(_)) {
+            Type::Forall(m.occuring_type_vars(), m)
+        } else {
+            Type::Mono(m)
+        }
     }
 
     fn type_vars(&mut self, type_vars: &[Located<declaration::TypeVar>]) -> Vec<TypeVar> {
@@ -778,6 +780,8 @@ impl Checker {
             Expression::Path(path) => self.path(path),
             Expression::Application(application) => self.application(application),
             Expression::Projection(projection) => self.projection(projection),
+            Expression::Let(lett) => self.lett(lett),
+            Expression::Sequence(sequence) => self.sequence(sequence),
         }
     }
 
@@ -914,6 +918,36 @@ impl Checker {
                     },
                     name.location()
                 )
+            }
+        }
+    }
+
+    fn lett(&mut self, lett: &LetExpression) -> ReportableResult<MonoType> {
+        let LetExpression { value_expression, body_expression, .. } = lett;
+
+        let m = self.infer(value_expression)?;
+        let t = self.generalize(m);
+
+        let return_type;
+        scoped!(self, {
+            self.locals.push(t);
+            return_type = self.infer(body_expression)?;
+        });
+
+        Ok(return_type)
+    }
+
+    fn sequence(&mut self, sequence: &SequenceExpression) -> ReportableResult<MonoType> {
+        let SequenceExpression { expressions } = sequence;
+
+        match &expressions[..] {
+            [] => todo!("Return Unit type"),
+            [init@.., last] => {
+                init
+                    .iter().map(|expression| self.infer(expression))
+                    .collect::<ReportableResult<Vec<_>>>()?;
+
+                self.infer(last)
             }
         }
     }

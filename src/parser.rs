@@ -6,7 +6,7 @@ use crate::{
         Constraint, Declaration, ImportDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, ProcedureDeclaration, TypeVar, TypedIdentifier, VariantCase, VariantDeclaration
     },
     expression::{
-        ApplicationExpression, Expression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, TypeApplicationExpression, TypeExpression
+        ApplicationExpression, Expression, LetExpression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, SequenceExpression, TypeApplicationExpression, TypeExpression
     },
     interner::{InternIdx, Interner},
     lexer::Lexer,
@@ -16,7 +16,11 @@ use crate::{
     token::Token,
 };
 
-const PRIMARY_TOKEN_STARTS: &[Token] = &[Token::dummy_identifier()];
+const PRIMARY_TOKEN_STARTS: &[Token] = &[
+    Token::dummy_identifier(),
+    Token::LetKeyword,
+    Token::LeftParenthesis,
+];
 
 const PRIMARY_TYPE_TOKEN_STARTS: &[Token] = &[
     Token::ProcKeyword,
@@ -27,6 +31,7 @@ const STATEMENT_KEYWORDS: &[Token] = &[
     Token::MatchKeyword,
     Token::ReturnKeyword,
     Token::dummy_identifier(),
+    Token::LetKeyword,
 ];
 
 const DECLARATION_KEYWORDS: &[Token] = &[
@@ -206,6 +211,8 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         let token = self.peek_one_of(PRIMARY_TOKEN_STARTS)?;
         match token.data() {
             Token::Identifier(_) => self.path(),
+            Token::LetKeyword => self.lett(),
+            Token::LeftParenthesis => self.sequence(),
             _ => unreachable!()
         }
     }
@@ -224,6 +231,33 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         let path = PathExpression { parts, bound: Bound::Undetermined };
         let expression = Expression::Path(path);
         Ok(Located::new(expression, identifier.location().extend(&end)))
+    }
+
+    fn lett(&mut self) -> ReportableResult<Located<Expression>> {
+        let start = self.expect(Token::LetKeyword)?.location();
+        let name = self.expect_identifier()?;
+        self.expect(Token::Equals)?;
+        let value_expression = Box::new(self.expression()?);
+        self.expect(Token::InKeyword)?;
+        let body_expression = Box::new(self.expression()?);
+        let end = body_expression.location();
+
+        let lett = LetExpression { name, value_expression, body_expression };
+        let expression = Expression::Let(lett);
+        Ok(Located::new(expression, start.extend(&end)))
+    }
+
+    fn sequence(&mut self) -> ReportableResult<Located<Expression>> {
+        let start = self.expect(Token::LeftParenthesis)?.location();
+        let (expressions, end) = self.until(
+            Token::RightParenthesis,
+            Self::expression,
+            None
+        )?;
+
+        let sequence = SequenceExpression { expressions };
+        let expression = Expression::Sequence(sequence);
+        Ok(Located::new(expression, start.extend(&end)))
     }
 
     fn statement(&mut self) -> ReportableResult<Located<Statement>> {

@@ -1,0 +1,32 @@
+module Main
+
+variant Unit  { Unit }
+variant Unit2 { Unit2 }
+
+variant A(T) {
+    A
+}
+
+proc f(a : A(Unit)) : Unit {
+    return Unit::Unit
+}
+
+proc g(a : A(Unit2)) : Unit {
+    return Unit::Unit
+}
+
+proc id:(T)(x : T) : T {
+    return x
+}
+
+proc main() : A(Unit) {
+    return let x = A::A in (
+        f(x)
+        x
+    )
+
+    return let I = id in (
+        I(Unit::Unit)
+        I(Unit2::Unit2)
+    )
+}
