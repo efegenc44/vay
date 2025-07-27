@@ -7,6 +7,7 @@ pub enum Expression {
     Projection(ProjectionExpression),
     Let(LetExpression),
     Sequence(SequenceExpression),
+    Lambda(LambdaExpression),
 }
 
 #[derive(Clone)]
@@ -37,6 +38,12 @@ pub struct LetExpression {
 #[derive(Clone)]
 pub struct SequenceExpression {
     pub expressions: Vec<Located<Expression>>,
+}
+
+#[derive(Clone)]
+pub struct LambdaExpression {
+    pub arguments: Vec<Located<InternIdx>>,
+    pub body: Box<Located<Expression>>,
 }
 
 #[derive(Clone)]

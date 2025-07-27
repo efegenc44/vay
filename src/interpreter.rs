@@ -1,6 +1,6 @@
 use std::{collections::HashMap, rc::Rc};
 
-use crate::{bound::{Bound, Path}, declaration::{Declaration, MethodDeclaration, Module, ProcedureDeclaration, VariantDeclaration}, expression::{ApplicationExpression, Expression, LetExpression, PathExpression, ProjectionExpression, SequenceExpression}, interner::{InternIdx, Interner}, location::Located, statement::{MatchStatement, Pattern, ReturnStatement, Statement, VariantCasePattern}, value::{ConstructorInstance, InstanceInstance, MethodInstance, ProcedureInstance, Value}};
+use crate::{bound::{Bound, Path}, declaration::{Declaration, MethodDeclaration, Module, ProcedureDeclaration, VariantDeclaration}, expression::{ApplicationExpression, Expression, LambdaExpression, LetExpression, PathExpression, ProjectionExpression, SequenceExpression}, interner::{InternIdx, Interner}, location::Located, statement::{MatchStatement, Pattern, ReturnStatement, Statement, VariantCasePattern}, value::{ConstructorInstance, InstanceInstance, LambdaInstance, MethodInstance, ProcedureInstance, Value}};
 
 pub struct Interpreter {
     methods: HashMap<Path, HashMap<InternIdx, Rc<ProcedureInstance>>>,
@@ -201,6 +201,7 @@ impl Interpreter {
             Expression::Projection(projection) => self.projection(projection),
             Expression::Let(lett) => self.lett(lett),
             Expression::Sequence(sequence) => self.sequence(sequence),
+            Expression::Lambda(lambda) => self.lambda(lambda),
         }
     }
 
@@ -266,7 +267,6 @@ impl Interpreter {
                     }
                 });
 
-
                 return_value
             },
             Value::Constructor(constructor) => {
@@ -278,6 +278,24 @@ impl Interpreter {
                 let instance = InstanceInstance { constructor, values };
                 Value::Instance(Rc::new(instance))
             },
+            Value::Lambda(lambda) => {
+                let LambdaInstance { capture, body } = lambda.as_ref();
+
+                let return_value;
+                scoped!(self, {
+                    let mut argument_values = vec![];
+                    for argument in arguments {
+                        argument_values.push(self.expression(argument));
+                    }
+
+                    self.locals.extend(capture.clone());
+                    self.locals.extend(argument_values);
+
+                    return_value = self.expression(body);
+                });
+
+                return_value
+            }
             _ => unreachable!()
         }
     }
@@ -325,5 +343,15 @@ impl Interpreter {
                 self.expression(last)
             }
         }
+    }
+
+    fn lambda(&mut self, lambda: &LambdaExpression) -> Value {
+        let LambdaExpression { body, .. } = lambda;
+
+        let capture = self.locals.clone();
+        let body = *body.clone();
+        let lambda = LambdaInstance { capture, body };
+
+        Value::Lambda(Rc::new(lambda))
     }
 }

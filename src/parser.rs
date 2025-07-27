@@ -6,7 +6,7 @@ use crate::{
         Constraint, Declaration, ImportDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, ProcedureDeclaration, TypeVar, TypedIdentifier, VariantCase, VariantDeclaration
     },
     expression::{
-        ApplicationExpression, Expression, LetExpression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, SequenceExpression, TypeApplicationExpression, TypeExpression
+        ApplicationExpression, Expression, LambdaExpression, LetExpression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, SequenceExpression, TypeApplicationExpression, TypeExpression
     },
     interner::{InternIdx, Interner},
     lexer::Lexer,
@@ -20,6 +20,7 @@ const PRIMARY_TOKEN_STARTS: &[Token] = &[
     Token::dummy_identifier(),
     Token::LetKeyword,
     Token::LeftParenthesis,
+    Token::ProcKeyword,
 ];
 
 const PRIMARY_TYPE_TOKEN_STARTS: &[Token] = &[
@@ -32,6 +33,8 @@ const STATEMENT_KEYWORDS: &[Token] = &[
     Token::ReturnKeyword,
     Token::dummy_identifier(),
     Token::LetKeyword,
+    Token::LeftParenthesis,
+    Token::ProcKeyword,
 ];
 
 const DECLARATION_KEYWORDS: &[Token] = &[
@@ -213,6 +216,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             Token::Identifier(_) => self.path(),
             Token::LetKeyword => self.lett(),
             Token::LeftParenthesis => self.sequence(),
+            Token::ProcKeyword => self.lambda(),
             _ => unreachable!()
         }
     }
@@ -257,6 +261,22 @@ impl<'source, 'interner> Parser<'source, 'interner> {
 
         let sequence = SequenceExpression { expressions };
         let expression = Expression::Sequence(sequence);
+        Ok(Located::new(expression, start.extend(&end)))
+    }
+
+    fn lambda(&mut self) -> ReportableResult<Located<Expression>> {
+        let start = self.expect(Token::ProcKeyword)?.location();
+        self.expect(Token::LeftParenthesis)?;
+        let (arguments, _) = self.until(
+            Token::RightParenthesis,
+            Self::expect_identifier,
+            Some(Token::Comma)
+        )?;
+        let body = Box::new(self.expression()?);
+        let end = body.location();
+
+        let lambda = LambdaExpression  { arguments, body };
+        let expression = Expression::Lambda(lambda);
         Ok(Located::new(expression, start.extend(&end)))
     }
 

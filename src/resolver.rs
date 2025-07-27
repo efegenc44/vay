@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     bound::{Bound, Path},
     declaration::{Constraint, Declaration, ImportDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, ProcedureDeclaration, TypeVar, VariantDeclaration},
-    expression::{ApplicationExpression, Expression, LetExpression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, SequenceExpression, TypeApplicationExpression, TypeExpression},
+    expression::{ApplicationExpression, Expression, LambdaExpression, LetExpression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, SequenceExpression, TypeApplicationExpression, TypeExpression},
     interner::{InternIdx, Interner},
     location::{Located, SourceLocation},
     reportable::{Reportable, ReportableResult},
@@ -279,6 +279,7 @@ impl Resolver {
             Expression::Projection(projection) => self.projection(projection),
             Expression::Let(lett) => self.lett(lett),
             Expression::Sequence(sequence) => self.sequence(sequence),
+            Expression::Lambda(lambda) => self.lambda(lambda),
         }
     }
 
@@ -344,6 +345,19 @@ impl Resolver {
             .iter_mut().map(|expression| self.expression(expression))
             .collect::<ReportableResult<Vec<_>>>()
             .map(|_| ())
+    }
+
+    fn lambda(&mut self, lambda: &mut LambdaExpression) -> ReportableResult<()> {
+        let LambdaExpression { arguments, body } = lambda;
+
+        scoped!(self, {
+            let argument_names = arguments.iter().map(|idx| *idx.data());
+            self.locals.extend(argument_names);
+
+            self.expression(body)?;
+        });
+
+        Ok(())
     }
 
     fn type_expression(&mut self, type_expression: &mut Located<TypeExpression>) -> ReportableResult<()> {

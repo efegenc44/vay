@@ -1,11 +1,12 @@
 use std::rc::Rc;
 
-use crate::{bound::Path, interner::{InternIdx, Interner}, location::Located, statement::Statement};
+use crate::{bound::Path, expression::Expression, interner::{InternIdx, Interner}, location::Located, statement::Statement};
 
 #[derive(Clone)]
 pub enum Value {
     Procedure(Rc<ProcedureInstance>),
     Method(Rc<MethodInstance>),
+    Lambda(Rc<LambdaInstance>),
     Constructor(Rc<ConstructorInstance>),
     Instance(Rc<InstanceInstance>),
     None
@@ -17,6 +18,7 @@ impl Value {
             Value::Procedure(..) => "<function>".into(),
             Value::Method(..) => "<function>".into(),
             Value::Constructor(..) => "<function>".into(),
+            Value::Lambda(..) => "<function>".into(),
             Value::Instance(instance) => {
                 let InstanceInstance { constructor, values, .. } = instance.as_ref();
                 let ConstructorInstance { case, .. } = constructor.as_ref();
@@ -50,6 +52,11 @@ pub struct ProcedureInstance {
 pub struct MethodInstance {
     pub instance: Value,
     pub procedure: Rc<ProcedureInstance>
+}
+
+pub struct LambdaInstance {
+    pub capture: Vec<Value>,
+    pub body: Located<Expression>
 }
 
 pub struct ConstructorInstance {

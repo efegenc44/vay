@@ -4,7 +4,7 @@ use crate::{
     bound::{Bound, Path},
     declaration::{self, Declaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ProcedureDeclaration, VariantDeclaration},
     expression::{
-        ApplicationExpression, Expression, LetExpression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, SequenceExpression, TypeApplicationExpression, TypeExpression
+        ApplicationExpression, Expression, LambdaExpression, LetExpression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, SequenceExpression, TypeApplicationExpression, TypeExpression
     },
     interner::{InternIdx, Interner},
     location::{Located, SourceLocation},
@@ -782,6 +782,7 @@ impl Checker {
             Expression::Projection(projection) => self.projection(projection),
             Expression::Let(lett) => self.lett(lett),
             Expression::Sequence(sequence) => self.sequence(sequence),
+            Expression::Lambda(lambda) => self.lambda(lambda),
         }
     }
 
@@ -813,7 +814,7 @@ impl Checker {
             );
         };
 
-        let ProcedureType { arguments: expected_types, return_type } = procedure;
+        let ProcedureType { arguments: expected_types, mut return_type } = procedure;
 
         if arguments.len() != expected_types.len() {
             return self.error(
@@ -841,6 +842,17 @@ impl Checker {
                     *location
                 );
             };
+        }
+
+        // TODO: Not the best solution I think
+        if let MonoType::Var(variable) = return_type.as_mut() {
+            for value in map.values() {
+                if let MonoType::Var(v) = value {
+                    if v.idx == variable.idx {
+                        variable.interfaces.extend(v.interfaces.clone());
+                    }
+                }
+            }
         }
 
         Ok(return_type.substitute(&map))
@@ -948,6 +960,35 @@ impl Checker {
         }
     }
 
+    fn lambda(&mut self, lambda: &LambdaExpression) -> ReportableResult<MonoType> {
+        let LambdaExpression { arguments, body } = lambda;
+
+        let return_type;
+        let variables = arguments
+            .iter().map(|_| self.newvar())
+            .map(MonoType::Var)
+            .collect::<Vec<_>>();
+
+        scoped!(self, {
+            self.locals.extend(variables
+                .iter().cloned()
+                .map(Type::Mono)
+            );
+
+            return_type = self.infer(body)?;
+        });
+
+        let arguments = variables
+            .into_iter()
+            .map(|variable| variable.substitute(&self.latest_unification))
+            .collect::<Vec<_>>();
+
+        let return_type = Box::new(return_type.substitute(&self.latest_unification));
+
+        let procedure_type = ProcedureType { arguments, return_type };
+        Ok(MonoType::Procedure(procedure_type))
+    }
+
     fn unify(&mut self, a: MonoType, b: MonoType, map: &mut HashMap<usize, MonoType>) -> bool {
         let result = match (a, b) {
             (MonoType::Variant(path1, args1), MonoType::Variant(path2, args2)) => {
@@ -981,30 +1022,39 @@ impl Checker {
                 let TypeVar { idx: idx2, interfaces: interfaces2 } = var2.clone();
 
                 let mut interfaces = interfaces1.clone();
+                // TODO: check colisions here
+                interfaces.extend(interfaces2);
                 if map.contains_key(&idx1) {
-                    if let Some(mut m) = map.get(&idx2).cloned() {
-                        while let MonoType::Var(var) = m {
+                    let mut m1 = map[&idx1].clone();
+                    while let MonoType::Var(var) = m1  {
+                        // TODO: check colisions here
+                        interfaces.extend(var.interfaces);
+                        m1 = map[&var.idx].clone()
+                    }
+
+                    if let Some(mut m2) = map.get(&idx2).cloned() {
+                        while let MonoType::Var(var) = m2 {
                             // TODO: check colisions here
                             interfaces.extend(var.interfaces);
-                            m = map[&var.idx].clone()
+                            m2 = map[&var.idx].clone()
                         }
 
-                        if m != map[&idx1].clone() {
-                            return false;
-                        }
-
-                        if !self.does_satisfy_constraint(&m, &interfaces) {
+                        if m2 != m1 {
                             return false;
                         }
                     }
 
-                    if &map[&idx1] != &MonoType::Var(var2) {
-                        map.insert(idx2, map[&idx1].clone());
+                    if !self.does_satisfy_constraint(&m1, &interfaces) {
+                        return false;
+                    }
+
+                    if &m1 != &MonoType::Var(var2) {
+                        map.insert(idx2, m1);
                     }
                 } else {
-                    // TODO: check colisions here
-                    interfaces.extend(interfaces2);
-                    map.insert(idx1, MonoType::Var(TypeVar { idx: idx2, interfaces }));
+                    if idx1 != idx2 {
+                        map.insert(idx1, MonoType::Var(TypeVar { idx: idx2, interfaces }));
+                    }
                 }
 
                 true
@@ -1023,10 +1073,10 @@ impl Checker {
                         if m != t {
                             return false;
                         }
+                    }
 
-                        if !self.does_satisfy_constraint(&t, &interfaces) {
-                            return false;
-                        }
+                    if !self.does_satisfy_constraint(&t, &interfaces) {
+                        return false;
                     }
 
                     // NOTE: Here t cannot be a MonoType::Var
