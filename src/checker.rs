@@ -832,20 +832,16 @@ impl Checker {
 
         let mut map = HashMap::new();
         for ((argument, location), expected) in argument_types.iter().zip(expected_types) {
-            let old_map = map.clone();
             if !self.unify(argument.clone(), expected.clone(), &mut map) {
                 return self.error(
                     TypeCheckError::MismatchedTypes {
                         encountered: argument.clone().substitute(&map),
-                        expected: expected.substitute(&old_map)
+                        expected: expected.substitute(&map)
                     },
                     *location
                 );
             };
         }
-
-        let newvar = self.newvar();
-        self.unify(*return_type.clone(), MonoType::Var(newvar), &mut map);
 
         Ok(return_type.substitute(&map))
     }
@@ -982,7 +978,7 @@ impl Checker {
             (MonoType::Constant(constant1), MonoType::Constant(constant2)) => constant1 == constant2,
             (MonoType::Var(var1), MonoType::Var(var2)) => {
                 let TypeVar { idx: idx1, interfaces: interfaces1 } = var1;
-                let TypeVar { idx: idx2, interfaces: interfaces2 } = var2;
+                let TypeVar { idx: idx2, interfaces: interfaces2 } = var2.clone();
 
                 let mut interfaces = interfaces1.clone();
                 if map.contains_key(&idx1) {
@@ -996,13 +992,20 @@ impl Checker {
                         if m != map[&idx1].clone() {
                             return false;
                         }
+
+                        if !self.does_satisfy_constraint(&m, &interfaces) {
+                            return false;
+                        }
+                    }
+
+                    if &map[&idx1] != &MonoType::Var(var2) {
+                        map.insert(idx2, map[&idx1].clone());
                     }
                 } else {
                     // TODO: check colisions here
                     interfaces.extend(interfaces2);
+                    map.insert(idx1, MonoType::Var(TypeVar { idx: idx2, interfaces }));
                 }
-
-                map.insert(idx1, MonoType::Var(TypeVar { idx: idx2, interfaces }));
 
                 true
             },
@@ -1020,12 +1023,14 @@ impl Checker {
                         if m != t {
                             return false;
                         }
+
+                        if !self.does_satisfy_constraint(&t, &interfaces) {
+                            return false;
+                        }
                     }
 
-                    if !self.does_satisfy_constraint(&t, &interfaces) {
-                        return false
-                    }
-
+                    // NOTE: Here t cannot be a MonoType::Var
+                    //   so they cannot be equal
                     map.insert(idx, t);
 
                     true

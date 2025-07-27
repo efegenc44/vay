@@ -20,13 +20,9 @@ proc id:(T)(x : T) : T {
 }
 
 proc main() : A(Unit) {
-    return let x = A::A in (
-        f(x)
-        x
-    )
-
     return let I = id in (
         I(Unit::Unit)
         I(Unit2::Unit2)
+        I(A::A)
     )
 }
