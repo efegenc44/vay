@@ -791,7 +791,15 @@ impl Checker {
         match bound {
             Bound::Local(bound_idx) => {
                 let index = self.locals.len() - 1 - bound_idx;
-                let t = self.locals[index].clone();
+                let local = self.locals[index].clone();
+                let t = if let Type::Mono(m) = local {
+                    let t = Type::Mono(m.substitute(&self.unification_table));
+                    *self.locals.get_mut(index).unwrap() = t.clone();
+                    t
+                } else {
+                    local
+                };
+
                 Ok(self.instantiate(t))
             }
             Bound::Absolute(path) => {
@@ -970,7 +978,8 @@ impl Checker {
             .map(|variable| variable.substitute(&self.unification_table))
             .collect::<Vec<_>>();
 
-        let return_type = Box::new(return_type.substitute(&self.unification_table));
+        // NOTE: Substitution here is unnecessary (see Algorithm W)
+        let return_type = Box::new(return_type);
 
         let procedure_type = ProcedureType { arguments, return_type };
         Ok(MonoType::Procedure(procedure_type))
@@ -1051,14 +1060,6 @@ impl Checker {
             },
             _ => false
         };
-
-        if result {
-            for local in self.locals.iter_mut() {
-                if let Type::Mono(m) = local.clone() {
-                    *local = Type::Mono(m.substitute(&self.unification_table));
-                }
-            }
-        }
 
         result
     }
