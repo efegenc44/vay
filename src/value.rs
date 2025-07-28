@@ -1,21 +1,20 @@
 use std::rc::Rc;
 
-use crate::{bound::Path, expression::Expression, interner::{InternIdx, Interner}, location::Located, statement::Statement};
+use crate::{bound::Path, expression::Expression, interner::{InternIdx, Interner}, location::Located};
 
 #[derive(Clone)]
 pub enum Value {
-    Procedure(Rc<ProcedureInstance>),
+    Function(Rc<FunctionInstance>),
     Method(Rc<MethodInstance>),
     Lambda(Rc<LambdaInstance>),
     Constructor(Rc<ConstructorInstance>),
     Instance(Rc<InstanceInstance>),
-    None
 }
 
 impl Value {
     pub fn as_string(&self, interner: &Interner) -> String {
         match self {
-            Value::Procedure(..) => "<function>".into(),
+            Value::Function(..) => "<function>".into(),
             Value::Method(..) => "<function>".into(),
             Value::Constructor(..) => "<function>".into(),
             Value::Lambda(..) => "<function>".into(),
@@ -40,18 +39,17 @@ impl Value {
                 string.push(')');
                 string
             },
-            Value::None => "None".into(),
         }
     }
 }
 
-pub struct ProcedureInstance {
-    pub body: Vec<Located<Statement>>
+pub struct FunctionInstance {
+    pub body: Located<Expression>
 }
 
 pub struct MethodInstance {
     pub instance: Value,
-    pub procedure: Rc<ProcedureInstance>
+    pub function: Rc<FunctionInstance>
 }
 
 pub struct LambdaInstance {

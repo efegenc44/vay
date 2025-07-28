@@ -2,19 +2,14 @@ module Main
 
 import Nat
 
-proc main() : Nat::Nat {
-    return id(foo(
-        Nat::Nat::Succ(Nat::Nat::Succ(Nat::Nat::Zero)),
-        Nat::Nat::Succ(Nat::Nat::Zero)
-    ))
-}
+fun main() : Nat::Nat = id(foo(
+    Nat::Nat::Succ(Nat::Nat::Succ(Nat::Nat::Zero)),
+    Nat::Nat::Succ(Nat::Nat::Zero)
+))
 
-proc id:(T)(x : T) : T {
-    return x
-}
+fun id:(T)(x : T) : T = x
 
-proc foo(x : Nat::Nat, y : Nat::Nat) : Nat::Nat {
-    return x
+fun foo(x : Nat::Nat, y : Nat::Nat) : Nat::Nat =
+    x
         .add(y)
         .mul(Nat::Nat::Succ(Nat::Nat::Succ(Nat::Nat::Succ(Nat::Nat::Zero))))
-}

@@ -1,12 +1,11 @@
 use crate::{
-    bound::Path, expression::TypeExpression, interner::InternIdx, location::Located,
-    statement::Statement,
+    bound::Path, expression::{Expression, TypeExpression}, interner::InternIdx, location::Located,
 };
 
 pub enum Declaration {
     Module(ModuleDeclaration),
     Import(ImportDeclaration),
-    Procedure(ProcedureDeclaration),
+    Function(FunctionDeclaration),
     Variant(VariantDeclaration),
     Interface(InterfaceDeclaration)
 }
@@ -24,12 +23,12 @@ pub struct ImportDeclaration {
     pub name: Located<InternIdx>,
 }
 
-pub struct ProcedureDeclaration {
+pub struct FunctionDeclaration {
     pub name: Located<InternIdx>,
     pub type_vars: Vec<Located<TypeVar>>,
     pub arguments: Vec<Located<TypedIdentifier>>,
     pub return_type: Located<TypeExpression>,
-    pub body: Vec<Located<Statement>>,
+    pub body: Located<Expression>,
     pub path: Path,
 }
 
@@ -60,7 +59,7 @@ pub struct MethodDeclaration {
     pub instance: Located<InternIdx>,
     pub arguments: Vec<Located<TypedIdentifier>>,
     pub return_type: Located<TypeExpression>,
-    pub body: Vec<Located<Statement>>,
+    pub body: Located<Expression>,
 }
 
 pub struct Constraint {

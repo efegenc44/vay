@@ -4,21 +4,15 @@ variant Nat {
     Zero
     Succ(Nat)
 
-    proc add(this, that : Nat) : Nat {
-        match that {
-            Zero    : return this
-            Succ(n) : return Nat::Succ(this.add(n))
-        }
+    fun add(this, that : Nat) : Nat = match that {
+        Zero    : this
+        Succ(n) : Nat::Succ(this.add(n))
     }
 
-    proc mul(this, that : Nat) : Nat {
-        match that {
-            Zero    : return Nat::Zero
-            Succ(n) : return this.add(this.mul(n))
-        }
+    fun mul(this, that : Nat) : Nat = match that {
+        Zero    : Nat::Zero
+        Succ(n) : this.add(this.mul(n))
     }
 }
 
-proc inc(n : Nat) : Nat {
-    return Nat::Succ(n)
-}
+fun inc(n : Nat) : Nat = Nat::Succ(n)

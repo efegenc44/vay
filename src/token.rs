@@ -17,9 +17,8 @@ pub enum Token {
 
     ModuleKeyword,
     ImportKeyword,
-    ProcKeyword,
+    FunKeyword,
     VariantKeyword,
-    ReturnKeyword,
     MatchKeyword,
     InterfaceKeyword,
     LetKeyword,
@@ -48,9 +47,8 @@ impl Token {
 
             Token::ModuleKeyword => "keyword `module`",
             Token::ImportKeyword => "keyword `import`",
-            Token::ProcKeyword => "keyword `proc`",
+            Token::FunKeyword => "keyword `fun`",
             Token::VariantKeyword => "keyword `variant`",
-            Token::ReturnKeyword => "keyword `return`",
             Token::MatchKeyword => "keyword `match`",
             Token::InterfaceKeyword => "keyword `interface`",
             Token::LetKeyword => "keyword `let`",

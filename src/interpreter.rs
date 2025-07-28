@@ -1,13 +1,11 @@
 use std::{collections::HashMap, rc::Rc};
 
-use crate::{bound::{Bound, Path}, declaration::{Declaration, MethodDeclaration, Module, ProcedureDeclaration, VariantDeclaration}, expression::{ApplicationExpression, Expression, LambdaExpression, LetExpression, PathExpression, ProjectionExpression, SequenceExpression}, interner::{InternIdx, Interner}, location::Located, statement::{MatchStatement, Pattern, ReturnStatement, Statement, VariantCasePattern}, value::{ConstructorInstance, InstanceInstance, LambdaInstance, MethodInstance, ProcedureInstance, Value}};
+use crate::{bound::{Bound, Path}, declaration::{Declaration, MethodDeclaration, Module, FunctionDeclaration, VariantDeclaration}, expression::{ApplicationExpression, Expression, LambdaExpression, LetExpression, MatchExpression, PathExpression, Pattern, ProjectionExpression, SequenceExpression, VariantCasePattern}, interner::{InternIdx, Interner}, location::Located, value::{ConstructorInstance, InstanceInstance, LambdaInstance, MethodInstance, FunctionInstance, Value}};
 
 pub struct Interpreter {
-    methods: HashMap<Path, HashMap<InternIdx, Rc<ProcedureInstance>>>,
+    methods: HashMap<Path, HashMap<InternIdx, Rc<FunctionInstance>>>,
     names: HashMap<Path, Value>,
     locals: Vec<Value>,
-
-    return_exception: Option<Value>,
 }
 
 macro_rules! scoped {
@@ -26,8 +24,6 @@ impl Interpreter {
             methods: HashMap::new(),
             names: HashMap::new(),
             locals: vec![],
-
-            return_exception: None,
         }
     }
 
@@ -47,35 +43,29 @@ impl Interpreter {
             todo!("Main module is not declared");
         };
 
-        let mut main_procedure = None;
+        let mut main_function = None;
         'outer: for declaration in main_module.declarations() {
-            if let Declaration::Procedure(procedure) = declaration {
-                if interner.get(procedure.name.data()) == "main" {
-                    main_procedure = Some(declaration);
+            if let Declaration::Function(function) = declaration {
+                if interner.get(function.name.data()) == "main" {
+                    main_function = Some(declaration);
                     break 'outer;
                 }
             }
         }
-        let Some(main_function) = main_procedure else {
-            todo!("main procedure is not declared");
+        let Some(main_function) = main_function else {
+            todo!("main function is not declared");
         };
 
-        let Declaration::Procedure(procedure) = main_function else {
+        let Declaration::Function(function) = main_function else {
             unreachable!();
         };
 
-        if !procedure.arguments.is_empty() {
-            todo!("main procedure is not supposed to take any arguments");
+        if !function.arguments.is_empty() {
+            todo!("main function is not supposed to take any arguments");
         }
 
-        for statement in &procedure.body {
-            self.statement(statement);
-
-            if let Some(value) = self.return_exception.take() {
-                println!("\nResult = {}", value.as_string(interner));
-                break;
-            }
-        }
+        let value = self.expression(&function.body);
+        println!("\nResult = {}", value.as_string(interner));
     }
 
     fn collect_names(&mut self, module: &Module) {
@@ -84,17 +74,17 @@ impl Interpreter {
                 Declaration::Module(..) => (),
                 Declaration::Import(..) => (),
                 Declaration::Interface(..) => (),
-                Declaration::Procedure(procedure) => self.collect_procedure_name(procedure),
+                Declaration::Function(function) => self.collect_function_name(function),
                 Declaration::Variant(variant) => self.collect_variant_name(variant),
             }
         }
     }
 
-    fn collect_procedure_name(&mut self, procedure: &ProcedureDeclaration) {
-        let ProcedureDeclaration { body, path, .. } = procedure;
+    fn collect_function_name(&mut self, function: &FunctionDeclaration) {
+        let FunctionDeclaration { body, path, .. } = function;
 
-        let procedure = ProcedureInstance { body: body.clone() };
-        let value = Value::Procedure(Rc::new(procedure));
+        let function = FunctionInstance { body: body.clone() };
+        let value = Value::Function(Rc::new(function));
 
         self.names.insert(path.clone(), value);
     }
@@ -128,45 +118,27 @@ impl Interpreter {
         for method in methods {
             let MethodDeclaration { name, body, .. } = method;
 
-            let procedure = ProcedureInstance { body: body.clone() };
-            self.methods.get_mut(path).unwrap().insert(*name.data(), Rc::new(procedure));
+            let function = FunctionInstance { body: body.clone() };
+            self.methods.get_mut(path).unwrap().insert(*name.data(), Rc::new(function));
         }
     }
 
-    fn statement(&mut self, statement: &Located<Statement>) {
-        if self.return_exception.clone().is_some() {
-            return;
-        }
-
-        match statement.data() {
-            Statement::Expression(expression) => {
-                self.expression(expression);
-            },
-            Statement::Return(retrn) => self.retrn(retrn),
-            Statement::Match(matc) => self.matc(matc),
-        }
-    }
-
-    fn retrn(&mut self, retrn: &ReturnStatement)  {
-        let ReturnStatement { expression } = retrn;
-
-        let value = self.expression(expression);
-        self.return_exception = Some(value);
-    }
-
-    fn matc(&mut self, matc: &MatchStatement) {
-        let MatchStatement { expression, branches } = matc;
+    fn matc(&mut self, matc: &MatchExpression) -> Value {
+        let MatchExpression { expression, branches } = matc;
 
         let value = self.expression(expression);
         for branch in branches {
             if self.does_value_pattern_match(&value, branch.data().pattern()) {
+                let return_value;
                 scoped!(self, {
                     self.value_pattern_match(&value, branch.data().pattern());
-                    self.statement(branch.data().statement());
+                    return_value = self.expression(branch.data().expression());
                 });
-                break;
+                return return_value;
             }
         }
+
+        todo!("Unexhaustive pattern matching")
     }
 
     fn does_value_pattern_match(&mut self, value: &Value, pattern: &Located<Pattern>) -> bool {
@@ -202,6 +174,7 @@ impl Interpreter {
             Expression::Let(lett) => self.lett(lett),
             Expression::Sequence(sequence) => self.sequence(sequence),
             Expression::Lambda(lambda) => self.lambda(lambda),
+            Expression::Match(matc) => self.matc(matc),
         }
     }
 
@@ -222,10 +195,10 @@ impl Interpreter {
         let ApplicationExpression { function, arguments } = application;
 
         match self.expression(function) {
-            Value::Procedure(procedure) => {
-                let ProcedureInstance { body } = procedure.as_ref();
+            Value::Function(function) => {
+                let FunctionInstance { body } = function.as_ref();
 
-                let mut return_value = Value::None;
+                let return_value;
                 scoped!(self, {
                     let mut argument_values = vec![];
                     for argument in arguments {
@@ -233,23 +206,17 @@ impl Interpreter {
                         argument_values.push(argument);
                     }
                     self.locals.extend(argument_values);
-                    for statement in body.iter() {
-                        self.statement(statement);
 
-                        if let Some(value) = self.return_exception.take() {
-                            return_value = value;
-                            break;
-                        }
-                    }
+                    return_value = self.expression(body);
                 });
 
                 return_value
             },
             Value::Method(method) => {
-                let MethodInstance { instance, procedure } = method.as_ref();
-                let ProcedureInstance { body } = procedure.as_ref();
+                let MethodInstance { instance, function } = method.as_ref();
+                let FunctionInstance { body } = function.as_ref();
 
-                let mut return_value = Value::None;
+                let return_value;
                 scoped!(self, {
                     let mut argument_values = vec![];
                     for argument in arguments {
@@ -257,14 +224,8 @@ impl Interpreter {
                     }
                     self.locals.push(instance.clone());
                     self.locals.extend(argument_values);
-                    for statement in body {
-                        self.statement(statement);
 
-                        if let Some(value) = self.return_exception.take() {
-                            return_value = value;
-                            break;
-                        }
-                    }
+                    return_value = self.expression(body);
                 });
 
                 return_value
@@ -311,8 +272,8 @@ impl Interpreter {
         let InstanceInstance { constructor, .. } = instanceinstance.as_ref();
         let ConstructorInstance { type_path, .. } = constructor.as_ref();
 
-        let procedure = self.methods[type_path][name.data()].clone();
-        let method = MethodInstance { instance, procedure };
+        let function = self.methods[type_path][name.data()].clone();
+        let method = MethodInstance { instance, function };
         Value::Method(Rc::new(method))
     }
 

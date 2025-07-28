@@ -6,61 +6,40 @@ variant Cell(T) {
     Cell(T)
     Empty
 
-    proc cell(this, x : T) : Cell(T) {
-        return Cell::Cell(x)
-    }
+    fun cell(this, x : T) : Cell(T) = Cell::Cell(x)
 }
 
-proc h:(T)(f : proc(T) : Cell(T), x : T) : Cell(T) {
-    return f(x)
-}
+fun h:(T)(f : fun(T) : Cell(T), x : T) : Cell(T) = f(x)
 
-proc h2:(T)(f : proc(Cell(T)) : Cell(Cell(T)), x : T) : Cell(Cell(T)) {
-    return f(Cell::Cell(x))
-}
+fun h2:(T)(f : fun(Cell(T)) : Cell(Cell(T)), x : T) : Cell(Cell(T)) = f(Cell::Cell(x))
 
-proc h3:(T, R)(f : proc(T) : Cell(R), x : T) : Cell(R) {
-    return f(x)
-}
+fun h3:(T, R)(f : fun(T) : Cell(R), x : T) : Cell(R) = f(x)
 
-proc h4:(T)(f : proc(T) : Cell(T)) : Cell(T) {
-    return Cell::Empty
-}
+fun h4:(T)(f : fun(T) : Cell(T)) : Cell(T) = Cell::Empty
 
-proc h5:(F)(x : F) : Cell(F) {
-    return Cell::Empty
-}
+fun h5:(F)(x : F) : Cell(F) = Cell::Empty
 
+fun g(u : Unit) : Cell(Unit) = Cell::Cell(u)
 
-proc g(u : Unit) : Cell(Unit) {
-    return Cell::Cell(u)
-}
+fun j(x : Unit) : Cell(Unit2) = Cell::Empty
 
-proc j(x : Unit) : Cell(Unit2) {
-    return Cell::Empty
-}
+fun test() : Cell(Unit) = (
+    h(g, Unit::Unit)
+    h(Cell::Cell, Unit::Unit)
+    h(Cell::Empty.cell, Unit::Unit)
 
-proc test() : Cell(Unit) {
-    return h(g, Unit::Unit)
-    return h(Cell::Cell, Unit::Unit)
-    return h(Cell::Empty.cell, Unit::Unit)
+    h4(h5)
 
-    return h4(h5)
+    h3(g, Unit::Unit)
+    h3(Cell::Cell, Unit::Unit)
+    h3(Cell::Empty.cell, Unit::Unit)
+)
 
-    return h3(g, Unit::Unit)
-    return h3(Cell::Cell, Unit::Unit)
-    return h3(Cell::Empty.cell, Unit::Unit)
-}
+fun test2() : Cell(Unit2) = (
+    h3(j, Unit::Unit)
+    h(Cell::Cell, Unit2::Unit2)
+)
 
-proc test2() : Cell(Unit2) {
-    return h3(j, Unit::Unit)
-    return h(Cell::Cell, Unit2::Unit2)
-}
+fun test3() : Cell(Cell(Unit)) = h2(Cell::Cell(Cell::Empty).cell, Unit::Unit)
 
-proc test3() : Cell(Cell(Unit)) {
-    return h2(Cell::Cell(Cell::Empty).cell, Unit::Unit)
-}
-
-proc main() : Unit {
-    return Unit::Unit
-}
+fun main() : Unit = Unit::Unit

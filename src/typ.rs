@@ -11,20 +11,20 @@ pub enum Type {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MonoType {
     Variant(Path, Vec<MonoType>),
-    Procedure(ProcedureType),
+    Function(FunctionType),
     Constant(TypeVar),
-    Var(TypeVar)
+    Var(TypeVar),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProcedureType {
+pub struct FunctionType {
     pub arguments: Vec<MonoType>,
     pub return_type: Box<MonoType>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Interface {
-    pub methods: HashMap<InternIdx, ProcedureType>,
+    pub methods: HashMap<InternIdx, FunctionType>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,11 +34,11 @@ pub struct TypeVar {
 }
 
 impl MonoType {
-    pub fn into_procedure(self) -> ProcedureType {
-        let Self::Procedure(procedure) = self else {
+    pub fn into_function(self) -> FunctionType {
+        let Self::Function(function) = self else {
             panic!()
         };
-        procedure
+        function
     }
 
     pub fn substitute(self, map: &HashMap<usize, MonoType>) -> MonoType {
@@ -51,8 +51,8 @@ impl MonoType {
 
                 MonoType::Variant(path, arguments)
             },
-            MonoType::Procedure(procedure_type) => {
-                let ProcedureType { arguments, return_type } = procedure_type;
+            MonoType::Function(function_type) => {
+                let FunctionType { arguments, return_type } = function_type;
 
                 let arguments = arguments
                     .into_iter()
@@ -61,8 +61,8 @@ impl MonoType {
 
                 let return_type = Box::new(return_type.substitute(map));
 
-                let procedure = ProcedureType { arguments, return_type };
-                MonoType::Procedure(procedure)
+                let function = FunctionType { arguments, return_type };
+                MonoType::Function(function)
             },
             MonoType::Var(var) => {
                 let TypeVar { idx, .. } = var;
@@ -87,8 +87,8 @@ impl MonoType {
 
                 MonoType::Variant(path, arguments)
             },
-            MonoType::Procedure(procedure_type) => {
-                let ProcedureType { arguments, return_type } = procedure_type;
+            MonoType::Function(function_type) => {
+                let FunctionType { arguments, return_type } = function_type;
 
                 let arguments = arguments
                     .into_iter()
@@ -97,8 +97,8 @@ impl MonoType {
 
                 let return_type = Box::new(return_type.replace_type_constants(map));
 
-                let procedure = ProcedureType { arguments, return_type };
-                MonoType::Procedure(procedure)
+                let function = FunctionType { arguments, return_type };
+                MonoType::Function(function)
             },
             MonoType::Var(var) => MonoType::Var(var),
             MonoType::Constant(c) => {
@@ -121,8 +121,8 @@ impl MonoType {
                         collect_type_vars(argument, vars);
                     }
                 },
-                MonoType::Procedure(t) => {
-                    let ProcedureType { arguments, return_type } = t;
+                MonoType::Function(t) => {
+                    let FunctionType { arguments, return_type } = t;
 
                     for argument in arguments {
                         collect_type_vars(argument, vars);
@@ -144,8 +144,8 @@ impl MonoType {
             MonoType::Variant(_, arguments) => {
                 arguments.iter().any(|t| t.occurs(idx))
             },
-            MonoType::Procedure(procedure) => {
-                let ProcedureType { arguments, return_type } = procedure;
+            MonoType::Function(function) => {
+                let FunctionType { arguments, return_type } = function;
 
                 arguments.iter().any(|t| t.occurs(idx)) ||
                 return_type.occurs(idx)
@@ -174,10 +174,10 @@ impl MonoType {
                 };
                 type_string
             },
-            MonoType::Procedure(procedure) => {
-                let ProcedureType { arguments, return_type } = procedure;
+            MonoType::Function(function) => {
+                let FunctionType { arguments, return_type } = function;
 
-                let mut type_string = String::from("proc(");
+                let mut type_string = String::from("fun(");
                 match &arguments[..] {
                     [] => type_string.push(')'),
                     [typ] => {

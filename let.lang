@@ -7,22 +7,15 @@ variant A(T) {
     A
 }
 
-proc f(a : A(Unit)) : Unit {
-    return Unit::Unit
-}
+fun f(a : A(Unit)) : Unit = Unit::Unit
 
-proc g(a : A(Unit2)) : Unit {
-    return Unit::Unit
-}
+fun g(a : A(Unit2)) : Unit = Unit::Unit
 
-proc id:(T)(x : T) : T {
-    return x
-}
+fun id:(T)(x : T) : T = x
 
-proc main() : A(Unit) {
-    return let I = id in (
+fun main() : A(Unit) =
+    let I = id in (
         I(Unit::Unit)
         I(Unit2::Unit2)
         I(A::A)
     )
-}

@@ -2,15 +2,14 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     bound::{Bound, Path},
-    declaration::{self, Declaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ProcedureDeclaration, VariantDeclaration},
+    declaration::{self, Declaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, FunctionDeclaration, VariantDeclaration},
     expression::{
-        ApplicationExpression, Expression, LambdaExpression, LetExpression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, SequenceExpression, TypeApplicationExpression, TypeExpression
+        ApplicationExpression, Expression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, FunctionTypeExpression, ProjectionExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
     },
     interner::{InternIdx, Interner},
     location::{Located, SourceLocation},
     reportable::{Reportable, ReportableResult},
-    statement::{MatchStatement, Pattern, ReturnStatement, Statement, VariantCasePattern},
-    typ::{Interface, MonoType, ProcedureType, Type, TypeVar},
+    typ::{Interface, MonoType, FunctionType, Type, TypeVar},
 };
 
 macro_rules! scoped {
@@ -26,7 +25,7 @@ macro_rules! scoped {
 struct VariantInformation {
     ty: Type,
     cases: HashMap<InternIdx, Vec<MonoType>>,
-    methods: HashMap<InternIdx, (ProcedureType, HashMap<usize, HashSet<Path>>)>,
+    methods: HashMap<InternIdx, (FunctionType, HashMap<usize, HashSet<Path>>)>,
 }
 
 impl VariantInformation {
@@ -97,7 +96,7 @@ impl Checker {
     }
 
     fn generalize(&mut self, m: MonoType) -> Type {
-        if matches!(m, MonoType::Procedure(_)) {
+        if matches!(m, MonoType::Function(_)) {
             Type::Forall(m.occuring_type_vars(), m)
         } else {
             Type::Mono(m)
@@ -123,7 +122,7 @@ impl Checker {
     fn eval_type_expression(&mut self, type_expression: &Located<TypeExpression>) -> ReportableResult<Type> {
         match type_expression.data() {
             TypeExpression::Path(type_path) => self.eval_path_type(type_path),
-            TypeExpression::Procedure(procedure_type) => self.eval_procedure_type(procedure_type),
+            TypeExpression::Function(function) => self.eval_function_type(function),
             // TODO: Inconsistent naming?
             TypeExpression::Application(type_application) => self.eval_type_application(type_application),
         }
@@ -142,8 +141,8 @@ impl Checker {
         }
     }
 
-    fn eval_procedure_type(&mut self, procedure_type: &ProcedureTypeExpression) -> ReportableResult<Type> {
-        let ProcedureTypeExpression { arguments, return_type } = procedure_type;
+    fn eval_function_type(&mut self, function_type: &FunctionTypeExpression) -> ReportableResult<Type> {
+        let FunctionTypeExpression { arguments, return_type } = function_type;
 
         let arguments = arguments
             .iter().map(|argument| self.eval_to_mono(argument))
@@ -151,7 +150,7 @@ impl Checker {
 
         let return_type = Box::new(self.eval_to_mono(return_type)?);
 
-        Ok(Type::Mono(MonoType::Procedure(ProcedureType { arguments, return_type })))
+        Ok(Type::Mono(MonoType::Function(FunctionType { arguments, return_type })))
     }
 
     fn eval_type_application(&mut self, type_application: &TypeApplicationExpression) -> ReportableResult<Type> {
@@ -184,7 +183,7 @@ impl Checker {
                     variant_arguments.push(self.eval_to_mono(argument)?);
                 }
             },
-            MonoType::Procedure(_) => todo!(),
+            MonoType::Function(_) => todo!(),
 
             MonoType::Constant(_) |
             MonoType::Var(..) => unreachable!(),
@@ -246,16 +245,16 @@ impl Checker {
         }
 
         for declaration in module.declarations() {
-            if let Declaration::Procedure(procedure) = declaration {
-                self.collect_procedure_name(procedure)?
+            if let Declaration::Function(function) = declaration {
+                self.collect_function_name(function)?
             }
         }
 
         Ok(())
     }
 
-    fn collect_procedure_name(&mut self, procedure: &ProcedureDeclaration) -> ReportableResult<()> {
-        let ProcedureDeclaration { type_vars, arguments, return_type, path, .. } = procedure;
+    fn collect_function_name(&mut self, function: &FunctionDeclaration) -> ReportableResult<()> {
+        let FunctionDeclaration { type_vars, arguments, return_type, path, .. } = function;
 
         scoped!(self, {
             let type_vars = self.type_vars(type_vars);
@@ -271,12 +270,12 @@ impl Checker {
 
             let return_type = Box::new(self.eval_to_mono(return_type)?);
 
-            let procedure = MonoType::Procedure(ProcedureType { arguments, return_type });
+            let function = MonoType::Function(FunctionType { arguments, return_type });
 
             let t = if type_vars.is_empty() {
-                Type::Mono(procedure)
+                Type::Mono(function)
             } else {
-                Type::Forall(type_vars, procedure)
+                Type::Forall(type_vars, function)
             };
 
             self.names.insert(path.clone(), t);
@@ -344,12 +343,12 @@ impl Checker {
 
                 let return_type = Box::new(self.eval_to_mono(return_type)?);
 
-                let procedure_type = ProcedureType { arguments, return_type };
+                let function_type = FunctionType { arguments, return_type };
                 if self.variants
                     .get_mut(path)
                     .unwrap()
                     .methods
-                    .insert(*name.data(), (procedure_type, constraints))
+                    .insert(*name.data(), (function_type, constraints))
                     .is_some()
                 {
                     return self.error(
@@ -401,13 +400,13 @@ impl Checker {
                         .get_mut(path).unwrap()
                         .cases.insert(case_name, arguments.clone());
 
-                    let procedure_type = ProcedureType { arguments, return_type };
+                    let function_type = FunctionType { arguments, return_type };
 
                     // Generalization
                     let t = if let Type::Forall(variables, _) = self.variants[path].ty.clone() {
-                        Type::Forall(variables, MonoType::Procedure(procedure_type))
+                        Type::Forall(variables, MonoType::Function(function_type))
                     } else {
-                        Type::Mono(MonoType::Procedure(procedure_type))
+                        Type::Mono(MonoType::Function(function_type))
                     };
 
                     self.names.insert(case_path, t);
@@ -434,7 +433,7 @@ impl Checker {
     fn declaration(&mut self, declaration: &Declaration) -> ReportableResult<()> {
         match declaration {
             Declaration::Variant(variant) => self.variant(variant),
-            Declaration::Procedure(procedure) => self.procedure(procedure),
+            Declaration::Function(function) => self.function(function),
             _ => Ok(())
         }
     }
@@ -446,18 +445,7 @@ impl Checker {
             let MethodDeclaration { name, body, .. } = method;
 
             let (method_type, constraints) = &self.variants[path].methods[name.data()];
-            let ProcedureType { arguments, return_type } = method_type.clone();
-
-            if !body.iter().any(|statement| statement.data().returns()) {
-                return self.error(
-                    TypeCheckError::MethodDoesNotReturn {
-                        type_path: path.clone(),
-                        method: *method.name.data(),
-                        expceted: *return_type,
-                    },
-                    method.name.location(),
-                );
-            }
+            let FunctionType { arguments, return_type } = method_type.clone();
 
             let variant_type = match self.variants[path].ty.clone() {
                 Type::Mono(m) => m,
@@ -481,10 +469,8 @@ impl Checker {
             scoped!(self, {
                 self.locals.push(Type::Mono(variant_type));
                 self.locals.extend(arguments.into_iter().map(Type::Mono));
-                self.return_type = Some(*return_type);
-                for statement in body {
-                    self.statement(statement)?;
-                }
+                self.return_type = Some(*return_type.clone());
+                self.check(body, *return_type)?;
                 self.return_type = None;
             });
         }
@@ -492,41 +478,29 @@ impl Checker {
         Ok(())
     }
 
-    fn procedure(&mut self, procedure: &ProcedureDeclaration) -> ReportableResult<()> {
-        let ProcedureDeclaration { name, body, path, .. } = procedure;
+    fn function(&mut self, function: &FunctionDeclaration) -> ReportableResult<()> {
+        let FunctionDeclaration { body, path, .. } = function;
 
-        let procedure_type = match self.names[path].clone() {
-            Type::Mono(m) => m.into_procedure(),
+        let function_type = match self.names[path].clone() {
+            Type::Mono(m) => m.into_function(),
             Type::Forall(variables, m) => {
-                let procedure_type = m.into_procedure();
+                let function_type = m.into_function();
                 let map = variables
                     .iter().cloned()
                     .map(|var| (var.idx, MonoType::Constant(var)))
                     .collect();
 
-                MonoType::Procedure(procedure_type.clone())
+                MonoType::Function(function_type.clone())
                     .substitute(&map)
-                    .into_procedure()
+                    .into_function()
             }
         };
-        let ProcedureType { arguments, return_type } = procedure_type;
-
-        if !body.iter().any(|statement| statement.data().returns()) {
-            return self.error(
-                TypeCheckError::ProcedureDoesNotReturn {
-                    procedure: path.clone(),
-                    expceted: *return_type,
-                },
-                name.location(),
-            );
-        }
+        let FunctionType { arguments, return_type } = function_type;
 
         scoped!(self, {
             self.locals.extend(arguments.into_iter().map(Type::Mono));
-            self.return_type = Some(*return_type);
-            for statement in body {
-                self.statement(statement)?;
-            }
+            self.return_type = Some(*return_type.clone());
+            self.check(body, *return_type)?;
             self.return_type = None;
         });
 
@@ -551,7 +525,7 @@ impl Checker {
 
                 let return_type = Box::new(self.eval_to_mono(return_type)?);
 
-                let method_type = ProcedureType { arguments, return_type };
+                let method_type = FunctionType { arguments, return_type };
                 self.interfaces
                     .get_mut(path).unwrap()
                     .methods.insert(*name.data(), method_type);
@@ -561,42 +535,45 @@ impl Checker {
         Ok(())
     }
 
-    fn statement(&mut self, statement: &Located<Statement>) -> ReportableResult<()> {
-        match statement.data() {
-            Statement::Expression(expression) => self.infer(expression).map(|_| ()),
-            Statement::Match(matc) => self.matc(matc),
-            Statement::Return(retrn) => self.retrn(retrn),
-        }
-    }
-
-    fn retrn(&mut self, retrn: &ReturnStatement) -> ReportableResult<()> {
-        let ReturnStatement { expression } = retrn;
-
-        let return_type = self.return_type.clone().unwrap();
-        self.check(expression, return_type)
-    }
-
-    fn matc(&mut self, matc: &MatchStatement) -> ReportableResult<()> {
+    fn matc(&mut self, matc: &MatchExpression) -> ReportableResult<MonoType> {
         // TODO: Exhaustiveness check
-        let MatchStatement { expression, branches } = matc;
+        let MatchExpression { expression, branches } = matc;
 
         let mut m = self.infer(expression)?;
-        for branch in branches {
-            scoped!(self, {
-                if !self.type_pattern_match(m.clone(), branch.data().pattern())? {
+
+        let return_type = match &branches[..] {
+            [] => todo!("Return Unit type probably"),
+            [head, tail@..] => {
+                if !self.type_pattern_match(m.clone(), head.data().pattern())? {
                     // TODO: Remove push locals by type_pattern_match()
                     return self.error(
                         TypeCheckError::NotAPatternOfType { expected: m },
-                        branch.data().pattern().location(),
+                        head.data().pattern().location(),
                     );
                 }
-
-                self.statement(branch.data().statement())?;
+                let return_type = self.infer(head.data().expression())?;
                 m = m.substitute(&self.unification_table);
-            })
-        }
 
-        Ok(())
+                for branch in tail {
+                    scoped!(self, {
+                        if !self.type_pattern_match(m.clone(), branch.data().pattern())? {
+                            // TODO: Remove push locals by type_pattern_match()
+                            return self.error(
+                                TypeCheckError::NotAPatternOfType { expected: m },
+                                branch.data().pattern().location(),
+                            );
+                        }
+
+                        self.check(branch.data().expression(), return_type.clone())?;
+                        m = m.substitute(&self.unification_table);
+                    })
+                }
+
+                return_type
+            }
+        };
+
+        Ok(return_type)
     }
 
     fn type_pattern_match(&mut self, t: MonoType, pattern: &Located<Pattern>) -> ReportableResult<bool> {
@@ -648,7 +625,7 @@ impl Checker {
 
                 Ok(true)
             }
-            (MonoType::Procedure(..), _) |
+            (MonoType::Function(..), _) |
             (MonoType::Var(..), _) |
             (MonoType::Constant(..), _) => Ok(false),
         }
@@ -683,11 +660,11 @@ impl Checker {
         Ok(())
     }
 
-    fn find_method_in_interfaces(&self, name: &InternIdx, interfaces: &HashSet<Path>) -> Option<ProcedureType> {
+    fn find_method_in_interfaces(&self, name: &InternIdx, interfaces: &HashSet<Path>) -> Option<FunctionType> {
         for path in interfaces {
-            for (method_name, method_procedure) in &self.interfaces[path].methods {
+            for (method_name, method_function) in &self.interfaces[path].methods {
                 if name == method_name {
-                    return Some(method_procedure.clone());
+                    return Some(method_function.clone());
                 }
             }
         }
@@ -700,8 +677,8 @@ impl Checker {
             MonoType::Variant(path, arguments) => {
                 for interface_path in interfaces {
                     let interface = &self.interfaces[interface_path];
-                    for (name, interface_procedure) in &interface.methods {
-                        let Some((variant_procedure, constraints)) = self.variants[path].methods.get(name) else {
+                    for (name, interface_function) in &interface.methods {
+                        let Some((variant_function, constraints)) = self.variants[path].methods.get(name) else {
                             return false;
                         };
 
@@ -716,7 +693,7 @@ impl Checker {
                             }
                         }
 
-                        let variant_procedure = if let Type::Forall(variables, _) = &self.variants[path].ty {
+                        let variant_function = if let Type::Forall(variables, _) = &self.variants[path].ty {
                             let map = variables
                                 .iter()
                                 .cloned()
@@ -724,19 +701,19 @@ impl Checker {
                                 .zip(arguments.clone())
                                 .collect();
 
-                            MonoType::Procedure(variant_procedure.clone())
+                            MonoType::Function(variant_function.clone())
                                 .replace_type_constants(&map)
-                                .into_procedure()
+                                .into_function()
                         } else {
-                            variant_procedure.clone()
+                            variant_function.clone()
                         };
 
                         let map = HashMap::from([(INTERFACE_CONSTANT_IDX, m.clone())]);
-                        let interface_procedure = MonoType::Procedure(interface_procedure.clone())
+                        let interface_function = MonoType::Function(interface_function.clone())
                             .replace_type_constants(&map)
-                            .into_procedure();
+                            .into_function();
 
-                        if variant_procedure != interface_procedure {
+                        if variant_function != interface_function {
                             return false;
                         }
                     }
@@ -747,22 +724,22 @@ impl Checker {
             MonoType::Var(type_var) | MonoType::Constant(type_var) => {
                 for path in interfaces {
                     let interface = &self.interfaces[path];
-                    for (name, interface_procedure) in &interface.methods {
-                        let Some(variable_procedure) = self.find_method_in_interfaces(name, &type_var.interfaces) else {
+                    for (name, interface_function) in &interface.methods {
+                        let Some(variable_function) = self.find_method_in_interfaces(name, &type_var.interfaces) else {
                             return false;
                         };
 
                         let map = HashMap::from([(INTERFACE_CONSTANT_IDX, m.clone())]);
-                        let variable_procedure = MonoType::Procedure(variable_procedure.clone())
+                        let variable_function = MonoType::Function(variable_function.clone())
                             .replace_type_constants(&map)
-                            .into_procedure();
+                            .into_function();
 
                         let map = HashMap::from([(INTERFACE_CONSTANT_IDX, m.clone())]);
-                        let interface_procedure = MonoType::Procedure(interface_procedure.clone())
+                        let interface_function = MonoType::Function(interface_function.clone())
                             .replace_type_constants(&map)
-                            .into_procedure();
+                            .into_function();
 
-                        if variable_procedure != interface_procedure {
+                        if variable_function != interface_function {
                             return false;
                         }
                     }
@@ -782,6 +759,7 @@ impl Checker {
             Expression::Let(lett) => self.lett(lett),
             Expression::Sequence(sequence) => self.sequence(sequence),
             Expression::Lambda(lambda) => self.lambda(lambda),
+            Expression::Match(matc) => self.matc(matc),
         }
     }
 
@@ -814,14 +792,14 @@ impl Checker {
         let ApplicationExpression { function, arguments } = application;
 
         let m = self.infer(function)?;
-        let MonoType::Procedure(procedure) = m else {
+        let MonoType::Function(function_type) = m else {
             return self.error(
-                TypeCheckError::ExpectedAProcedure { encountered: m },
+                TypeCheckError::ExpectedAFunction { encountered: m },
                 function.location()
             );
         };
 
-        let ProcedureType { arguments: expected_types, return_type } = procedure;
+        let FunctionType { arguments: expected_types, return_type } = function_type;
 
         if arguments.len() != expected_types.len() {
             return self.error(
@@ -894,13 +872,13 @@ impl Checker {
                         .zip(arguments.clone())
                         .collect();
 
-                    Ok(MonoType::Procedure(method_type.clone()).replace_type_constants(&map))
+                    Ok(MonoType::Function(method_type.clone()).replace_type_constants(&map))
                 } else {
-                    Ok(MonoType::Procedure(method_type.clone()))
+                    Ok(MonoType::Function(method_type.clone()))
                 }
             },
             MonoType::Constant(type_var) | MonoType::Var(type_var) => {
-                let Some(variable_procedure) = self.find_method_in_interfaces(name.data(), &type_var.interfaces) else {
+                let Some(variable_function) = self.find_method_in_interfaces(name.data(), &type_var.interfaces) else {
                     return self.error(
                         TypeCheckError::HasNoMethod {
                             ty: m,
@@ -911,7 +889,7 @@ impl Checker {
                 };
 
                 let map = HashMap::from([(INTERFACE_CONSTANT_IDX, m.clone())]);
-                Ok(MonoType::Procedure(variable_procedure.clone()).replace_type_constants(&map))
+                Ok(MonoType::Function(variable_function.clone()).replace_type_constants(&map))
             }
             _ => {
                 self.error(
@@ -981,8 +959,8 @@ impl Checker {
         // NOTE: Substitution here is unnecessary (see Algorithm W)
         let return_type = Box::new(return_type);
 
-        let procedure_type = ProcedureType { arguments, return_type };
-        Ok(MonoType::Procedure(procedure_type))
+        let function_type = FunctionType { arguments, return_type };
+        Ok(MonoType::Function(function_type))
     }
 
     // TODO: unify should return Result for better error reporting
@@ -1003,9 +981,9 @@ impl Checker {
 
                 true
             },
-            (MonoType::Procedure(procedure1), MonoType::Procedure(procedure2)) => {
-                let ProcedureType { arguments: args1, return_type: return1 } = procedure1;
-                let ProcedureType { arguments: args2, return_type: return2 } = procedure2;
+            (MonoType::Function(function1), MonoType::Function(function2)) => {
+                let FunctionType { arguments: args1, return_type: return1 } = function1;
+                let FunctionType { arguments: args2, return_type: return2 } = function2;
 
                 for (arg1, arg2) in args1.into_iter().zip(args2) {
                     if !self.unify(arg1, arg2) {
@@ -1091,15 +1069,6 @@ pub enum TypeCheckError {
         variant_path: Path,
         method_name: InternIdx,
     },
-    ProcedureDoesNotReturn {
-        procedure: Path,
-        expceted: MonoType,
-    },
-    MethodDoesNotReturn {
-        type_path: Path,
-        method: InternIdx,
-        expceted: MonoType,
-    },
     CaseNotExist {
         type_path: Path,
         case_name: InternIdx,
@@ -1113,7 +1082,7 @@ pub enum TypeCheckError {
     NotAPatternOfType {
         expected: MonoType,
     },
-    ExpectedAProcedure {
+    ExpectedAFunction {
         encountered: MonoType,
     },
     ArityMismatch {
@@ -1171,28 +1140,6 @@ impl Reportable for (Located<TypeCheckError>, String) {
                     variant_path.as_string(interner)
                 )
             }
-            TypeCheckError::ProcedureDoesNotReturn {
-                procedure,
-                expceted,
-            } => {
-                format!(
-                    "Procedure `{}` does not always return, expected to return `{}`.",
-                    procedure.as_string(interner),
-                    expceted.display(interner),
-                )
-            }
-            TypeCheckError::MethodDoesNotReturn {
-                type_path,
-                method,
-                expceted,
-            } => {
-                format!(
-                    "Method `{}` of `{}` does not always return, expected to return `{}`.",
-                    interner.get(method),
-                    type_path.as_string(interner),
-                    expceted.display(interner),
-                )
-            }
             TypeCheckError::CaseNotExist {
                 type_path,
                 case_name,
@@ -1220,11 +1167,11 @@ impl Reportable for (Located<TypeCheckError>, String) {
             TypeCheckError::NotAPatternOfType { expected } => {
                 format!("Pattern is not of type `{}`.", expected.display(interner),)
             }
-            TypeCheckError::ExpectedAProcedure { encountered } => {
-                format!("A procedure is expected but encountered `{}`.", encountered.display(interner),)
+            TypeCheckError::ExpectedAFunction { encountered } => {
+                format!("A function is expected but encountered `{}`.", encountered.display(interner),)
             }
             TypeCheckError::ArityMismatch { encountered, expected } => {
-                format!("Procedure is of arity {} but supplied {} arguments.",
+                format!("Function is of arity {} but supplied {} arguments.",
                     expected, encountered
                 )
             }

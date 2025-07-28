@@ -91,9 +91,8 @@ impl<'source, 'interner> Lexer<'source, 'interner> {
         let token = match lexeme.as_str() {
             "module" => Token::ModuleKeyword,
             "import" => Token::ImportKeyword,
-            "proc" => Token::ProcKeyword,
+            "fun" => Token::FunKeyword,
             "variant" => Token::VariantKeyword,
-            "return" => Token::ReturnKeyword,
             "match" => Token::MatchKeyword,
             "interface" => Token::InterfaceKeyword,
             "let" => Token::LetKeyword,

@@ -2,12 +2,11 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     bound::{Bound, Path},
-    declaration::{Constraint, Declaration, ImportDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, ProcedureDeclaration, TypeVar, VariantDeclaration},
-    expression::{ApplicationExpression, Expression, LambdaExpression, LetExpression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, SequenceExpression, TypeApplicationExpression, TypeExpression},
+    declaration::{Constraint, Declaration, ImportDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, FunctionDeclaration, TypeVar, VariantDeclaration},
+    expression::{ApplicationExpression, Expression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, FunctionTypeExpression, ProjectionExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern},
     interner::{InternIdx, Interner},
     location::{Located, SourceLocation},
     reportable::{Reportable, ReportableResult},
-    statement::{MatchStatement, Pattern, ReturnStatement, Statement, VariantCasePattern},
 };
 
 macro_rules! scoped {
@@ -149,7 +148,7 @@ impl Resolver {
             match declaration {
                 Declaration::Module(..) => {}
                 Declaration::Import(..) => {}
-                Declaration::Procedure(precodure) => self.collect_procedure_name(precodure)?,
+                Declaration::Function(precodure) => self.collect_function_name(precodure)?,
                 Declaration::Variant(variant) => self.collect_variant_name(variant)?,
                 Declaration::Interface(interface) => self.collect_interface_name(interface)?,
             }
@@ -158,16 +157,16 @@ impl Resolver {
         Ok(())
     }
 
-    fn collect_procedure_name(&mut self, procedure: &mut ProcedureDeclaration) -> ReportableResult<()> {
-        let ProcedureDeclaration { name, path, .. } = procedure;
+    fn collect_function_name(&mut self, function: &mut FunctionDeclaration) -> ReportableResult<()> {
+        let FunctionDeclaration { name, path, .. } = function;
 
-        let procedure_path = self.current_path().append(*name.data());
-        if !self.value_names.contains(&procedure_path) {
-            self.value_names.insert(procedure_path.clone());
-            *path = procedure_path;
+        let function_path = self.current_path().append(*name.data());
+        if !self.value_names.contains(&function_path) {
+            self.value_names.insert(function_path.clone());
+            *path = function_path;
         } else {
             return self.error(
-                ResolveError::DuplicateProcedureDeclaration(procedure_path),
+                ResolveError::DuplicateFunctionDeclaration(function_path),
                 name.location(),
             );
         }
@@ -283,6 +282,8 @@ impl Resolver {
             Expression::Let(lett) => self.lett(lett),
             Expression::Sequence(sequence) => self.sequence(sequence),
             Expression::Lambda(lambda) => self.lambda(lambda),
+            // Expression::Return(retrn) => self.retrn(retrn),
+            Expression::Match(matc) => self.matc(matc),
         }
     }
 
@@ -367,7 +368,7 @@ impl Resolver {
         let location = type_expression.location();
         match type_expression.data_mut() {
             TypeExpression::Path(path) => self.path_type(path, location),
-            TypeExpression::Procedure(procedure_type) => self.procedure_type(procedure_type),
+            TypeExpression::Function(function_type) => self.function_type(function_type),
             // TODO: Inconsistent naming?
             TypeExpression::Application(type_application) => self.type_application(type_application),
         }
@@ -398,8 +399,8 @@ impl Resolver {
         Ok(())
     }
 
-    fn procedure_type(&mut self, procdeure_type: &mut ProcedureTypeExpression) -> ReportableResult<()> {
-        let ProcedureTypeExpression { arguments, return_type } = procdeure_type;
+    fn function_type(&mut self, function_type: &mut FunctionTypeExpression) -> ReportableResult<()> {
+        let FunctionTypeExpression { arguments, return_type } = function_type;
 
         for argument in arguments {
             self.type_expression(argument)?;
@@ -418,28 +419,14 @@ impl Resolver {
         Ok(())
     }
 
-    fn statement(&mut self, statement: &mut Located<Statement>) -> ReportableResult<()> {
-        match statement.data_mut() {
-            Statement::Expression(expression) => self.expression(expression),
-            Statement::Return(retrn) => self.retrn(retrn),
-            Statement::Match(matc) => self.matc(matc),
-        }
-    }
-
-    fn retrn(&mut self, retrn: &mut ReturnStatement) -> ReportableResult<()> {
-        let ReturnStatement { expression } = retrn;
-
-        self.expression(expression)
-    }
-
-    fn matc(&mut self, matc: &mut MatchStatement) -> ReportableResult<()> {
-        let MatchStatement { expression, branches } = matc;
+    fn matc(&mut self, matc: &mut MatchExpression) -> ReportableResult<()> {
+        let MatchExpression { expression, branches } = matc;
 
         self.expression(expression)?;
         for branch in branches {
             scoped!(self, {
                 self.name_pattern_match(branch.data().pattern().data());
-                self.statement(branch.data_mut().statement_mut())?;
+                self.expression(branch.data_mut().expression_mut())?;
             });
         }
 
@@ -464,7 +451,7 @@ impl Resolver {
         match declaration {
             Declaration::Module(..) => {}
             Declaration::Import(import) => self.import(import)?,
-            Declaration::Procedure(procedure) => self.procedure(procedure)?,
+            Declaration::Function(function) => self.function(function)?,
             Declaration::Variant(variant) => self.variant(variant)?,
             Declaration::Interface(interface) => self.interface(interface)?,
         };
@@ -495,8 +482,8 @@ impl Resolver {
         Ok(())
     }
 
-    fn procedure(&mut self, procedure: &mut ProcedureDeclaration) -> ReportableResult<()> {
-        let ProcedureDeclaration { type_vars, arguments, return_type, body, .. } = procedure;
+    fn function(&mut self, function: &mut FunctionDeclaration) -> ReportableResult<()> {
+        let FunctionDeclaration { type_vars, arguments, return_type, body, .. } = function;
 
         for type_var in type_vars.iter_mut() {
             self.type_var(type_var)?;
@@ -517,9 +504,7 @@ impl Resolver {
             let argument_names = arguments.iter().map(|idx| *idx.data().indentifier().data());
             self.locals.extend(argument_names);
 
-            for statement in body {
-                self.statement(statement)?;
-            }
+            self.expression(body)?;
         });
 
         Ok(())
@@ -542,9 +527,7 @@ impl Resolver {
             let argument_names = arguments.iter().map(|idx| *idx.data().indentifier().data());
             self.locals.extend(argument_names);
 
-            for statement in body {
-                self.statement(statement)?
-            }
+            self.expression(body)?;
         });
 
         Ok(())
@@ -626,7 +609,7 @@ pub enum ResolveError {
     ModuleDoesNotExist(InternIdx),
     CollidingModuleNames(InternIdx),
     DuplicateModuleDeclaration,
-    DuplicateProcedureDeclaration(Path),
+    DuplicateFunctionDeclaration(Path),
     DuplicateTypeDeclaration(Path),
     DuplicateConstructorDeclaration {
         constructor: InternIdx,
@@ -656,9 +639,9 @@ impl Reportable for (Located<ResolveError>, String) {
                 format!("Already imported a module named `{}`.", interner.get(name))
             }
             ResolveError::DuplicateModuleDeclaration => "Duplicate declaration of module.".into(),
-            ResolveError::DuplicateProcedureDeclaration(path) => {
+            ResolveError::DuplicateFunctionDeclaration(path) => {
                 format!(
-                    "Duplicate declaration of procedure `{}`.",
+                    "Duplicate declaration of function `{}`.",
                     path.as_string(interner)
                 )
             }

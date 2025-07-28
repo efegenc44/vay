@@ -14,7 +14,6 @@ mod location;
 mod parser;
 mod reportable;
 mod resolver;
-mod statement;
 mod token;
 mod typ;
 mod interpreter;

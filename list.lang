@@ -6,55 +6,43 @@ variant List(T) {
     Nil
     Cons(T, List(T))
 
-    proc map(this, f: proc(T) : T) : List(T) {
-        match this {
-            Nil         : return List::Nil
-            Cons(x, xs) : return List::Cons(f(x), xs.map(f))
-        }
+    fun map(this, f: fun(T) : T) : List(T) = match this {
+        Nil         : List::Nil
+        Cons(x, xs) : List::Cons(f(x), xs.map(f))
     }
 
-    proc foo(this, y : T) : T {
+    fun foo(this, y : T) : T = (
         List::Nil
 
         match this {
-            Nil         : return y
-            Cons(x, xs) : return x
+            Nil         : y
+            Cons(x, xs) : x
         }
-    }
+    )
 }
 
 variant Cell(C) {
     Cell(C)
 
-    proc get(this) : C {
-        match this {
-            Cell(c) : return c
-        }
+    fun get(this) : C = match this {
+        Cell(c) : c
     }
 }
 
-proc deneme:(T)() : List(T) {
-    return List::Nil
+fun deneme:(T)() : List(T) = List::Nil
+
+fun test(x : List(Foo)) : List(Foo) =
+    List::Cons(Foo::Foo, List::Nil)
+
+fun bar(list : List(Foo)) : Foo = match list {
+    Nil         : Foo::Foo
+    Cons(x, xs) : x
 }
 
-proc test(x : List(Foo)) : List(Foo) {
-    return List::Cons(Foo::Foo, List::Nil)
-}
-
-proc bar(list : List(Foo)) : Foo {
-    match list {
-        Nil         : return Foo::Foo
-        Cons(x, xs) : return x
-    }
-}
-
-proc foo(list : List(Foo)) : Foo {
-    return list.foo(Foo::Foo)
-}
+fun foo(list : List(Foo)) : Foo = list.foo(Foo::Foo)
 
 variant Foo { Foo }
 
-proc main() : List(Nat::Nat) {
-    return List::Cons(Nat::Nat::Succ(Nat::Nat::Zero), List::Nil)
+fun main() : List(Nat::Nat) =
+    List::Cons(Nat::Nat::Succ(Nat::Nat::Zero), List::Nil)
         .map(Nat::inc)
-}

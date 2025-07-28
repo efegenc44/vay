@@ -8,6 +8,7 @@ pub enum Expression {
     Let(LetExpression),
     Sequence(SequenceExpression),
     Lambda(LambdaExpression),
+    Match(MatchExpression)
 }
 
 #[derive(Clone)]
@@ -47,9 +48,50 @@ pub struct LambdaExpression {
 }
 
 #[derive(Clone)]
+pub struct MatchExpression {
+    pub expression: Box<Located<Expression>>,
+    pub branches: Vec<Located<MatchBranch>>,
+}
+
+#[derive(Clone)]
+pub struct MatchBranch {
+    pattern: Located<Pattern>,
+    expression: Located<Expression>,
+}
+
+impl MatchBranch {
+    pub fn new(pattern: Located<Pattern>, expression: Located<Expression>) -> Self {
+        Self { pattern, expression }
+    }
+
+    pub fn pattern(&self) -> &Located<Pattern> {
+        &self.pattern
+    }
+
+    pub fn expression(&self) -> &Located<Expression> {
+        &self.expression
+    }
+
+    pub fn expression_mut(&mut self) -> &mut Located<Expression> {
+        &mut self.expression
+    }
+}
+
+#[derive(Clone)]
+pub enum Pattern {
+    VariantCase(VariantCasePattern)
+}
+
+#[derive(Clone)]
+pub struct VariantCasePattern {
+    pub name: Located<InternIdx>,
+    pub fields: Option<Vec<Located<InternIdx>>>,
+}
+
+#[derive(Clone)]
 pub enum TypeExpression {
     Path(PathTypeExpression),
-    Procedure(ProcedureTypeExpression),
+    Function(FunctionTypeExpression),
     Application(TypeApplicationExpression)
 }
 
@@ -60,7 +102,7 @@ pub struct PathTypeExpression {
 }
 
 #[derive(Clone)]
-pub struct ProcedureTypeExpression {
+pub struct FunctionTypeExpression {
     pub arguments: Vec<Located<TypeExpression>>,
     pub return_type: Box<Located<TypeExpression>>
 }

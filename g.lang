@@ -5,20 +5,16 @@ variant Unit2 { Unit2 }
 
 variant C(t) { A(t) B(t) C }
 
-proc g(x : Unit) : Unit {
-    return Unit::Unit
-}
+fun g(x : Unit) : Unit = Unit::Unit
 
-proc j(x : Unit2) : Unit {
-    return Unit::Unit
-}
+fun j(x : Unit2) : Unit = Unit::Unit
 
-proc main() : Unit {
+fun main() : Unit = (
     match C::C {
-        C    : return Unit::Unit
-        A(x) : return g(x)
-        B(x) : return j(x)
+        C    : Unit::Unit
+        A(x) : g(x)
+        B(x) : j(x)
     }
 
-    return Unit::Unit
-}
+    Unit::Unit
+)

@@ -3,16 +3,15 @@ use std::iter::Peekable;
 use crate::{
     bound::{Bound, Path},
     declaration::{
-        Constraint, Declaration, ImportDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, ProcedureDeclaration, TypeVar, TypedIdentifier, VariantCase, VariantDeclaration
+        Constraint, Declaration, ImportDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, FunctionDeclaration, TypeVar, TypedIdentifier, VariantCase, VariantDeclaration
     },
     expression::{
-        ApplicationExpression, Expression, LambdaExpression, LetExpression, PathExpression, PathTypeExpression, ProcedureTypeExpression, ProjectionExpression, SequenceExpression, TypeApplicationExpression, TypeExpression
+        ApplicationExpression, Expression, LambdaExpression, LetExpression, MatchBranch, MatchExpression, PathExpression, PathTypeExpression, Pattern, FunctionTypeExpression, ProjectionExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
     },
     interner::{InternIdx, Interner},
     lexer::Lexer,
     location::{Located, SourceLocation},
     reportable::{Reportable, ReportableResult},
-    statement::{MatchBranch, MatchStatement, Pattern, ReturnStatement, Statement, VariantCasePattern},
     token::Token,
 };
 
@@ -20,26 +19,19 @@ const PRIMARY_TOKEN_STARTS: &[Token] = &[
     Token::dummy_identifier(),
     Token::LetKeyword,
     Token::LeftParenthesis,
-    Token::ProcKeyword,
+    Token::FunKeyword,
+    Token::MatchKeyword,
 ];
 
 const PRIMARY_TYPE_TOKEN_STARTS: &[Token] = &[
-    Token::ProcKeyword,
+    Token::FunKeyword,
     Token::dummy_identifier()
 ];
 
-const STATEMENT_KEYWORDS: &[Token] = &[
-    Token::MatchKeyword,
-    Token::ReturnKeyword,
-    Token::dummy_identifier(),
-    Token::LetKeyword,
-    Token::LeftParenthesis,
-    Token::ProcKeyword,
-];
 
 const DECLARATION_KEYWORDS: &[Token] = &[
     Token::ModuleKeyword,
-    Token::ProcKeyword,
+    Token::FunKeyword,
     Token::VariantKeyword,
     Token::ImportKeyword,
     Token::InterfaceKeyword,
@@ -216,7 +208,8 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             Token::Identifier(_) => self.path(),
             Token::LetKeyword => self.lett(),
             Token::LeftParenthesis => self.sequence(),
-            Token::ProcKeyword => self.lambda(),
+            Token::FunKeyword => self.lambda(),
+            Token::MatchKeyword => self.matc(),
             _ => unreachable!()
         }
     }
@@ -271,7 +264,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     }
 
     fn lambda(&mut self) -> ReportableResult<Located<Expression>> {
-        let start = self.expect(Token::ProcKeyword)?.location();
+        let start = self.expect(Token::FunKeyword)?.location();
         self.expect(Token::LeftParenthesis)?;
         let (arguments, _) = self.until(
             Token::RightParenthesis,
@@ -286,42 +279,28 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         Ok(Located::new(expression, start.extend(&end)))
     }
 
-    fn statement(&mut self) -> ReportableResult<Located<Statement>> {
-        let token = self.peek_one_of(STATEMENT_KEYWORDS)?;
-        match token.data() {
-            Token::ReturnKeyword => self.return_statement(),
-            Token::MatchKeyword => self.matc(),
-            _ => {
-                let expression = self.expression()?;
-                let location = expression.location();
-                let statement = Statement::Expression(expression);
-                Ok(Located::new(statement, location))
-            }
-        }
-    }
-
-    fn matc(&mut self) -> ReportableResult<Located<Statement>> {
+    fn matc(&mut self) -> ReportableResult<Located<Expression>> {
         let start = self.expect(Token::MatchKeyword)?.location();
-        let expression = self.expression()?;
+        let expression = Box::new(self.expression()?);
 
         self.expect(Token::LeftCurly)?;
         let (branches, end) = self.until(Token::RightCurly, Self::match_branch, None)?;
         let location = start.extend(&end);
-        let matc = MatchStatement {
+        let matc = MatchExpression {
             expression,
             branches
         };
 
-        Ok(Located::new(Statement::Match(matc), location))
+        Ok(Located::new(Expression::Match(matc), location))
     }
 
     fn match_branch(&mut self) -> ReportableResult<Located<MatchBranch>> {
         let pattern = self.pattern()?;
         self.expect(Token::Colon)?;
-        let statement = self.statement()?;
+        let expression = self.expression()?;
 
-        let location = pattern.location().extend(&statement.location());
-        Ok(Located::new(MatchBranch::new(pattern, statement), location))
+        let location = pattern.location().extend(&expression.location());
+        Ok(Located::new(MatchBranch::new(pattern, expression), location))
     }
 
     fn pattern(&mut self) -> ReportableResult<Located<Pattern>> {
@@ -350,21 +329,12 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         Ok(Located::new(Pattern::VariantCase(variant_case), location))
     }
 
-    fn return_statement(&mut self) -> ReportableResult<Located<Statement>> {
-        let token = self.expect(Token::ReturnKeyword)?;
-        let expression = self.expression()?;
-
-        let location = token.location().extend(&expression.location());
-        let retrn = ReturnStatement { expression };
-        Ok(Located::new(Statement::Return(retrn), location))
-    }
-
     fn declaration(&mut self) -> ReportableResult<Declaration> {
         let token = self.peek_one_of(DECLARATION_KEYWORDS)?;
         match token.data() {
             Token::ModuleKeyword => self.modul(),
             Token::ImportKeyword => self.import(),
-            Token::ProcKeyword => self.procedure(),
+            Token::FunKeyword => self.function(),
             Token::VariantKeyword => self.variant(),
             Token::InterfaceKeyword => self.interface(),
             _ => unreachable!()
@@ -414,8 +384,8 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         Ok(Declaration::Import(import))
     }
 
-    fn procedure(&mut self) -> ReportableResult<Declaration> {
-        self.expect(Token::ProcKeyword)?;
+    fn function(&mut self) -> ReportableResult<Declaration> {
+        self.expect(Token::FunKeyword)?;
         let name = self.expect_identifier()?;
 
         let type_vars = if self.peek_is(Token::Colon)? {
@@ -438,10 +408,10 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         )?;
         self.expect(Token::Colon)?;
         let return_type = self.type_expression()?;
-        self.expect(Token::LeftCurly)?;
-        let (body, _) = self.until(Token::RightCurly, Self::statement, None)?;
+        self.expect(Token::Equals)?;
+        let body = self.expression()?;
 
-        let procedure = ProcedureDeclaration {
+        let function = FunctionDeclaration {
             name,
             type_vars,
             arguments,
@@ -450,11 +420,11 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             path: Path::empty(),
         };
 
-        Ok(Declaration::Procedure(procedure))
+        Ok(Declaration::Function(function))
     }
 
     fn method_declaration(&mut self) -> ReportableResult<MethodDeclaration> {
-        self.expect(Token::ProcKeyword)?;
+        self.expect(Token::FunKeyword)?;
 
         let constraints = if self.peek_is(Token::Colon)? {
             self.advance()?;
@@ -484,8 +454,8 @@ impl<'source, 'interner> Parser<'source, 'interner> {
 
         self.expect(Token::Colon)?;
         let return_type = self.type_expression()?;
-        self.expect(Token::LeftCurly)?;
-        let (body, _) = self.until(Token::RightCurly, Self::statement, None)?;
+        self.expect(Token::Equals)?;
+        let body = self.expression()?;
 
         Ok(MethodDeclaration {
             name,
@@ -525,7 +495,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         let mut cases = vec![];
         let mut methods = vec![];
         while self.terminator(Token::RightCurly)?.is_none() {
-            if self.peek_is(Token::ProcKeyword)? {
+            if self.peek_is(Token::FunKeyword)? {
                 methods.push(self.method_declaration()?);
             } else {
                 cases.push(self.variant_case()?)
@@ -544,7 +514,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     }
 
     fn method_signature(&mut self) -> ReportableResult<MethodSignature> {
-        self.expect(Token::ProcKeyword)?;
+        self.expect(Token::FunKeyword)?;
         let name = self.expect_identifier()?;
         self.expect(Token::LeftParenthesis)?;
         let (arguments, _) = self.until(
@@ -603,7 +573,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         let token = self.peek_one_of(PRIMARY_TYPE_TOKEN_STARTS)?;
         match token.data() {
             Token::Identifier(_) => self.type_path(),
-            Token::ProcKeyword => self.type_procedure(),
+            Token::FunKeyword => self.function_type(),
             _ => unreachable!()
         }
     }
@@ -618,8 +588,8 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         ))
     }
 
-    fn type_procedure(&mut self) -> ReportableResult<Located<TypeExpression>> {
-        let start = self.expect(Token::ProcKeyword)?.location();
+    fn function_type(&mut self) -> ReportableResult<Located<TypeExpression>> {
+        let start = self.expect(Token::FunKeyword)?.location();
         self.expect(Token::LeftParenthesis)?;
         let (arguments, _) = self.until(
             Token::RightParenthesis,
@@ -630,11 +600,11 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         let return_type = Box::new(self.type_expression()?);
 
         let location = start.extend(&return_type.location());
-        let procedure_type = ProcedureTypeExpression {
+        let function_type = FunctionTypeExpression {
             arguments,
             return_type,
         };
-        Ok(Located::new(TypeExpression::Procedure(procedure_type), location))
+        Ok(Located::new(TypeExpression::Function(function_type), location))
     }
 
     fn typed_identifier(&mut self) -> ReportableResult<Located<TypedIdentifier>> {

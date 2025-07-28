@@ -5,30 +5,22 @@ import Inter
 variant Unit {
     Unit
 
-    proc add(this, that : Unit) : Unit {
-        return that
-    }
+    fun add(this, that : Unit) : Unit = that
 
-    proc eq(this, that : Unit) : Inter::Bool {
-        return Inter::Bool::True
-    }
+    fun eq(this, that : Unit) : Inter::Bool = Inter::Bool::True
 }
 
 variant Unit2 { Unit2 }
 
-proc f:(T (Inter::Add))(x : T) : T {
-    return x
-}
+fun f:(T (Inter::Add))(x : T) : T = x
 
-proc g:(T (Inter::Eq))(x : T) : T {
-    return x
-}
+fun g:(T (Inter::Eq))(x : T) : T = x
 
-proc main() : Unit {
-    return let id = proc(x) x in (
+fun main() : Unit = (
+    (fun(x) (g(x) f(x) x.add(x)))(Unit::Unit)
+
+    let id = fun(x) x in (
         id(Unit2::Unit2)
         id(Unit::Unit)
     )
-
-    return (proc(x) (g(x) f(x) x.add(x)))(Unit::Unit)
-}
+)

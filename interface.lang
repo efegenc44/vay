@@ -5,38 +5,29 @@ import Inter
 variant Vector2(T) {
     new(T, T)
 
-    proc:(T (Inter::Add)) add(this, that : Vector2(T)) : Vector2(T) {
+    fun:(T (Inter::Add)) add(this, that : Vector2(T)) : Vector2(T) =
         match this { new(x1, y1) :
         match that { new(x2, y2) :
-            return Vector2::new(x1.add(x2), y1.add(y2))
+            Vector2::new(x1.add(x2), y1.add(y2))
         }}
-    }
 }
 
-proc add:( A (Inter::Add) ) (v : A, u : A) : A {
-    return v.add(u)
-}
+fun add:( A (Inter::Add) ) (v : A, u : A) : A = v.add(u)
 
-proc test1(u : Vector2(Inter::Bool) ) : Vector2(Inter::Bool) {
-    return u.add(u)
-}
+fun test1(u : Vector2(Inter::Bool) ) : Vector2(Inter::Bool) = u.add(u)
 
-proc test2:(T (Inter::Eq), F) (x : T, b : F) : Inter::Bool {
-    return x.eq(x)
-}
+fun test2:(T (Inter::Eq), F) (x : T, b : F) : Inter::Bool = x.eq(x)
 
-proc test3:(T (Inter::Add), U (Inter::Eq)) (f : proc(T) : U) : Inter::Bool {
-    return Inter::Bool::True
-}
+fun test3:(T (Inter::Add), U (Inter::Eq)) (f : fun(T) : U) : Inter::Bool = Inter::Bool::True
 
-proc main() : Vector2(Inter::Bool) {
+fun main() : Vector2(Inter::Bool) = (
     test3(Inter::Bool::True.add)
 
-    return test1(Vector2::new(Inter::Bool::True, Inter::Bool::False))
-}
+    test1(Vector2::new(Inter::Bool::True, Inter::Bool::False))
+)
 
 interface Eq1 t {
-    proc eq(that : t) : Vector2(Inter::Bool)
+    fun eq(that : t) : Vector2(Inter::Bool)
 }
 
 variant Unit { Unit }
