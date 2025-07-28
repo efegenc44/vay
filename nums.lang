@@ -1,0 +1,5 @@
+module Numbers
+
+import Numbers (Nat (Nat))
+
+fun zero() : Nat = Nat::Zero

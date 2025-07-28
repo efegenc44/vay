@@ -97,6 +97,7 @@ impl<'source, 'interner> Lexer<'source, 'interner> {
             "interface" => Token::InterfaceKeyword,
             "let" => Token::LetKeyword,
             "in" => Token::InKeyword,
+            "as" => Token::AsKeyword,
             "" => unreachable!(),
             _ => Token::Identifier(self.interner.intern(lexeme)),
         };

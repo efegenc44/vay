@@ -3,10 +3,10 @@ use std::iter::Peekable;
 use crate::{
     bound::{Bound, Path},
     declaration::{
-        Constraint, Declaration, ImportDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, FunctionDeclaration, TypeVar, TypedIdentifier, VariantCase, VariantDeclaration
+        Constraint, Declaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, TypeVar, TypedIdentifier, VariantCase, VariantDeclaration
     },
     expression::{
-        ApplicationExpression, Expression, LambdaExpression, LetExpression, MatchBranch, MatchExpression, PathExpression, PathTypeExpression, Pattern, FunctionTypeExpression, ProjectionExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
+        ApplicationExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchBranch, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
     },
     interner::{InternIdx, Interner},
     lexer::Lexer,
@@ -102,8 +102,8 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         }
     }
 
-    fn peek_is(&mut self, expected: Token) -> ReportableResult<bool> {
-        Ok(self.peek_one_of(&[expected]).is_ok())
+    fn peek_is(&mut self, expected: Token) -> bool {
+        self.peek_one_of(&[expected]).is_ok()
     }
 
     fn expect_one_of(&mut self, expected_ones: &[Token]) -> ReportableResult<Located<Token>> {
@@ -170,7 +170,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     fn application(&mut self) -> ReportableResult<Located<Expression>> {
         let mut expression = self.primary()?;
         loop {
-            if self.peek_is(Token::LeftParenthesis)? {
+            if self.peek_is(Token::LeftParenthesis) {
                 self.advance()?;
                 let (arguments, end) = self.until(
                     Token::RightParenthesis,
@@ -184,7 +184,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
                     arguments,
                 };
                 expression = Located::new(Expression::Application(application), location);
-            } else if self.peek_is(Token::Dot)? {
+            } else if self.peek_is(Token::Dot) {
                 self.advance()?;
                 let name = self.expect_identifier()?;
 
@@ -218,7 +218,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         let identifier = self.expect_identifier()?;
         let mut parts = vec![*identifier.data()];
         let mut end = identifier.location();
-        while self.peek_is(Token::DoubleColon)? {
+        while self.peek_is(Token::DoubleColon) {
             self.advance()?;
             let identifier = self.expect_identifier()?;
             parts.push(*identifier.data());
@@ -313,7 +313,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
 
     fn varint_case_pattern(&mut self) -> ReportableResult<Located<Pattern>> {
         let name = self.expect_identifier()?;
-        let (fields, location) = if self.peek_is(Token::LeftParenthesis)? {
+        let (fields, location) = if self.peek_is(Token::LeftParenthesis) {
             self.advance()?;
             let (fields, end) = self.until(
                 Token::RightParenthesis,
@@ -351,7 +351,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
 
     fn type_var(&mut self) -> ReportableResult<Located<TypeVar>> {
         let name = self.expect_identifier()?;
-        let (interfaces, end) = if self.peek_is(Token::LeftParenthesis)? {
+        let (interfaces, end) = if self.peek_is(Token::LeftParenthesis) {
             self.advance()?;
             self.until(
                 Token::RightParenthesis,
@@ -370,25 +370,49 @@ impl<'source, 'interner> Parser<'source, 'interner> {
 
     fn modul(&mut self) -> ReportableResult<Declaration> {
         self.expect(Token::ModuleKeyword)?;
-        let name = self.expect_identifier()?;
+        let parts = self.path_parts()?;
 
-        let module = ModuleDeclaration { name };
+        let module = ModuleDeclaration { parts };
         Ok(Declaration::Module(module))
     }
 
     fn import(&mut self) -> ReportableResult<Declaration> {
         self.expect(Token::ImportKeyword)?;
-        let name = self.expect_identifier()?;
+        let name = self.import_name()?;
 
         let import = ImportDeclaration { name };
         Ok(Declaration::Import(import))
+    }
+
+    fn import_name(&mut self) -> ReportableResult<ImportName> {
+        let name = self.expect_identifier()?;
+        let as_name = if self.peek_is(Token::AsKeyword) {
+            self.advance()?;
+            Some(self.expect_identifier()?)
+        } else {
+            None
+        };
+        let subnames = if self.peek_is(Token::LeftParenthesis) {
+            self.advance()?;
+            let (subnames, _) = self.until(
+                Token::RightParenthesis,
+                Self::import_name,
+                Some(Token::Comma)
+            )?;
+
+            Some(subnames)
+        } else {
+            None
+        };
+
+        Ok(ImportName { name, subnames, as_name })
     }
 
     fn function(&mut self) -> ReportableResult<Declaration> {
         self.expect(Token::FunKeyword)?;
         let name = self.expect_identifier()?;
 
-        let type_vars = if self.peek_is(Token::Colon)? {
+        let type_vars = if self.peek_is(Token::Colon) {
             self.advance()?;
             self.expect(Token::LeftParenthesis)?;
             self.until(
@@ -426,7 +450,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     fn method_declaration(&mut self) -> ReportableResult<MethodDeclaration> {
         self.expect(Token::FunKeyword)?;
 
-        let constraints = if self.peek_is(Token::Colon)? {
+        let constraints = if self.peek_is(Token::Colon) {
             self.advance()?;
             self.expect(Token::LeftParenthesis)?;
             self.until(
@@ -481,7 +505,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     fn variant(&mut self) -> ReportableResult<Declaration> {
         self.expect(Token::VariantKeyword)?;
         let name = self.expect_identifier()?;
-        let type_vars = if self.peek_is(Token::LeftParenthesis)? {
+        let type_vars = if self.peek_is(Token::LeftParenthesis) {
             self.advance()?;
             self.until(
                 Token::RightParenthesis,
@@ -495,7 +519,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         let mut cases = vec![];
         let mut methods = vec![];
         while self.terminator(Token::RightCurly)?.is_none() {
-            if self.peek_is(Token::FunKeyword)? {
+            if self.peek_is(Token::FunKeyword) {
                 methods.push(self.method_declaration()?);
             } else {
                 cases.push(self.variant_case()?)
@@ -547,7 +571,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     fn type_application(&mut self) -> ReportableResult<Located<TypeExpression>> {
         let mut expression = self.type_expression_primary()?;
         loop {
-            if self.peek_is(Token::LeftParenthesis)? {
+            if self.peek_is(Token::LeftParenthesis) {
                 self.advance()?;
                 let (arguments, end) = self.until(
                     Token::RightParenthesis,
@@ -619,7 +643,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
 
     fn variant_case(&mut self) -> ReportableResult<Located<VariantCase>> {
         let identifier = self.expect_identifier()?;
-        let (arguments, location) = if self.peek_is(Token::LeftParenthesis)? {
+        let (arguments, location) = if self.peek_is(Token::LeftParenthesis) {
             self.advance()?;
             let (arguments, end) = self.until(
                 Token::RightParenthesis,

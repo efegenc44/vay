@@ -34,7 +34,7 @@ impl Interpreter {
 
         let mut main_module = None;
         for module in modules {
-            if interner.get(&module.name()) == "Main" {
+            if module.path().as_string(interner) == "Main" {
                 main_module = Some(module);
                 break;
             }

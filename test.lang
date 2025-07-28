@@ -1,15 +1,15 @@
 module Main
 
-import Nat
+import Numbers (Nat as NatModule (Nat (Succ as inc, Zero)))
 
-fun main() : Nat::Nat = id(foo(
-    Nat::Nat::Succ(Nat::Nat::Succ(Nat::Nat::Zero)),
-    Nat::Nat::Succ(Nat::Nat::Zero)
+fun main() : NatModule::Nat = id(foo(
+    inc(inc(Zero)),
+    inc(Zero)
 ))
 
 fun id:(T)(x : T) : T = x
 
-fun foo(x : Nat::Nat, y : Nat::Nat) : Nat::Nat =
+fun foo(x : Nat, y : Nat) : Numbers::Nat::Nat =
     x
         .add(y)
-        .mul(Nat::Nat::Succ(Nat::Nat::Succ(Nat::Nat::Succ(Nat::Nat::Zero))))
+        .mul(inc(inc(inc(Zero))))

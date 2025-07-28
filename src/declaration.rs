@@ -16,11 +16,17 @@ pub struct TypeVar {
 }
 
 pub struct ModuleDeclaration {
-    pub name: Located<InternIdx>,
+    pub parts: Located<Vec<InternIdx>>,
 }
 
 pub struct ImportDeclaration {
+    pub name: ImportName,
+}
+
+pub struct ImportName {
     pub name: Located<InternIdx>,
+    pub subnames: Option<Vec<ImportName>>,
+    pub as_name: Option<Located<InternIdx>>
 }
 
 pub struct FunctionDeclaration {
@@ -137,7 +143,7 @@ impl TypedIdentifier {
 pub struct Module {
     declarations: Vec<Declaration>,
     source: String,
-    name: InternIdx
+    path: Path
 }
 
 impl Module {
@@ -145,7 +151,7 @@ impl Module {
         Self {
             declarations,
             source,
-            name: InternIdx::dummy_idx()
+            path: Path::empty()
         }
     }
 
@@ -161,11 +167,11 @@ impl Module {
         &self.source
     }
 
-    pub fn name(&self) -> InternIdx {
-        self.name
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 
-    pub fn name_mut(&mut self) -> &mut InternIdx {
-        &mut self.name
+    pub fn path_mut(&mut self) -> &mut Path {
+        &mut self.path
     }
 }

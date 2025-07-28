@@ -1,24 +1,24 @@
 module Main
 
-import Inter
+import Inter (Add, Eq)
 
 variant Vector2(T) {
     new(T, T)
 
-    fun:(T (Inter::Add)) add(this, that : Vector2(T)) : Vector2(T) =
+    fun:(T (Add)) add(this, that : Vector2(T)) : Vector2(T) =
         match this { new(x1, y1) :
         match that { new(x2, y2) :
             Vector2::new(x1.add(x2), y1.add(y2))
         }}
 }
 
-fun add:( A (Inter::Add) ) (v : A, u : A) : A = v.add(u)
+fun add:( A (Add) ) (v : A, u : A) : A = v.add(u)
 
 fun test1(u : Vector2(Inter::Bool) ) : Vector2(Inter::Bool) = u.add(u)
 
-fun test2:(T (Inter::Eq), F) (x : T, b : F) : Inter::Bool = x.eq(x)
+fun test2:(T (Eq), F) (x : T, b : F) : Inter::Bool = x.eq(x)
 
-fun test3:(T (Inter::Add), U (Inter::Eq)) (f : fun(T) : U) : Inter::Bool = Inter::Bool::True
+fun test3:(T (Add), U (Eq)) (f : fun(T) : U) : Inter::Bool = Inter::Bool::True
 
 fun main() : Vector2(Inter::Bool) = (
     test3(Inter::Bool::True.add)

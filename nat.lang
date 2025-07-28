@@ -1,4 +1,6 @@
-module Nat
+module Numbers::Nat
+
+import Numbers
 
 variant Nat {
     Zero
@@ -15,4 +17,7 @@ variant Nat {
     }
 }
 
-fun inc(n : Nat) : Nat = Nat::Succ(n)
+fun inc(n : Nat) : Nat = (
+    Numbers::zero
+    Nat::Succ(n)
+)

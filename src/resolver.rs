@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     bound::{Bound, Path},
-    declaration::{Constraint, Declaration, ImportDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, FunctionDeclaration, TypeVar, VariantDeclaration},
-    expression::{ApplicationExpression, Expression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, FunctionTypeExpression, ProjectionExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern},
+    declaration::{Constraint, Declaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, TypeVar, VariantDeclaration},
+    expression::{ApplicationExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern},
     interner::{InternIdx, Interner},
     location::{Located, SourceLocation},
     reportable::{Reportable, ReportableResult},
@@ -20,21 +20,21 @@ macro_rules! scoped {
 }
 
 struct ModuleInformation {
-    imports: HashSet<InternIdx>,
-    path: Path,
+    imports: HashMap<InternIdx, (Path, SourceLocation)>,
+    path_location: SourceLocation,
 }
 
 impl ModuleInformation {
-    fn empty() -> Self {
+    fn with_path_location(path_location: SourceLocation) -> Self {
         Self {
-            imports: HashSet::new(),
-            path: Path::empty(),
+            imports: HashMap::new(),
+            path_location,
         }
     }
 }
 
 pub struct Resolver {
-    modules: HashMap<InternIdx, ModuleInformation>,
+    modules: HashMap<Path, ModuleInformation>,
 
     // TODO: Seperete interface and type names
     type_names: HashSet<Path>,
@@ -43,7 +43,7 @@ pub struct Resolver {
     // TODO: Seperate type and value locals
     locals: Vec<InternIdx>,
 
-    current_module_name: InternIdx,
+    current_module_path: Path,
     current_source: String,
 }
 
@@ -57,21 +57,21 @@ impl Resolver {
 
             locals: vec![],
 
-            current_module_name: InternIdx::dummy_idx(),
+            current_module_path: Path::empty(),
             current_source: String::new(),
         }
     }
 
-    fn current_imports(&self) -> &HashSet<InternIdx> {
-        &self.modules[&self.current_module_name].imports
+    fn current_imports(&self) -> &HashMap<InternIdx, (Path, SourceLocation)> {
+        &self.modules[&self.current_module_path].imports
     }
 
     fn current_path(&self) -> &Path {
-        &self.modules[&self.current_module_name].path
+        &self.current_module_path
     }
 
     fn current_path_mut(&mut self) -> &mut Path {
-        &mut self.modules.get_mut(&self.current_module_name).unwrap().path
+        &mut self.current_module_path
     }
 
     pub fn resolve(&mut self, mut modules: Vec<Module>) -> ReportableResult<Vec<Module>> {
@@ -82,13 +82,18 @@ impl Resolver {
 
         for module in &mut modules {
             self.current_source = module.source().to_string();
-            self.current_module_name = module.name();
+            self.module_path(module)?;
+        }
+
+        for module in &mut modules {
+            self.current_source = module.source().to_string();
+            self.current_module_path = module.path().clone();
             self.collect_names(module)?;
         }
 
         for module in &mut modules {
             self.current_source = module.source().to_string();
-            self.current_module_name = module.name();
+            self.current_module_path = module.path().clone();
             self.module(module)?;
         }
 
@@ -96,6 +101,8 @@ impl Resolver {
     }
 
     fn module(&mut self, module: &mut Module) -> ReportableResult<()> {
+        self.import_names()?;
+
         for declaration in module.declarations_mut() {
             self.declaration(declaration)?;
         }
@@ -104,43 +111,64 @@ impl Resolver {
     }
 
     fn collect_module(&mut self, module: &mut Module) -> ReportableResult<()> {
-        let mut module_name = None;
+        let mut module_path = None;
         let mut declared = false;
         for declaration in module.declarations() {
             if let Declaration::Module(module) = declaration {
-                let ModuleDeclaration { name } = module;
+                let ModuleDeclaration { parts } = module;
 
                 if !declared {
                     declared = true;
-                    module_name = Some(*name.data());
-                    if self.modules.insert(*name.data(), ModuleInformation::empty()).is_some() {
+                    let path = Path::empty().append_parts(parts.data());
+                    module_path = Some(path.clone());
+                    if self.modules.insert(path.clone(), ModuleInformation::with_path_location(parts.location())).is_some() {
                         // Without this error, behaviour is extending the existing module
                         //   maybe that's an interesting idea!
-                        return self.error(ResolveError::CollidingModuleNames(*name.data()), name.location())
+                        return self.error(ResolveError::CollidingModulePaths(path), parts.location())
                     }
                 } else {
-                    return self.error(ResolveError::DuplicateModuleDeclaration, name.location());
+                    return self.error(ResolveError::DuplicateModuleDeclaration, parts.location());
                 }
             }
         }
 
-        let Some(module_name) = module_name else {
+        let Some(module_name) = module_path else {
             return self.error(ResolveError::ModuleIsNotDeclared, SourceLocation::dummy());
         };
-        *module.name_mut() = module_name;
+        *module.path_mut() = module_name.clone();
 
         let module_information = self.modules.get_mut(&module_name).unwrap();
         for declaration in module.declarations() {
             if let Declaration::Import(import) = declaration {
                 let ImportDeclaration { name } = import;
 
-                module_information.imports.insert(*name.data());
+                Self::module_imports(name, module_information);
             }
         }
 
-        module_information.path.push(module_name);
-
         Ok(())
+    }
+
+    fn module_imports(import_name: &ImportName, module_information: &mut ModuleInformation) {
+        fn f(import_name: &ImportName, path: Path, module_information: &mut ModuleInformation) {
+            let import_path = path.append(*import_name.name.data());
+            let name = if let Some(as_name) = import_name.as_name {
+                as_name
+            } else {
+                import_name.name
+            };
+            module_information.imports.insert(
+                *name.data(),
+                (import_path.clone(), name.location())
+            );
+            if let Some(subnames) = &import_name.subnames {
+                for import_name in subnames {
+                    f(&import_name, import_path.clone(), module_information);
+                }
+            }
+        }
+
+        f(import_name, Path::empty(), module_information);
     }
 
     fn collect_names(&mut self, module: &mut Module) -> ReportableResult<()> {
@@ -233,8 +261,8 @@ impl Resolver {
             }
         }
 
-        if self.current_imports().contains(intern_idx) {
-            Some(Bound::Absolute(Path::empty().append(*intern_idx)))
+        if let Some((path, _)) = self.current_imports().get(intern_idx).cloned() {
+            Some(Bound::Absolute(path))
         } else {
             None
         }
@@ -248,16 +276,16 @@ impl Resolver {
             }
         }
 
-        if self.current_imports().contains(intern_idx) {
-            Some(Bound::Absolute(Path::empty().append(*intern_idx)))
+        if let Some((path, _)) = self.current_imports().get(intern_idx).cloned() {
+            Some(Bound::Absolute(path))
         } else {
             None
         }
     }
 
     fn find_interface_path(&self, parts: &[InternIdx], location: SourceLocation) -> ReportableResult<Path> {
-        let base = if self.current_imports().contains(&parts[0]) {
-            Path::empty().append(parts[0])
+        let base = if let Some((path, _)) = self.current_imports().get(&parts[0]).cloned() {
+            path
         } else {
             self.current_path().append(parts[0])
         };
@@ -450,7 +478,7 @@ impl Resolver {
         // TODO: maybe take Located<Declaration> for better error reporting
         match declaration {
             Declaration::Module(..) => {}
-            Declaration::Import(import) => self.import(import)?,
+            Declaration::Import(..) => {},
             Declaration::Function(function) => self.function(function)?,
             Declaration::Variant(variant) => self.variant(variant)?,
             Declaration::Interface(interface) => self.interface(interface)?,
@@ -469,13 +497,31 @@ impl Resolver {
         Ok(())
     }
 
-    fn import(&self, import: &ImportDeclaration) -> ReportableResult<()> {
-        let ImportDeclaration { name } = import;
+    // TODO: Better error reporting
+    fn import_names(&mut self) -> ReportableResult<()> {
+        for (path, location) in self.current_imports().values() {
+            if !(self.value_names.contains(path) ||
+                 self.type_names.contains(path)  ||
+                 self.modules.contains_key(path)) {
+                return self.error(
+                    ResolveError::ImportPathDoesNotExist(path.clone()),
+                    *location
+                )
+            }
+        }
 
-        if !self.modules.contains_key(name.data()) {
+        Ok(())
+    }
+
+    fn module_path(&mut self, module: &Module) -> ReportableResult<()> {
+        let mut path = module.path().clone();
+        let module_information = &self.modules[&path];
+        path.pop();
+
+        if path != Path::empty() && !self.modules.contains_key(&path) {
             return self.error(
-                ResolveError::ModuleDoesNotExist(*name.data()),
-                name.location(),
+                ResolveError::ModuleDoesNotExist(path),
+                module_information.path_location
             );
         }
 
@@ -606,8 +652,9 @@ impl Resolver {
 
 pub enum ResolveError {
     ModuleIsNotDeclared,
-    ModuleDoesNotExist(InternIdx),
-    CollidingModuleNames(InternIdx),
+    ImportPathDoesNotExist(Path),
+    ModuleDoesNotExist(Path),
+    CollidingModulePaths(Path),
     DuplicateModuleDeclaration,
     DuplicateFunctionDeclaration(Path),
     DuplicateTypeDeclaration(Path),
@@ -632,11 +679,14 @@ impl Reportable for (Located<ResolveError>, String) {
     fn description(&self, interner: &Interner) -> String {
         match self.0.data() {
             ResolveError::ModuleIsNotDeclared => "No module declarations found.".into(),
-            ResolveError::ModuleDoesNotExist(name) => {
-                format!("Imported module `{}` does not exist.", interner.get(name))
+            ResolveError::ImportPathDoesNotExist(path) => {
+                format!("Imported path `{}` does not exist.", path.as_string(interner))
             }
-            ResolveError::CollidingModuleNames(name) => {
-                format!("Already imported a module named `{}`.", interner.get(name))
+            ResolveError::ModuleDoesNotExist(path) => {
+                format!("Module `{}` does not exist.", path.as_string(interner))
+            }
+            ResolveError::CollidingModulePaths(path) => {
+                format!("Already imported a module `{}`.", path.as_string(interner))
             }
             ResolveError::DuplicateModuleDeclaration => "Duplicate declaration of module.".into(),
             ResolveError::DuplicateFunctionDeclaration(path) => {

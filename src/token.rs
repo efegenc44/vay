@@ -23,6 +23,7 @@ pub enum Token {
     InterfaceKeyword,
     LetKeyword,
     InKeyword,
+    AsKeyword,
 }
 
 impl Token {
@@ -53,6 +54,7 @@ impl Token {
             Token::InterfaceKeyword => "keyword `interface`",
             Token::LetKeyword => "keyword `let`",
             Token::InKeyword => "keyword `in`",
+            Token::AsKeyword => "keyword `as`",
         }
     }
 }
