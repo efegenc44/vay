@@ -54,7 +54,7 @@ pub struct Checker {
 
     current_source: String,
 
-    latest_unification: HashMap<usize, MonoType>
+    unification_table: HashMap<usize, MonoType>
 }
 
 impl Checker {
@@ -68,7 +68,7 @@ impl Checker {
             // NOTE: 0 is reserved for interfaces' self reference type constant
             type_var_counter: 1,
             current_source: String::new(),
-            latest_unification: HashMap::new(),
+            unification_table: HashMap::new(),
         }
     }
 
@@ -592,7 +592,7 @@ impl Checker {
                 }
 
                 self.statement(branch.data().statement())?;
-                m = m.substitute(&self.latest_unification);
+                m = m.substitute(&self.unification_table);
             })
         }
 
@@ -657,8 +657,7 @@ impl Checker {
     fn check(&mut self, expression: &Located<Expression>, expected: MonoType) -> ReportableResult<()> {
         let encountered = self.infer(expression)?;
 
-        let mut map = HashMap::new();
-        if !self.unify(encountered.clone(), expected.clone(), &mut map) {
+        if !self.unify(encountered.clone(), expected.clone()) {
             return self.error(
                 TypeCheckError::MismatchedTypes {
                     encountered,
@@ -668,8 +667,8 @@ impl Checker {
             );
         };
 
-        let encountered = encountered.substitute(&map);
-        let expected = expected.substitute(&map);
+        let encountered = encountered.substitute(&self.unification_table);
+        let expected = expected.substitute(&self.unification_table);
 
         if encountered != expected {
             return self.error(
@@ -814,7 +813,7 @@ impl Checker {
             );
         };
 
-        let ProcedureType { arguments: expected_types, mut return_type } = procedure;
+        let ProcedureType { arguments: expected_types, return_type } = procedure;
 
         if arguments.len() != expected_types.len() {
             return self.error(
@@ -831,31 +830,19 @@ impl Checker {
             argument_types.push((self.infer(argument)?, argument.location()));
         }
 
-        let mut map = HashMap::new();
         for ((argument, location), expected) in argument_types.iter().zip(expected_types) {
-            if !self.unify(argument.clone(), expected.clone(), &mut map) {
+            if !self.unify(argument.clone(), expected.clone()) {
                 return self.error(
                     TypeCheckError::MismatchedTypes {
-                        encountered: argument.clone().substitute(&map),
-                        expected: expected.substitute(&map)
+                        encountered: argument.clone().substitute(&self.unification_table),
+                        expected: expected.substitute(&self.unification_table)
                     },
                     *location
                 );
             };
         }
 
-        // TODO: Not the best solution I think
-        if let MonoType::Var(variable) = return_type.as_mut() {
-            for value in map.values() {
-                if let MonoType::Var(v) = value {
-                    if v.idx == variable.idx {
-                        variable.interfaces.extend(v.interfaces.clone());
-                    }
-                }
-            }
-        }
-
-        Ok(return_type.substitute(&map))
+        Ok(return_type.substitute(&self.unification_table))
     }
 
     fn projection(&mut self, projection: &ProjectionExpression) -> ReportableResult<MonoType> {
@@ -980,16 +967,19 @@ impl Checker {
 
         let arguments = variables
             .into_iter()
-            .map(|variable| variable.substitute(&self.latest_unification))
+            .map(|variable| variable.substitute(&self.unification_table))
             .collect::<Vec<_>>();
 
-        let return_type = Box::new(return_type.substitute(&self.latest_unification));
+        let return_type = Box::new(return_type.substitute(&self.unification_table));
 
         let procedure_type = ProcedureType { arguments, return_type };
         Ok(MonoType::Procedure(procedure_type))
     }
 
-    fn unify(&mut self, a: MonoType, b: MonoType, map: &mut HashMap<usize, MonoType>) -> bool {
+    // TODO: unify should return Result for better error reporting
+    // TODO: How inference is done is much like Algorithm W,
+    //   at some point Algorithm J like inference would be better
+    fn unify(&mut self, a: MonoType, b: MonoType) -> bool {
         let result = match (a, b) {
             (MonoType::Variant(path1, args1), MonoType::Variant(path2, args2)) => {
                 if path1 != path2 {
@@ -997,7 +987,7 @@ impl Checker {
                 }
 
                 for (arg1, arg2) in args1.into_iter().zip(args2) {
-                    if !self.unify(arg1, arg2, map) {
+                    if !self.unify(arg1, arg2) {
                         return false;
                     }
                 }
@@ -1009,95 +999,54 @@ impl Checker {
                 let ProcedureType { arguments: args2, return_type: return2 } = procedure2;
 
                 for (arg1, arg2) in args1.into_iter().zip(args2) {
-                    if !self.unify(arg1, arg2, map) {
+                    if !self.unify(arg1, arg2) {
                         return false;
                     }
                 }
 
-                self.unify(*return1, *return2, map)
+                self.unify(*return1, *return2)
             },
             (MonoType::Constant(constant1), MonoType::Constant(constant2)) => constant1 == constant2,
             (MonoType::Var(var1), MonoType::Var(var2)) => {
-                let TypeVar { idx: idx1, interfaces: interfaces1 } = var1;
-                let TypeVar { idx: idx2, interfaces: interfaces2 } = var2.clone();
+                let TypeVar { idx: idx1, interfaces: interfaces1 } = &var1;
+                let TypeVar { idx: idx2, interfaces: interfaces2 } = &var2;
 
-                let mut interfaces = interfaces1.clone();
-                // TODO: check colisions here
-                interfaces.extend(interfaces2);
-                if map.contains_key(&idx1) {
-                    let mut m1 = map[&idx1].clone();
-                    while let MonoType::Var(var) = &m1  {
-                        // TODO: check colisions here
-                        interfaces.extend(var.interfaces.clone());
-                        if map.contains_key(&var.idx) {
-                            m1 = map[&var.idx].clone()
-                        } else {
-                            break;
-                        }
-                    }
+                match (self.unification_table.get(idx1).cloned(), self.unification_table.get(idx2).cloned()) {
+                    (None, Some(m)) => self.unify(MonoType::Var(var1), m),
+                    (Some(m), None) => self.unify(m, MonoType::Var(var2)),
+                    (Some(m1), Some(m2)) => self.unify(m1, m2),
+                    (None, None) => {
+                        let mut newvar = self.newvar();
+                        newvar.interfaces = interfaces1
+                            .union(interfaces2)
+                            .cloned()
+                            .collect();
 
-                    if let Some(mut m2) = map.get(&idx2).cloned() {
-                        while let MonoType::Var(var) = &m2 {
-                            // TODO: check colisions here
-                            interfaces.extend(var.interfaces.clone());
-                            if map.contains_key(&var.idx) {
-                                m2 = map[&var.idx].clone()
-                            } else {
-                                break
-                            }
-                        }
+                        self.unification_table.insert(*idx1, MonoType::Var(newvar.clone()));
+                        self.unification_table.insert(*idx2, MonoType::Var(newvar));
 
-                        if m2 != m1 {
-                            return false;
-                        }
-                    }
-
-                    if !self.does_satisfy_constraint(&m1, &interfaces) {
-                        return false;
-                    }
-
-                    if &m1 != &MonoType::Var(var2) {
-                        map.insert(idx2, m1);
-                    }
-                } else {
-                    if idx1 != idx2 {
-                        map.insert(idx1, MonoType::Var(TypeVar { idx: idx2, interfaces }));
-                    }
+                        true
+                    },
                 }
-
-                true
             },
             (t, MonoType::Var(var)) | (MonoType::Var(var), t) => {
-                let TypeVar { idx, mut interfaces } = var.clone();
+                let TypeVar { idx, interfaces } = var;
 
-                if !t.occurs(idx) {
-                    if let Some(mut m) = map.get(&idx).cloned() {
-                        while let MonoType::Var(var) = &m {
-                            // TODO: check confilicts here
-                            interfaces.extend(var.interfaces.clone());
-                            if map.contains_key(&var.idx) {
-                                m = map[&var.idx].clone()
-                            } else {
-                                break
-                            }
-                        }
+                if t.occurs(idx) {
+                    return false;
+                }
 
-                        if m != t {
+                match self.unification_table.get(&idx).cloned() {
+                    Some(m) => self.unify(m, t),
+                    None => {
+                        if !self.does_satisfy_constraint(&t, &interfaces) {
                             return false;
                         }
+                        // NOTE: Here t cannot be a MonoType::Var
+                        //   so they cannot be equal
+                        self.unification_table.insert(idx, t);
+                        true
                     }
-
-                    if !self.does_satisfy_constraint(&t, &interfaces) {
-                        return false;
-                    }
-
-                    // NOTE: Here t cannot be a MonoType::Var
-                    //   so they cannot be equal
-                    map.insert(idx, t);
-
-                    true
-                } else {
-                    false
                 }
             },
             _ => false
@@ -1106,12 +1055,10 @@ impl Checker {
         if result {
             for local in self.locals.iter_mut() {
                 if let Type::Mono(m) = local.clone() {
-                    *local = Type::Mono(m.substitute(map));
+                    *local = Type::Mono(m.substitute(&self.unification_table));
                 }
             }
         }
-
-        self.latest_unification.extend(map.clone());
 
         result
     }
