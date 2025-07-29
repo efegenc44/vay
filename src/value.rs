@@ -7,6 +7,7 @@ pub enum Value {
     Function(Rc<FunctionInstance>),
     Method(Rc<MethodInstance>),
     Lambda(Rc<LambdaInstance>),
+    InterfaceFunction(InternIdx),
     Constructor(Rc<ConstructorInstance>),
     Instance(Rc<InstanceInstance>),
 }
@@ -16,8 +17,9 @@ impl Value {
         match self {
             Value::Function(..) => "<function>".into(),
             Value::Method(..) => "<function>".into(),
-            Value::Constructor(..) => "<function>".into(),
             Value::Lambda(..) => "<function>".into(),
+            Value::InterfaceFunction(..) => "<function>".into(),
+            Value::Constructor(..) => "<function>".into(),
             Value::Instance(instance) => {
                 let InstanceInstance { constructor, values, .. } = instance.as_ref();
                 let ConstructorInstance { case, .. } = constructor.as_ref();

@@ -1,6 +1,7 @@
 module Main
 
 import Numbers (Nat as NatModule (Nat (Succ as inc, Zero)))
+import Inter (Add)
 
 fun main() : NatModule::Nat = id(foo(
     inc(inc(Zero)),
@@ -10,6 +11,5 @@ fun main() : NatModule::Nat = id(foo(
 fun id:(T)(x : T) : T = x
 
 fun foo(x : Nat, y : Nat) : Numbers::Nat::Nat =
-    x
-        .add(y)
+    Add::add(x, y)
         .mul(inc(inc(inc(Zero))))

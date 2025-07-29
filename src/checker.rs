@@ -510,14 +510,22 @@ impl Checker {
     fn collect_interface_name(&mut self, interface: &InterfaceDeclaration) -> ReportableResult<()> {
         let InterfaceDeclaration { methods, path, .. } = interface;
 
+        let instance_type_var = TypeVar {
+            idx: INTERFACE_CONSTANT_IDX,
+            interfaces: HashSet::from([path.clone()])
+        };
+
+        let vars = vec![instance_type_var.clone()];
+
         scoped!(self, {
-            self.locals.push(Type::Mono(MonoType::Constant(TypeVar {
-                idx: INTERFACE_CONSTANT_IDX,
-                interfaces: HashSet::new()
-            })));
+            self.locals.extend(vars
+                .iter().cloned()
+                .map(MonoType::Constant)
+                .map(Type::Mono)
+            );
 
             for method in methods {
-                let MethodSignature { name, arguments, return_type } = method;
+                let MethodSignature { name, arguments, return_type, .. } = method;
 
                 let arguments = arguments
                     .iter().map(|argument| self.eval_to_mono(argument.data().type_expression()))
@@ -531,6 +539,32 @@ impl Checker {
                     .methods.insert(*name.data(), method_type);
             }
         });
+
+        scoped!(self, {
+            self.locals.extend(vars
+                .iter().cloned()
+                .map(MonoType::Var)
+                .map(Type::Mono)
+            );
+
+            for method in methods {
+                let MethodSignature { arguments, return_type, path, .. } = method;
+
+                let mut arguments_with_instance = vec![MonoType::Var(instance_type_var.clone())];
+
+                for argument in arguments {
+                    arguments_with_instance.push(self.eval_to_mono(argument.data().type_expression())?);
+                }
+
+                let return_type = Box::new(self.eval_to_mono(return_type)?);
+
+                let standalone_function = FunctionType { arguments: arguments_with_instance, return_type };
+                let function_type = Type::Forall(vars.clone(), MonoType::Function(standalone_function));
+
+                self.names.insert(path.clone(), function_type);
+            }
+        });
+
 
         Ok(())
     }

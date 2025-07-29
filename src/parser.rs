@@ -549,7 +549,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         self.expect(Token::Colon)?;
         let return_type = self.type_expression()?;
 
-        Ok(MethodSignature { name, arguments, return_type })
+        Ok(MethodSignature { name, arguments, return_type, path: Path::empty() })
     }
 
     fn interface(&mut self) -> ReportableResult<Declaration> {

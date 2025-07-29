@@ -56,7 +56,8 @@ pub struct InterfaceDeclaration {
 pub struct MethodSignature {
     pub name: Located<InternIdx>,
     pub arguments: Vec<Located<TypedIdentifier>>,
-    pub return_type: Located<TypeExpression>
+    pub return_type: Located<TypeExpression>,
+    pub path: Path,
 }
 
 pub struct MethodDeclaration {

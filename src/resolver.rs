@@ -238,7 +238,7 @@ impl Resolver {
     }
 
     fn collect_interface_name(&mut self, interface: &mut InterfaceDeclaration) -> ReportableResult<()> {
-        let InterfaceDeclaration { name, path, .. } = interface;
+        let InterfaceDeclaration { name, path, methods, .. } = interface;
 
         let interface_path = self.current_path().append(*name.data());
         if self.type_names.contains(&interface_path) {
@@ -250,6 +250,16 @@ impl Resolver {
 
         self.type_names.insert(interface_path.clone());
         *path = interface_path;
+
+        self.current_path_mut().push(*name.data());
+        for method in methods {
+            let function_path = self.current_path().append(*method.name.data());
+            method.path = function_path.clone();
+            // TODO: Check for duplicate interface method declarations
+            self.value_names.insert(function_path);
+        }
+        self.current_path_mut().pop();
+
         Ok(())
     }
 

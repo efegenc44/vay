@@ -1,6 +1,6 @@
 use std::{collections::HashMap, rc::Rc};
 
-use crate::{bound::{Bound, Path}, declaration::{Declaration, MethodDeclaration, Module, FunctionDeclaration, VariantDeclaration}, expression::{ApplicationExpression, Expression, LambdaExpression, LetExpression, MatchExpression, PathExpression, Pattern, ProjectionExpression, SequenceExpression, VariantCasePattern}, interner::{InternIdx, Interner}, location::Located, value::{ConstructorInstance, InstanceInstance, LambdaInstance, MethodInstance, FunctionInstance, Value}};
+use crate::{bound::{Bound, Path}, declaration::{Declaration, FunctionDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, VariantDeclaration}, expression::{ApplicationExpression, Expression, LambdaExpression, LetExpression, MatchExpression, PathExpression, Pattern, ProjectionExpression, SequenceExpression, VariantCasePattern}, interner::{InternIdx, Interner}, location::Located, value::{ConstructorInstance, FunctionInstance, InstanceInstance, LambdaInstance, MethodInstance, Value}};
 
 pub struct Interpreter {
     methods: HashMap<Path, HashMap<InternIdx, Rc<FunctionInstance>>>,
@@ -73,7 +73,7 @@ impl Interpreter {
             match declaration {
                 Declaration::Module(..) => (),
                 Declaration::Import(..) => (),
-                Declaration::Interface(..) => (),
+                Declaration::Interface(interface) => self.collect_interface_name(interface),
                 Declaration::Function(function) => self.collect_function_name(function),
                 Declaration::Variant(variant) => self.collect_variant_name(variant),
             }
@@ -120,6 +120,17 @@ impl Interpreter {
 
             let function = FunctionInstance { body: body.clone() };
             self.methods.get_mut(path).unwrap().insert(*name.data(), Rc::new(function));
+        }
+    }
+
+    fn collect_interface_name(&mut self, interface: &InterfaceDeclaration) {
+        let InterfaceDeclaration { methods, .. } = interface;
+
+        for method in methods {
+            let MethodSignature { path, name, .. } = method;
+
+            let function = Value::InterfaceFunction(*name.data());
+            self.names.insert(path.clone(), function);
         }
     }
 
@@ -250,6 +261,32 @@ impl Interpreter {
                     }
 
                     self.locals.extend(capture.clone());
+                    self.locals.extend(argument_values);
+
+                    return_value = self.expression(body);
+                });
+
+                return_value
+            }
+            Value::InterfaceFunction(name) => {
+                let instance = self.expression(&arguments[0]).clone();
+                let Value::Instance(value) = &instance else {
+                    unreachable!();
+                };
+
+                let InstanceInstance { constructor, .. } = value.as_ref();
+                let ConstructorInstance { type_path, .. } = constructor.as_ref();
+
+                let method = self.methods[type_path][&name].clone();
+                let FunctionInstance { body } = method.as_ref();
+
+                let return_value;
+                scoped!(self, {
+                    let mut argument_values = vec![];
+                    for argument in arguments {
+                        argument_values.push(self.expression(argument));
+                    }
+                    self.locals.push(instance.clone());
                     self.locals.extend(argument_values);
 
                     return_value = self.expression(body);

@@ -17,7 +17,7 @@ fun f:(T (Inter::Add))(x : T) : T = x
 fun g:(T (Inter::Eq))(x : T) : T = x
 
 fun main() : Unit = (
-    (fun(x) (g(x) f(x) x.add(x)))(Unit::Unit)
+    (fun(x) (g(x) Inter::Add::add(x, x) x.add(x)))(Unit::Unit)
 
     let id = fun(x) x in (
         id(Unit2::Unit2)
