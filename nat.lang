@@ -7,13 +7,13 @@ variant Nat {
     Succ(Nat)
 
     fun add(this, that : Nat) : Nat = match that {
-        Zero    : this
-        Succ(n) : Nat::Succ(this.add(n))
+        let .Zero    : this
+        let .Succ(n) : Nat::Succ(this.add(n))
     }
 
     fun mul(this, that : Nat) : Nat = match that {
-        Zero    : Nat::Zero
-        Succ(n) : this.add(this.mul(n))
+        let .Zero    : Nat::Zero
+        let .Succ(n) : this.add(this.mul(n))
     }
 }
 

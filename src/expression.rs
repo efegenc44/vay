@@ -79,13 +79,14 @@ impl MatchBranch {
 
 #[derive(Clone)]
 pub enum Pattern {
+    Any(InternIdx),
     VariantCase(VariantCasePattern)
 }
 
 #[derive(Clone)]
 pub struct VariantCasePattern {
     pub name: Located<InternIdx>,
-    pub fields: Option<Vec<Located<InternIdx>>>,
+    pub fields: Option<Vec<Located<Pattern>>>,
 }
 
 #[derive(Clone)]

@@ -612,6 +612,10 @@ impl Checker {
 
     fn type_pattern_match(&mut self, t: MonoType, pattern: &Located<Pattern>) -> ReportableResult<bool> {
         match (t, pattern.data()) {
+            (t, Pattern::Any(_)) => {
+                self.locals.push(Type::Mono(t));
+                Ok(true)
+            },
             (MonoType::Variant(path, arguments), Pattern::VariantCase(variant_case)) => {
                 let VariantCasePattern { name, fields } = variant_case;
 
@@ -626,16 +630,17 @@ impl Checker {
                     );
                 }
 
-                let case_fields = &cases[name.data()];
-                let fields_len = fields.as_ref().map(|fields| fields.len()).unwrap_or(0);
+                let case_fields = cases[name.data()].clone();
+                let empty_fields = vec![];
+                let fields = fields.as_ref().unwrap_or(&empty_fields);
 
-                if case_fields.len() != fields_len {
+                if case_fields.len() != fields.len() {
                     return self.error(
                         TypeCheckError::WrongCaseArity {
                             type_path: path,
                             case_name: *name.data(),
                             expected: case_fields.len(),
-                            encountered: fields_len
+                            encountered: fields.len()
                         },
                         pattern.location(),
                     );
@@ -648,12 +653,16 @@ impl Checker {
                         .zip(arguments)
                         .collect();
 
-                    for t in case_fields {
-                        self.locals.push(Type::Mono(t.clone().substitute(&map)));
+                    for (t, field_pattern) in case_fields.into_iter().zip(fields) {
+                        if !self.type_pattern_match(t.substitute(&map), &field_pattern)? {
+                            return Ok(false);
+                        };
                     }
                 } else {
-                    for t in case_fields {
-                        self.locals.push(Type::Mono(t.clone()));
+                    for (t, field_pattern) in case_fields.into_iter().zip(fields) {
+                        if !self.type_pattern_match(t, &field_pattern)? {
+                            return Ok(false);
+                        }
                     }
                 }
 

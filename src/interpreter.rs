@@ -154,11 +154,25 @@ impl Interpreter {
 
     fn does_value_pattern_match(&mut self, value: &Value, pattern: &Located<Pattern>) -> bool {
         match (value, pattern.data()) {
+            (_, Pattern::Any(_)) => true,
             (Value::Instance(instance), Pattern::VariantCase(variant_case)) => {
-                let VariantCasePattern { name, .. } = variant_case;
-                let InstanceInstance { constructor, .. } = instance.as_ref();
+                let VariantCasePattern { name, fields } = variant_case;
+                let InstanceInstance { constructor, values } = instance.as_ref();
 
-                &constructor.case == name.data()
+                if &constructor.case != name.data() {
+                    return false;
+                }
+
+                let empty_field = vec![];
+                let fields = fields.as_ref().unwrap_or(&empty_field);
+
+                for (value, field) in values.iter().zip(fields) {
+                    if !self.does_value_pattern_match(value, field) {
+                        return false;
+                    }
+                }
+
+                true
             }
             _ => unreachable!(),
         }
@@ -166,11 +180,18 @@ impl Interpreter {
 
     fn value_pattern_match(&mut self, value: &Value, pattern: &Located<Pattern>) {
         match (value, pattern.data()) {
-            (Value::Instance(instance), Pattern::VariantCase(_)) => {
+            (value, Pattern::Any(_)) => {
+                self.locals.push(value.clone());
+            }
+            (Value::Instance(instance), Pattern::VariantCase(variant_case)) => {
                 let InstanceInstance { values, .. } = instance.as_ref();
+                let VariantCasePattern { fields, .. } = variant_case;
 
-                for value in values {
-                    self.locals.push(value.clone());
+                let empty_field = vec![];
+                let fields = fields.as_ref().unwrap_or(&empty_field);
+
+                for (value, field) in values.iter().zip(fields) {
+                    self.value_pattern_match(value, field);
                 }
             }
             _ => unreachable!(),

@@ -463,7 +463,7 @@ impl Resolver {
         self.expression(expression)?;
         for branch in branches {
             scoped!(self, {
-                self.name_pattern_match(branch.data().pattern().data());
+                self.name_pattern_match(branch.data().pattern());
                 self.expression(branch.data_mut().expression_mut())?;
             });
         }
@@ -471,14 +471,18 @@ impl Resolver {
         Ok(())
     }
 
-    fn name_pattern_match(&mut self, pattern: &Pattern) {
-        match pattern {
+    fn name_pattern_match(&mut self, pattern: &Located<Pattern>) {
+        match pattern.data() {
+            Pattern::Any(identifier) => {
+                self.locals.push(*identifier);
+            }
             Pattern::VariantCase(variant_case) => {
                 let VariantCasePattern { fields, .. } = variant_case;
 
                 if let Some(fields) = fields {
-                    let fields = fields.iter().map(|field| *field.data());
-                    self.locals.extend(fields);
+                    for field in fields {
+                        self.name_pattern_match(field);
+                    }
                 }
             },
         }

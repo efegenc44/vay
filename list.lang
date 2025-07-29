@@ -7,16 +7,16 @@ variant List(T) {
     Cons(T, List(T))
 
     fun map(this, f: fun(T) : T) : List(T) = match this {
-        Nil         : List::Nil
-        Cons(x, xs) : List::Cons(f(x), xs.map(f))
+        let .Nil         : List::Nil
+        let .Cons(x, xs) : List::Cons(f(x), xs.map(f))
     }
 
     fun foo(this, y : T) : T = (
         List::Nil
 
         match this {
-            Nil         : y
-            Cons(x, xs) : x
+            let .Nil         : y
+            let .Cons(x, xs) : x
         }
     )
 }
@@ -25,7 +25,7 @@ variant Cell(C) {
     Cell(C)
 
     fun get(this) : C = match this {
-        Cell(c) : c
+        let .Cell(c) : c
     }
 }
 
@@ -35,8 +35,8 @@ fun test(x : List(Foo)) : List(Foo) =
     List::Cons(Foo::Foo, List::Nil)
 
 fun bar(list : List(Foo)) : Foo = match list {
-    Nil         : Foo::Foo
-    Cons(x, xs) : x
+    let .Nil         : Foo::Foo
+    let .Cons(x, xs) : x
 }
 
 fun foo(list : List(Foo)) : Foo = list.foo(Foo::Foo)

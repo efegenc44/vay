@@ -11,9 +11,9 @@ fun j(x : Unit2) : Unit = Unit::Unit
 
 fun main() : Unit = (
     match C::C {
-        C    : Unit::Unit
-        A(x) : g(x)
-        B(x) : j(x)
+        let .C    : Unit::Unit
+        let .A(x) : g(x)
+        let .B(x) : j(x)
     }
 
     Unit::Unit

@@ -37,7 +37,10 @@ const DECLARATION_KEYWORDS: &[Token] = &[
     Token::InterfaceKeyword,
 ];
 
-const PATTERN_TOKEN_STARTS: &[Token] = &[Token::dummy_identifier()];
+const PATTERN_TOKEN_STARTS: &[Token] = &[
+    Token::dummy_identifier(),
+    Token::Dot,
+];
 
 pub struct Parser<'source_content, 'interner> {
     tokens: Peekable<Lexer<'source_content, 'interner>>,
@@ -295,6 +298,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     }
 
     fn match_branch(&mut self) -> ReportableResult<Located<MatchBranch>> {
+        self.expect(Token::LetKeyword)?;
         let pattern = self.pattern()?;
         self.expect(Token::Colon)?;
         let expression = self.expression()?;
@@ -306,18 +310,27 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     fn pattern(&mut self) -> ReportableResult<Located<Pattern>> {
         let token = self.peek_one_of(PATTERN_TOKEN_STARTS)?;
         match token.data() {
-            Token::Identifier(_) => self.varint_case_pattern(),
+            Token::Identifier(_) => self.any_pattern(),
+            Token::Dot => self.varint_case_pattern(),
             _ => unreachable!()
         }
     }
 
+    fn any_pattern(&mut self) -> ReportableResult<Located<Pattern>> {
+        let identifier = self.expect_identifier()?;
+
+        let pattern = Pattern::Any(*identifier.data());
+        Ok(Located::new(pattern, identifier.location()))
+    }
+
     fn varint_case_pattern(&mut self) -> ReportableResult<Located<Pattern>> {
+        self.expect(Token::Dot)?;
         let name = self.expect_identifier()?;
         let (fields, location) = if self.peek_is(Token::LeftParenthesis) {
             self.advance()?;
             let (fields, end) = self.until(
                 Token::RightParenthesis,
-                Self::expect_identifier,
+                Self::pattern,
                 Some(Token::Comma)
             )?;
             (Some(fields), name.location().extend(&end))
