@@ -1,21 +1,20 @@
 module Main
 
-variant Unit  { Unit }
 variant Unit2 { Unit2 }
 
 variant A(T) {
     A
 }
 
-fun f(a : A(Unit)) : Unit = Unit::Unit
+fun f(a : A(())) = ()
 
-fun g(a : A(Unit2)) : Unit = Unit::Unit
+fun g(a : A(Unit2)) = ()
 
 fun id:(T)(x : T) : T = x
 
-fun main() : A(Unit) =
+fun main() : A(()) =
     let I = id in (
-        I(Unit::Unit)
+        I(())
         I(Unit2::Unit2)
         I(A::A)
     )

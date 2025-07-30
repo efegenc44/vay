@@ -25,8 +25,9 @@ const PRIMARY_TOKEN_STARTS: &[Token] = &[
 ];
 
 const PRIMARY_TYPE_TOKEN_STARTS: &[Token] = &[
+    Token::dummy_identifier(),
     Token::FunKeyword,
-    Token::dummy_identifier()
+    Token::LeftParenthesis,
 ];
 
 
@@ -41,6 +42,7 @@ const DECLARATION_KEYWORDS: &[Token] = &[
 const PATTERN_TOKEN_STARTS: &[Token] = &[
     Token::dummy_identifier(),
     Token::Dot,
+    Token::LeftParenthesis,
 ];
 
 pub struct Parser<'source_content, 'interner> {
@@ -323,6 +325,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         match token.data() {
             Token::Identifier(_) => self.any_pattern(),
             Token::Dot => self.varint_case_pattern(),
+            Token::LeftParenthesis => self.pattern_grouping(),
             _ => unreachable!()
         }
     }
@@ -351,6 +354,21 @@ impl<'source, 'interner> Parser<'source, 'interner> {
 
         let variant_case = VariantCasePattern { name, fields };
         Ok(Located::new(Pattern::VariantCase(variant_case), location))
+    }
+
+    fn pattern_grouping(&mut self) -> ReportableResult<Located<Pattern>> {
+        let start = self.expect(Token::LeftParenthesis)?.location();
+        if self.peek_is(Token::RightParenthesis) {
+            let end = self.advance()?.unwrap().location();
+
+            let pattern = Pattern::Unit;
+            Ok(Located::new(pattern, start.extend(&end)))
+        } else {
+            let pattern = self.pattern()?;
+            let end = self.expect(Token::LeftParenthesis)?.location();
+
+            Ok(Located::new(pattern.data().to_owned(), start.extend(&end)))
+        }
     }
 
     fn declaration(&mut self) -> ReportableResult<Declaration> {
@@ -454,8 +472,14 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             Self::typed_identifier,
             Some(Token::Comma)
         )?;
-        self.expect(Token::Colon)?;
-        let return_type = self.type_expression()?;
+
+        let return_type = if self.peek_is(Token::Colon) {
+            self.advance()?;
+            Some(self.type_expression()?)
+        } else {
+            None
+        };
+
         self.expect(Token::Equals)?;
         let body = self.expression()?;
 
@@ -500,8 +524,13 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             None
         )?;
 
-        self.expect(Token::Colon)?;
-        let return_type = self.type_expression()?;
+        let return_type = if self.peek_is(Token::Colon) {
+            self.advance()?;
+            Some(self.type_expression()?)
+        } else {
+            None
+        };
+
         self.expect(Token::Equals)?;
         let body = self.expression()?;
 
@@ -570,8 +599,13 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             Self::typed_identifier,
             Some(Token::Comma)
         )?;
-        self.expect(Token::Colon)?;
-        let return_type = self.type_expression()?;
+
+        let return_type = if self.peek_is(Token::Colon) {
+            self.advance()?;
+            Some(self.type_expression()?)
+        } else {
+            None
+        };
 
         Ok(MethodSignature { name, arguments, return_type, path: Path::empty() })
     }
@@ -622,6 +656,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         match token.data() {
             Token::Identifier(_) => self.type_path(),
             Token::FunKeyword => self.function_type(),
+            Token::LeftParenthesis => self.type_grouping(),
             _ => unreachable!()
         }
     }
@@ -639,20 +674,42 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     fn function_type(&mut self) -> ReportableResult<Located<TypeExpression>> {
         let start = self.expect(Token::FunKeyword)?.location();
         self.expect(Token::LeftParenthesis)?;
-        let (arguments, _) = self.until(
+        let (arguments, end) = self.until(
             Token::RightParenthesis,
             Self::type_expression,
             Some(Token::Comma)
         )?;
-        self.expect(Token::Colon)?;
-        let return_type = Box::new(self.type_expression()?);
 
-        let location = start.extend(&return_type.location());
+        let (return_type, end) = if self.peek_is(Token::Colon) {
+            self.advance()?;
+            let return_type = self.type_expression()?;
+            let end = return_type.location();
+            (Some(Box::new(return_type)), end)
+        } else {
+            (None, end)
+        };
+
+        let location = start.extend(&end);
         let function_type = FunctionTypeExpression {
             arguments,
             return_type,
         };
         Ok(Located::new(TypeExpression::Function(function_type), location))
+    }
+
+    fn type_grouping(&mut self) -> ReportableResult<Located<TypeExpression>> {
+        let start = self.expect(Token::LeftParenthesis)?.location();
+        if self.peek_is(Token::RightParenthesis) {
+            let end = self.advance()?.unwrap().location();
+
+            let type_expression = TypeExpression::Unit;
+            Ok(Located::new(type_expression, start.extend(&end)))
+        } else {
+            let type_expression = self.type_expression()?;
+            let end = self.expect(Token::LeftParenthesis)?.location();
+
+            Ok(Located::new(type_expression.data().to_owned(), start.extend(&end)))
+        }
     }
 
     fn typed_identifier(&mut self) -> ReportableResult<Located<TypedIdentifier>> {

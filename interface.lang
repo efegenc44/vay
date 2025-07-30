@@ -29,5 +29,3 @@ fun main() : Vector2(Inter::Bool) = (
 interface Eq1 t {
     fun eq(that : t) : Vector2(Inter::Bool)
 }
-
-variant Unit { Unit }

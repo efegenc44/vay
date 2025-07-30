@@ -125,6 +125,7 @@ impl Checker {
             TypeExpression::Function(function) => self.eval_function_type(function),
             // TODO: Inconsistent naming?
             TypeExpression::Application(type_application) => self.eval_type_application(type_application),
+            TypeExpression::Unit => Ok(Type::Mono(MonoType::Unit)),
         }
     }
 
@@ -148,7 +149,11 @@ impl Checker {
             .iter().map(|argument| self.eval_to_mono(argument))
             .collect::<ReportableResult<Vec<_>>>()?;
 
-        let return_type = Box::new(self.eval_to_mono(return_type)?);
+        let return_type = if let Some(return_type) = return_type {
+            Box::new(self.eval_to_mono(return_type)?)
+        } else {
+            Box::new(MonoType::Unit)
+        };
 
         Ok(Type::Mono(MonoType::Function(FunctionType { arguments, return_type })))
     }
@@ -187,6 +192,7 @@ impl Checker {
 
             MonoType::Constant(_) |
             MonoType::Var(..) |
+            MonoType::Unit |
             MonoType::Bottom => unreachable!(),
         };
 
@@ -269,7 +275,11 @@ impl Checker {
                 .iter().map(|argument| self.eval_to_mono(argument.data().type_expression()))
                 .collect::<ReportableResult<Vec<_>>>()?;
 
-            let return_type = Box::new(self.eval_to_mono(return_type)?);
+            let return_type = if let Some(return_type) = return_type {
+                Box::new(self.eval_to_mono(return_type)?)
+            } else {
+                Box::new(MonoType::Unit)
+            };
 
             let function = MonoType::Function(FunctionType { arguments, return_type });
 
@@ -342,7 +352,11 @@ impl Checker {
                     .iter().map(|argument| self.eval_to_mono(argument.data().type_expression()))
                     .collect::<ReportableResult<Vec<_>>>()?;
 
-                let return_type = Box::new(self.eval_to_mono(return_type)?);
+                let return_type = if let Some(return_type) = return_type {
+                    Box::new(self.eval_to_mono(return_type)?)
+                } else {
+                    Box::new(MonoType::Unit)
+                };
 
                 let function_type = FunctionType { arguments, return_type };
                 if self.variants
@@ -532,7 +546,11 @@ impl Checker {
                     .iter().map(|argument| self.eval_to_mono(argument.data().type_expression()))
                     .collect::<ReportableResult<Vec<_>>>()?;
 
-                let return_type = Box::new(self.eval_to_mono(return_type)?);
+                let return_type = if let Some(return_type) = return_type {
+                    Box::new(self.eval_to_mono(return_type)?)
+                } else {
+                    Box::new(MonoType::Unit)
+                };
 
                 let method_type = FunctionType { arguments, return_type };
                 self.interfaces
@@ -557,7 +575,11 @@ impl Checker {
                     arguments_with_instance.push(self.eval_to_mono(argument.data().type_expression())?);
                 }
 
-                let return_type = Box::new(self.eval_to_mono(return_type)?);
+                let return_type = if let Some(return_type) = return_type {
+                    Box::new(self.eval_to_mono(return_type)?)
+                } else {
+                    Box::new(MonoType::Unit)
+                };
 
                 let standalone_function = FunctionType { arguments: arguments_with_instance, return_type };
                 let function_type = Type::Forall(vars.clone(), MonoType::Function(standalone_function));
@@ -577,7 +599,7 @@ impl Checker {
         let mut m = self.infer(expression)?;
 
         let return_type = match &branches[..] {
-            [] => todo!("Return Unit type probably"),
+            [] => MonoType::Unit,
             [head, tail@..] => {
                 if !self.type_pattern_match(m.clone(), head.data().pattern())? {
                     // TODO: Remove push locals by type_pattern_match()
@@ -675,10 +697,8 @@ impl Checker {
 
                 Ok(true)
             }
-            (MonoType::Function(..), _) |
-            (MonoType::Var(..), _) |
-            (MonoType::Constant(..), _) |
-            (MonoType::Bottom, _) => Ok(false),
+            (MonoType::Unit, Pattern::Unit)  => Ok(true),
+            _ => Ok(false)
         }
     }
 
@@ -972,7 +992,7 @@ impl Checker {
         let SequenceExpression { expressions } = sequence;
 
         match &expressions[..] {
-            [] => todo!("Return Unit type"),
+            [] => Ok(MonoType::Unit),
             [init@.., last] => {
                 init
                     .iter().map(|expression| self.infer(expression))
@@ -1044,7 +1064,6 @@ impl Checker {
 
                 self.unify(*return1, *return2)
             },
-            (MonoType::Constant(constant1), MonoType::Constant(constant2)) => constant1 == constant2,
             (MonoType::Var(var1), MonoType::Var(var2)) => {
                 let TypeVar { idx: idx1, interfaces: interfaces1 } = &var1;
                 let TypeVar { idx: idx2, interfaces: interfaces2 } = &var2;
@@ -1090,7 +1109,7 @@ impl Checker {
             // NOTE: Bottom type is the subtype of all types
             // NOTE: Here _ cannot be a MonoType::Var
             (MonoType::Bottom, _) | (_, MonoType::Bottom) => true,
-            _ => false
+            (a, b) => a == b
         }
     }
 

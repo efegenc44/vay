@@ -1,6 +1,5 @@
 module Main
 
-variant Unit    { Unit    }
 variant Unit2   { Unit2   }
 variant Cell(T) {
     Cell(T)
@@ -19,27 +18,27 @@ fun h4:(T)(f : fun(T) : Cell(T)) : Cell(T) = Cell::Empty
 
 fun h5:(F)(x : F) : Cell(F) = Cell::Empty
 
-fun g(u : Unit) : Cell(Unit) = Cell::Cell(u)
+fun g(u : ()) : Cell(()) = Cell::Cell(u)
 
-fun j(x : Unit) : Cell(Unit2) = Cell::Empty
+fun j(x : ()) : Cell(Unit2) = Cell::Empty
 
-fun test() : Cell(Unit) = (
-    h(g, Unit::Unit)
-    h(Cell::Cell, Unit::Unit)
-    h(Cell::Empty.cell, Unit::Unit)
+fun test() : Cell(()) = (
+    h(g, ())
+    h(Cell::Cell, ())
+    h(Cell::Empty.cell, ())
 
     h4(h5)
 
-    h3(g, Unit::Unit)
-    h3(Cell::Cell, Unit::Unit)
-    h3(Cell::Empty.cell, Unit::Unit)
+    h3(g, ())
+    h3(Cell::Cell, ())
+    h3(Cell::Empty.cell, ())
 )
 
 fun test2() : Cell(Unit2) = (
-    h3(j, Unit::Unit)
+    h3(j, ())
     h(Cell::Cell, Unit2::Unit2)
 )
 
-fun test3() : Cell(Cell(Unit)) = h2(Cell::Cell(Cell::Empty).cell, Unit::Unit)
+fun test3() : Cell(Cell(())) = h2(Cell::Cell(Cell::Empty).cell, ())
 
-fun main() : Unit = Unit::Unit
+fun main() = ()

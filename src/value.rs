@@ -10,6 +10,7 @@ pub enum Value {
     InterfaceFunction(InternIdx),
     Constructor(Rc<ConstructorInstance>),
     Instance(Rc<InstanceInstance>),
+    Unit
 }
 
 impl Value {
@@ -41,6 +42,7 @@ impl Value {
                 string.push(')');
                 string
             },
+            Value::Unit => "()".into(),
         }
     }
 }

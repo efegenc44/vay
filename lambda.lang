@@ -2,35 +2,27 @@ module Main
 
 import Inter
 
-variant Unit {
-    Unit
-
-    fun add(this, that : Unit) : Unit = that
-
-    fun eq(this, that : Unit) : Inter::Bool = Inter::Bool::True
-}
-
 variant Unit2 { Unit2 }
 
 fun f:(T (Inter::Add))(x : T) : T = x
 
 fun g:(T (Inter::Eq))(x : T) : T = x
 
-fun main() : Unit = (
+fun main() = (
     fun(x) (
         g(x)
         Inter::Add::add(x, x)
-        return Unit::Unit
+        return Inter::Bool::True
         x.add(x)
     )
 
     match Inter::Bool::False {
-        let .True  : return Unit::Unit
+        let .True  : return ()
         let .False : Inter::Bool::True
     }
 
     let id = fun(x) x in (
         id(Unit2::Unit2)
-        id(Unit::Unit)
+        id(())
     )
 )

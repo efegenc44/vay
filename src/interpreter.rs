@@ -181,6 +181,7 @@ impl Interpreter {
 
                 true
             }
+            (Value::Unit, Pattern::Unit) => true,
             _ => unreachable!(),
         }
     }
@@ -201,6 +202,7 @@ impl Interpreter {
                     self.value_pattern_match(value, field);
                 }
             }
+            (Value::Unit, Pattern::Unit) => (),
             _ => unreachable!(),
         }
     }
@@ -376,7 +378,7 @@ impl Interpreter {
         let SequenceExpression { expressions } = sequence;
 
         match &expressions[..] {
-            [] => todo!("Return Unit value"),
+            [] => Ok(Value::Unit),
             [init@.., last] => {
                 let _ = init
                     .iter().map(|expression| self.expression(expression))

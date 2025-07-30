@@ -33,7 +33,7 @@ pub struct FunctionDeclaration {
     pub name: Located<InternIdx>,
     pub type_vars: Vec<Located<TypeVar>>,
     pub arguments: Vec<Located<TypedIdentifier>>,
-    pub return_type: Located<TypeExpression>,
+    pub return_type: Option<Located<TypeExpression>>,
     pub body: Located<Expression>,
     pub path: Path,
 }
@@ -56,7 +56,7 @@ pub struct InterfaceDeclaration {
 pub struct MethodSignature {
     pub name: Located<InternIdx>,
     pub arguments: Vec<Located<TypedIdentifier>>,
-    pub return_type: Located<TypeExpression>,
+    pub return_type: Option<Located<TypeExpression>>,
     pub path: Path,
 }
 
@@ -65,7 +65,7 @@ pub struct MethodDeclaration {
     pub constraints: Vec<Constraint>,
     pub instance: Located<InternIdx>,
     pub arguments: Vec<Located<TypedIdentifier>>,
-    pub return_type: Located<TypeExpression>,
+    pub return_type: Option<Located<TypeExpression>>,
     pub body: Located<Expression>,
 }
 

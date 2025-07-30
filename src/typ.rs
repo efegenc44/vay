@@ -14,6 +14,7 @@ pub enum MonoType {
     Function(FunctionType),
     Constant(TypeVar),
     Var(TypeVar),
+    Unit,
     Bottom,
 }
 
@@ -75,6 +76,7 @@ impl MonoType {
                 }
             },
             MonoType::Constant(c) => MonoType::Constant(c),
+            MonoType::Unit => MonoType::Unit,
             MonoType::Bottom => MonoType::Bottom
         }
     }
@@ -112,6 +114,7 @@ impl MonoType {
 
                 t.substitute(map)
             },
+            MonoType::Unit => MonoType::Unit,
             MonoType::Bottom => MonoType::Bottom
         }
     }
@@ -134,6 +137,7 @@ impl MonoType {
                 },
                 MonoType::Constant(_) => (),
                 MonoType::Var(var) => vars.push(var.clone()),
+                MonoType::Unit => (),
                 MonoType::Bottom => ()
             }
         }
@@ -156,6 +160,7 @@ impl MonoType {
             },
             MonoType::Var(var) => var.idx == idx,
             MonoType::Constant(_) => false,
+            MonoType::Unit => false,
             MonoType::Bottom => false
         }
     }
@@ -203,6 +208,7 @@ impl MonoType {
                 .collect::<Vec<_>>().join(",")
             ),
             MonoType::Constant(type_var) => format!("c{}", type_var.idx),
+            MonoType::Unit => "()".into(),
             MonoType::Bottom => "Bottom".into()
         }
     }

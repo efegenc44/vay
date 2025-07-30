@@ -409,6 +409,7 @@ impl Resolver {
             TypeExpression::Function(function_type) => self.function_type(function_type),
             // TODO: Inconsistent naming?
             TypeExpression::Application(type_application) => self.type_application(type_application),
+            TypeExpression::Unit => Ok(()),
         }
     }
 
@@ -443,7 +444,12 @@ impl Resolver {
         for argument in arguments {
             self.type_expression(argument)?;
         }
-        self.type_expression(return_type)
+
+        if let Some(return_type) = return_type {
+            self.type_expression(return_type)?;
+        }
+
+        Ok(())
     }
 
     fn type_application(&mut self, type_application: &mut TypeApplicationExpression) -> ReportableResult<()> {
@@ -485,6 +491,7 @@ impl Resolver {
                     }
                 }
             },
+            Pattern::Unit => ()
         }
     }
 
@@ -565,7 +572,10 @@ impl Resolver {
             for argument in arguments.iter_mut() {
                 self.type_expression(argument.data_mut().type_expression_mut())?;
             }
-            self.type_expression(return_type)?;
+
+            if let Some(return_type) = return_type {
+                self.type_expression(return_type)?;
+            }
         });
 
         scoped!(self, {
@@ -588,7 +598,10 @@ impl Resolver {
         for argument in arguments.iter_mut() {
             self.type_expression(argument.data_mut().type_expression_mut())?;
         }
-        self.type_expression(return_type)?;
+
+        if let Some(return_type) = return_type {
+            self.type_expression(return_type)?;
+        }
 
         scoped!(self, {
             self.locals.push(*instance.data());
@@ -659,7 +672,9 @@ impl Resolver {
                     self.type_expression(argument.data_mut().type_expression_mut())?;
                 }
 
-                self.type_expression(return_type)?;
+                if let Some(return_type) = return_type {
+                    self.type_expression(return_type)?;
+                }
             }
         });
 

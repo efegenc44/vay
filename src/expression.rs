@@ -86,7 +86,8 @@ pub struct ReturnExpression {
 #[derive(Clone)]
 pub enum Pattern {
     Any(InternIdx),
-    VariantCase(VariantCasePattern)
+    VariantCase(VariantCasePattern),
+    Unit
 }
 
 #[derive(Clone)]
@@ -99,7 +100,8 @@ pub struct VariantCasePattern {
 pub enum TypeExpression {
     Path(PathTypeExpression),
     Function(FunctionTypeExpression),
-    Application(TypeApplicationExpression)
+    Application(TypeApplicationExpression),
+    Unit
 }
 
 #[derive(Clone)]
@@ -111,7 +113,7 @@ pub struct PathTypeExpression {
 #[derive(Clone)]
 pub struct FunctionTypeExpression {
     pub arguments: Vec<Located<TypeExpression>>,
-    pub return_type: Box<Located<TypeExpression>>
+    pub return_type: Option<Box<Located<TypeExpression>>>
 }
 
 #[derive(Clone)]
