@@ -2,14 +2,14 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     bound::{Bound, Path},
-    declaration::{self, Declaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, FunctionDeclaration, VariantDeclaration},
+    declaration::{self, Declaration, FunctionDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, VariantDeclaration},
     expression::{
-        ApplicationExpression, Expression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, FunctionTypeExpression, ProjectionExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
+        ApplicationExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
     },
     interner::{InternIdx, Interner},
     location::{Located, SourceLocation},
     reportable::{Reportable, ReportableResult},
-    typ::{Interface, MonoType, FunctionType, Type, TypeVar},
+    typ::{FunctionType, Interface, MonoType, Type, TypeVar},
 };
 
 macro_rules! scoped {
@@ -47,7 +47,7 @@ pub struct Checker {
 
     // TODO: Seperate type locals and value locals
     locals: Vec<Type>,
-    return_type: Option<MonoType>,
+    return_type: Vec<MonoType>,
 
     type_var_counter: usize,
 
@@ -63,7 +63,7 @@ impl Checker {
             variants: HashMap::new(),
             interfaces: HashMap::new(),
             locals: vec![],
-            return_type: None,
+            return_type: vec![],
             // NOTE: 0 is reserved for interfaces' self reference type constant
             type_var_counter: 1,
             current_source: String::new(),
@@ -186,7 +186,8 @@ impl Checker {
             MonoType::Function(_) => todo!(),
 
             MonoType::Constant(_) |
-            MonoType::Var(..) => unreachable!(),
+            MonoType::Var(..) |
+            MonoType::Bottom => unreachable!(),
         };
 
         Ok(Type::Mono(m))
@@ -469,9 +470,9 @@ impl Checker {
             scoped!(self, {
                 self.locals.push(Type::Mono(variant_type));
                 self.locals.extend(arguments.into_iter().map(Type::Mono));
-                self.return_type = Some(*return_type.clone());
+                self.return_type.push(*return_type.clone());
                 self.check(body, *return_type)?;
-                self.return_type = None;
+                self.return_type.pop();
             });
         }
 
@@ -499,9 +500,9 @@ impl Checker {
 
         scoped!(self, {
             self.locals.extend(arguments.into_iter().map(Type::Mono));
-            self.return_type = Some(*return_type.clone());
+            self.return_type.push(*return_type.clone());
             self.check(body, *return_type)?;
-            self.return_type = None;
+            self.return_type.pop();
         });
 
         Ok(())
@@ -585,7 +586,7 @@ impl Checker {
                         head.data().pattern().location(),
                     );
                 }
-                let return_type = self.infer(head.data().expression())?;
+                let mut return_type = self.infer(head.data().expression())?;
                 m = m.substitute(&self.unification_table);
 
                 for branch in tail {
@@ -598,7 +599,13 @@ impl Checker {
                             );
                         }
 
-                        self.check(branch.data().expression(), return_type.clone())?;
+                        // NOTE: Bottom type is the subtype of all types
+                        // TODO: Maybe self.check should return the most general type
+                        if let MonoType::Bottom = return_type {
+                            return_type = self.infer(branch.data().expression())?;
+                        } else {
+                            self.check(branch.data().expression(), return_type.clone())?;
+                        }
                         m = m.substitute(&self.unification_table);
                     })
                 }
@@ -670,8 +677,20 @@ impl Checker {
             }
             (MonoType::Function(..), _) |
             (MonoType::Var(..), _) |
-            (MonoType::Constant(..), _) => Ok(false),
+            (MonoType::Constant(..), _) |
+            (MonoType::Bottom, _) => Ok(false),
         }
+    }
+
+    fn retrn(&mut self, retrn: &ReturnExpression) -> ReportableResult<MonoType> {
+        let ReturnExpression { expression } = retrn;
+
+        let Some(return_type) = self.return_type.last().cloned() else {
+            todo!("Return outside of a function");
+        };
+        self.check(expression, return_type)?;
+
+        Ok(MonoType::Bottom)
     }
 
     fn check(&mut self, expression: &Located<Expression>, expected: MonoType) -> ReportableResult<()> {
@@ -680,25 +699,12 @@ impl Checker {
         if !self.unify(encountered.clone(), expected.clone()) {
             return self.error(
                 TypeCheckError::MismatchedTypes {
-                    encountered,
-                    expected,
+                    encountered: encountered.substitute(&self.unification_table),
+                    expected: expected.substitute(&self.unification_table),
                 },
                 expression.location(),
             );
         };
-
-        let encountered = encountered.substitute(&self.unification_table);
-        let expected = expected.substitute(&self.unification_table);
-
-        if encountered != expected {
-            return self.error(
-                TypeCheckError::MismatchedTypes {
-                    encountered,
-                    expected,
-                },
-                expression.location(),
-            );
-        }
 
         Ok(())
     }
@@ -803,6 +809,7 @@ impl Checker {
             Expression::Sequence(sequence) => self.sequence(sequence),
             Expression::Lambda(lambda) => self.lambda(lambda),
             Expression::Match(matc) => self.matc(matc),
+            Expression::Return(retrn) => self.retrn(retrn),
         }
     }
 
@@ -979,7 +986,7 @@ impl Checker {
     fn lambda(&mut self, lambda: &LambdaExpression) -> ReportableResult<MonoType> {
         let LambdaExpression { arguments, body } = lambda;
 
-        let return_type;
+        let return_type = MonoType::Var(self.newvar());
         let variables = arguments
             .iter().map(|_| self.newvar())
             .map(MonoType::Var)
@@ -991,7 +998,9 @@ impl Checker {
                 .map(Type::Mono)
             );
 
-            return_type = self.infer(body)?;
+            self.return_type.push(return_type.clone());
+            self.check(body, return_type.clone())?;
+            self.return_type.pop();
         });
 
         let arguments = variables
@@ -999,8 +1008,7 @@ impl Checker {
             .map(|variable| variable.substitute(&self.unification_table))
             .collect::<Vec<_>>();
 
-        // NOTE: Substitution here is unnecessary (see Algorithm W)
-        let return_type = Box::new(return_type);
+        let return_type = Box::new(return_type.substitute(&self.unification_table));
 
         let function_type = FunctionType { arguments, return_type };
         Ok(MonoType::Function(function_type))
@@ -1010,7 +1018,7 @@ impl Checker {
     // TODO: How inference is done is much like Algorithm W,
     //   at some point Algorithm J like inference would be better
     fn unify(&mut self, a: MonoType, b: MonoType) -> bool {
-        let result = match (a, b) {
+        match (a, b) {
             (MonoType::Variant(path1, args1), MonoType::Variant(path2, args2)) => {
                 if path1 != path2 {
                     return false;
@@ -1079,10 +1087,11 @@ impl Checker {
                     }
                 }
             },
+            // NOTE: Bottom type is the subtype of all types
+            // NOTE: Here _ cannot be a MonoType::Var
+            (MonoType::Bottom, _) | (_, MonoType::Bottom) => true,
             _ => false
-        };
-
-        result
+        }
     }
 
     fn eval_to_mono(&mut self, type_expression: &Located<TypeExpression>) -> ReportableResult<MonoType> {

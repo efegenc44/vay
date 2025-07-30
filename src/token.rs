@@ -24,6 +24,7 @@ pub enum Token {
     LetKeyword,
     InKeyword,
     AsKeyword,
+    ReturnKeyword,
 }
 
 impl Token {
@@ -55,6 +56,7 @@ impl Token {
             Token::LetKeyword => "keyword `let`",
             Token::InKeyword => "keyword `in`",
             Token::AsKeyword => "keyword `as`",
+            Token::ReturnKeyword => "keyword `return`",
         }
     }
 }

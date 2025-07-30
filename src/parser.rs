@@ -6,7 +6,7 @@ use crate::{
         Constraint, Declaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, TypeVar, TypedIdentifier, VariantCase, VariantDeclaration
     },
     expression::{
-        ApplicationExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchBranch, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
+        ApplicationExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchBranch, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
     },
     interner::{InternIdx, Interner},
     lexer::Lexer,
@@ -21,6 +21,7 @@ const PRIMARY_TOKEN_STARTS: &[Token] = &[
     Token::LeftParenthesis,
     Token::FunKeyword,
     Token::MatchKeyword,
+    Token::ReturnKeyword,
 ];
 
 const PRIMARY_TYPE_TOKEN_STARTS: &[Token] = &[
@@ -213,6 +214,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             Token::LeftParenthesis => self.sequence(),
             Token::FunKeyword => self.lambda(),
             Token::MatchKeyword => self.matc(),
+            Token::ReturnKeyword => self.retrn(),
             _ => unreachable!()
         }
     }
@@ -295,6 +297,15 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         };
 
         Ok(Located::new(Expression::Match(matc), location))
+    }
+
+    fn retrn(&mut self) -> ReportableResult<Located<Expression>> {
+        let start = self.expect(Token::ReturnKeyword)?.location();
+        let expression = Box::new(self.expression()?);
+        let end = expression.location();
+
+        let retrn = ReturnExpression { expression };
+        Ok(Located::new(Expression::Return(retrn), start.extend(&end)))
     }
 
     fn match_branch(&mut self) -> ReportableResult<Located<MatchBranch>> {

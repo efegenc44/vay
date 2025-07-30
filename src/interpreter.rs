@@ -1,6 +1,6 @@
 use std::{collections::HashMap, rc::Rc};
 
-use crate::{bound::{Bound, Path}, declaration::{Declaration, FunctionDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, VariantDeclaration}, expression::{ApplicationExpression, Expression, LambdaExpression, LetExpression, MatchExpression, PathExpression, Pattern, ProjectionExpression, SequenceExpression, VariantCasePattern}, interner::{InternIdx, Interner}, location::Located, value::{ConstructorInstance, FunctionInstance, InstanceInstance, LambdaInstance, MethodInstance, Value}};
+use crate::{bound::{Bound, Path}, declaration::{Declaration, FunctionDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, VariantDeclaration}, expression::{ApplicationExpression, Expression, LambdaExpression, LetExpression, MatchExpression, PathExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, VariantCasePattern}, interner::{InternIdx, Interner}, location::Located, value::{ConstructorInstance, FunctionInstance, InstanceInstance, LambdaInstance, MethodInstance, Value}};
 
 pub struct Interpreter {
     methods: HashMap<Path, HashMap<InternIdx, Rc<FunctionInstance>>>,
@@ -17,6 +17,9 @@ macro_rules! scoped {
         }
     };
 }
+
+// NOTE: Err variant describes an exception
+type ControlFlow = Result<Value, Value>;
 
 impl Interpreter {
     pub fn new() -> Self {
@@ -65,6 +68,10 @@ impl Interpreter {
         }
 
         let value = self.expression(&function.body);
+        let value = match value {
+            Ok(value) | Err(value) => value,
+        };
+
         println!("\nResult = {}", value.as_string(interner));
     }
 
@@ -134,10 +141,10 @@ impl Interpreter {
         }
     }
 
-    fn matc(&mut self, matc: &MatchExpression) -> Value {
+    fn matc(&mut self, matc: &MatchExpression) -> ControlFlow {
         let MatchExpression { expression, branches } = matc;
 
-        let value = self.expression(expression);
+        let value = self.expression(expression)?;
         for branch in branches {
             if self.does_value_pattern_match(&value, branch.data().pattern()) {
                 let return_value;
@@ -198,7 +205,14 @@ impl Interpreter {
         }
     }
 
-    fn expression(&mut self, expression: &Located<Expression>) -> Value {
+    fn retrn(&mut self, retrn: &ReturnExpression) -> ControlFlow {
+        let ReturnExpression { expression } = retrn;
+
+        let value = self.expression(expression)?;
+        Err(value)
+    }
+
+    fn expression(&mut self, expression: &Located<Expression>) -> ControlFlow {
         match expression.data() {
             Expression::Path(path) => self.path(path),
             Expression::Application(application) => self.application(application),
@@ -207,26 +221,27 @@ impl Interpreter {
             Expression::Sequence(sequence) => self.sequence(sequence),
             Expression::Lambda(lambda) => self.lambda(lambda),
             Expression::Match(matc) => self.matc(matc),
+            Expression::Return(retrn) => self.retrn(retrn),
         }
     }
 
-    fn path(&mut self, path: &PathExpression) -> Value {
+    fn path(&mut self, path: &PathExpression) -> ControlFlow {
         let PathExpression { bound, .. } = path;
 
         match bound {
             Bound::Undetermined => unreachable!(),
             Bound::Local(bound_idx) => {
                 let index = self.locals.len() - 1 - bound_idx;
-                self.locals[index].clone()
+                Ok(self.locals[index].clone())
             },
-            Bound::Absolute(path) => self.names[path].clone(),
+            Bound::Absolute(path) => Ok(self.names[path].clone()),
         }
     }
 
-    fn application(&mut self, application: &ApplicationExpression) -> Value {
+    fn application(&mut self, application: &ApplicationExpression) -> ControlFlow {
         let ApplicationExpression { function, arguments } = application;
 
-        match self.expression(function) {
+        match self.expression(function)? {
             Value::Function(function) => {
                 let FunctionInstance { body } = function.as_ref();
 
@@ -234,7 +249,7 @@ impl Interpreter {
                 scoped!(self, {
                     let mut argument_values = vec![];
                     for argument in arguments {
-                        let argument = self.expression(argument);
+                        let argument = self.expression(argument)?;
                         argument_values.push(argument);
                     }
                     self.locals.extend(argument_values);
@@ -242,7 +257,9 @@ impl Interpreter {
                     return_value = self.expression(body);
                 });
 
-                return_value
+                match return_value {
+                    Ok(value) | Err(value) => Ok(value),
+                }
             },
             Value::Method(method) => {
                 let MethodInstance { instance, function } = method.as_ref();
@@ -252,7 +269,7 @@ impl Interpreter {
                 scoped!(self, {
                     let mut argument_values = vec![];
                     for argument in arguments {
-                        argument_values.push(self.expression(argument));
+                        argument_values.push(self.expression(argument)?);
                     }
                     self.locals.push(instance.clone());
                     self.locals.extend(argument_values);
@@ -260,16 +277,18 @@ impl Interpreter {
                     return_value = self.expression(body);
                 });
 
-                return_value
+                match return_value {
+                    Ok(value) | Err(value) => Ok(value),
+                }
             },
             Value::Constructor(constructor) => {
                 let mut values = vec![];
                 for argument in arguments {
-                    values.push(self.expression(argument));
+                    values.push(self.expression(argument)?);
                 }
 
                 let instance = InstanceInstance { constructor, values };
-                Value::Instance(Rc::new(instance))
+                Ok(Value::Instance(Rc::new(instance)))
             },
             Value::Lambda(lambda) => {
                 let LambdaInstance { capture, body } = lambda.as_ref();
@@ -278,7 +297,7 @@ impl Interpreter {
                 scoped!(self, {
                     let mut argument_values = vec![];
                     for argument in arguments {
-                        argument_values.push(self.expression(argument));
+                        argument_values.push(self.expression(argument)?);
                     }
 
                     self.locals.extend(capture.clone());
@@ -287,10 +306,12 @@ impl Interpreter {
                     return_value = self.expression(body);
                 });
 
-                return_value
+                match return_value {
+                    Ok(value) | Err(value) => Ok(value),
+                }
             }
             Value::InterfaceFunction(name) => {
-                let instance = self.expression(&arguments[0]).clone();
+                let instance = self.expression(&arguments[0])?.clone();
                 let Value::Instance(value) = &instance else {
                     unreachable!();
                 };
@@ -305,7 +326,7 @@ impl Interpreter {
                 scoped!(self, {
                     let mut argument_values = vec![];
                     for argument in arguments {
-                        argument_values.push(self.expression(argument));
+                        argument_values.push(self.expression(argument)?);
                     }
                     self.locals.push(instance.clone());
                     self.locals.extend(argument_values);
@@ -313,16 +334,18 @@ impl Interpreter {
                     return_value = self.expression(body);
                 });
 
-                return_value
+                match return_value {
+                    Ok(value) | Err(value) => Ok(value),
+                }
             }
             _ => unreachable!()
         }
     }
 
-    fn projection(&mut self, projection: &ProjectionExpression) -> Value {
+    fn projection(&mut self, projection: &ProjectionExpression) -> ControlFlow {
         let ProjectionExpression { expression, name } = projection;
 
-        let instance = self.expression(expression);
+        let instance = self.expression(expression)?;
         let Value::Instance(instanceinstance) = &instance else {
             unreachable!();
         };
@@ -332,24 +355,24 @@ impl Interpreter {
 
         let function = self.methods[type_path][name.data()].clone();
         let method = MethodInstance { instance, function };
-        Value::Method(Rc::new(method))
+        Ok(Value::Method(Rc::new(method)))
     }
 
-    fn lett(&mut self, lett: &LetExpression) -> Value {
+    fn lett(&mut self, lett: &LetExpression) -> ControlFlow {
         let LetExpression { value_expression, body_expression, .. } = lett;
 
-        let value = self.expression(value_expression);
+        let value = self.expression(value_expression)?;
 
         let return_value;
         scoped!(self, {
             self.locals.push(value);
-            return_value = self.expression(body_expression);
+            return_value = self.expression(body_expression)?;
         });
 
-        return_value
+        Ok(return_value)
     }
 
-    fn sequence(&mut self, sequence: &SequenceExpression) -> Value {
+    fn sequence(&mut self, sequence: &SequenceExpression) -> ControlFlow {
         let SequenceExpression { expressions } = sequence;
 
         match &expressions[..] {
@@ -364,13 +387,13 @@ impl Interpreter {
         }
     }
 
-    fn lambda(&mut self, lambda: &LambdaExpression) -> Value {
+    fn lambda(&mut self, lambda: &LambdaExpression) -> ControlFlow {
         let LambdaExpression { body, .. } = lambda;
 
         let capture = self.locals.clone();
         let body = *body.clone();
         let lambda = LambdaInstance { capture, body };
 
-        Value::Lambda(Rc::new(lambda))
+        Ok(Value::Lambda(Rc::new(lambda)))
     }
 }

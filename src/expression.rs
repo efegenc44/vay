@@ -8,7 +8,8 @@ pub enum Expression {
     Let(LetExpression),
     Sequence(SequenceExpression),
     Lambda(LambdaExpression),
-    Match(MatchExpression)
+    Match(MatchExpression),
+    Return(ReturnExpression),
 }
 
 #[derive(Clone)]
@@ -75,6 +76,11 @@ impl MatchBranch {
     pub fn expression_mut(&mut self) -> &mut Located<Expression> {
         &mut self.expression
     }
+}
+
+#[derive(Clone)]
+pub struct ReturnExpression {
+    pub expression: Box<Located<Expression>>,
 }
 
 #[derive(Clone)]

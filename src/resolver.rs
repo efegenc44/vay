@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     bound::{Bound, Path},
     declaration::{Constraint, Declaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, TypeVar, VariantDeclaration},
-    expression::{ApplicationExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern},
+    expression::{ApplicationExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern},
     interner::{InternIdx, Interner},
     location::{Located, SourceLocation},
     reportable::{Reportable, ReportableResult},
@@ -320,8 +320,8 @@ impl Resolver {
             Expression::Let(lett) => self.lett(lett),
             Expression::Sequence(sequence) => self.sequence(sequence),
             Expression::Lambda(lambda) => self.lambda(lambda),
-            // Expression::Return(retrn) => self.retrn(retrn),
             Expression::Match(matc) => self.matc(matc),
+            Expression::Return(retrn) => self.retrn(retrn),
         }
     }
 
@@ -486,6 +486,14 @@ impl Resolver {
                 }
             },
         }
+    }
+
+    fn retrn(&mut self, retrn: &mut ReturnExpression) -> ReportableResult<()> {
+        let ReturnExpression { expression } = retrn;
+
+        self.expression(expression)?;
+
+        Ok(())
     }
 
     fn declaration(&mut self, declaration: &mut Declaration) -> ReportableResult<()> {

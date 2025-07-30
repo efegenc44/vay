@@ -17,7 +17,17 @@ fun f:(T (Inter::Add))(x : T) : T = x
 fun g:(T (Inter::Eq))(x : T) : T = x
 
 fun main() : Unit = (
-    (fun(x) (g(x) Inter::Add::add(x, x) x.add(x)))(Unit::Unit)
+    fun(x) (
+        g(x)
+        Inter::Add::add(x, x)
+        return Unit::Unit
+        x.add(x)
+    )
+
+    match Inter::Bool::False {
+        let .True  : return Unit::Unit
+        let .False : Inter::Bool::True
+    }
 
     let id = fun(x) x in (
         id(Unit2::Unit2)

@@ -98,6 +98,7 @@ impl<'source, 'interner> Lexer<'source, 'interner> {
             "let" => Token::LetKeyword,
             "in" => Token::InKeyword,
             "as" => Token::AsKeyword,
+            "return" => Token::ReturnKeyword,
             "" => unreachable!(),
             _ => Token::Identifier(self.interner.intern(lexeme)),
         };
