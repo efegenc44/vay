@@ -10,6 +10,7 @@ pub enum Expression {
     Lambda(LambdaExpression),
     Match(MatchExpression),
     Return(ReturnExpression),
+    Assignment(AssignmentExpression),
 }
 
 #[derive(Clone)]
@@ -80,6 +81,12 @@ impl MatchBranch {
 
 #[derive(Clone)]
 pub struct ReturnExpression {
+    pub expression: Box<Located<Expression>>,
+}
+
+#[derive(Clone)]
+pub struct AssignmentExpression {
+    pub assignable: Box<Located<Expression>>,
     pub expression: Box<Located<Expression>>,
 }
 

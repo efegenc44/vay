@@ -1,0 +1,13 @@
+module Main
+
+import Numbers (Nat (Nat (Succ, Zero)))
+
+fun id:(T)(x: T) : T = x
+
+fun main() : Nat = (
+    let x = Zero in
+    let y = x    in (
+        x = Succ(Zero)
+        y
+    )
+)

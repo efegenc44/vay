@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     bound::{Bound, Path},
     declaration::{Constraint, Declaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, TypeVar, VariantDeclaration},
-    expression::{ApplicationExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern},
+    expression::{ApplicationExpression, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern},
     interner::{InternIdx, Interner},
     location::{Located, SourceLocation},
     reportable::{Reportable, ReportableResult},
@@ -322,6 +322,7 @@ impl Resolver {
             Expression::Lambda(lambda) => self.lambda(lambda),
             Expression::Match(matc) => self.matc(matc),
             Expression::Return(retrn) => self.retrn(retrn),
+            Expression::Assignment(assignment) => self.assignment(assignment),
         }
     }
 
@@ -400,6 +401,13 @@ impl Resolver {
         });
 
         Ok(())
+    }
+
+    fn assignment(&mut self, assignment: &mut AssignmentExpression) -> ReportableResult<()> {
+        let AssignmentExpression { assignable, expression } = assignment;
+
+        self.expression(assignable)?;
+        self.expression(expression)
     }
 
     fn type_expression(&mut self, type_expression: &mut Located<TypeExpression>) -> ReportableResult<()> {

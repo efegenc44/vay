@@ -4,7 +4,7 @@ use crate::{
     bound::{Bound, Path},
     declaration::{self, Declaration, FunctionDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, VariantDeclaration},
     expression::{
-        ApplicationExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
+        ApplicationExpression, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
     },
     interner::{InternIdx, Interner},
     location::{Located, SourceLocation},
@@ -822,18 +822,20 @@ impl Checker {
 
     fn infer(&mut self, expression: &Located<Expression>) -> ReportableResult<MonoType> {
         match expression.data() {
-            Expression::Path(path) => self.path(path),
+            Expression::Path(path) => self.path(path).map(|p| p.0),
             Expression::Application(application) => self.application(application),
-            Expression::Projection(projection) => self.projection(projection),
+            Expression::Projection(projection) => self.projection(projection).map(|p| p.0),
             Expression::Let(lett) => self.lett(lett),
             Expression::Sequence(sequence) => self.sequence(sequence),
             Expression::Lambda(lambda) => self.lambda(lambda),
             Expression::Match(matc) => self.matc(matc),
             Expression::Return(retrn) => self.retrn(retrn),
+            Expression::Assignment(assignment) => self.assignment(assignment),
         }
     }
 
-    fn path(&mut self, path: &PathExpression) -> ReportableResult<MonoType> {
+    // NOTE: bool indicates if the path is assignable
+    fn path(&mut self, path: &PathExpression) -> ReportableResult<(MonoType, bool)> {
         let PathExpression { bound, .. } = path;
 
         match bound {
@@ -848,11 +850,11 @@ impl Checker {
                     local
                 };
 
-                Ok(self.instantiate(t))
+                Ok((self.instantiate(t), true))
             }
             Bound::Absolute(path) => {
                 let t = self.names[path].clone();
-                Ok(self.instantiate(t))
+                Ok((self.instantiate(t), false))
             },
             Bound::Undetermined => unreachable!(),
         }
@@ -901,7 +903,8 @@ impl Checker {
         Ok(return_type.substitute(&self.unification_table))
     }
 
-    fn projection(&mut self, projection: &ProjectionExpression) -> ReportableResult<MonoType> {
+    // NOTE: bool indicates if the projection is assignable
+    fn projection(&mut self, projection: &ProjectionExpression) -> ReportableResult<(MonoType, bool)> {
         let ProjectionExpression { expression, name } = projection;
 
         let m = self.infer(expression)?;
@@ -909,7 +912,7 @@ impl Checker {
             MonoType::Variant(path, arguments) => {
                 let Some((method_type, constraints)) = self.variants[path].methods.get(name.data()) else {
                     return self.error(
-                        TypeCheckError::HasNoMethod {
+                        TypeCheckError::NotProjectable {
                             ty: m,
                             name: *name.data()
                         },
@@ -942,15 +945,15 @@ impl Checker {
                         .zip(arguments.clone())
                         .collect();
 
-                    Ok(MonoType::Function(method_type.clone()).replace_type_constants(&map))
+                    Ok((MonoType::Function(method_type.clone()).replace_type_constants(&map), false))
                 } else {
-                    Ok(MonoType::Function(method_type.clone()))
+                    Ok((MonoType::Function(method_type.clone()), false))
                 }
             },
             MonoType::Constant(type_var) | MonoType::Var(type_var) => {
                 let Some(variable_function) = self.find_method_in_interfaces(name.data(), &type_var.interfaces) else {
                     return self.error(
-                        TypeCheckError::HasNoMethod {
+                        TypeCheckError::NotProjectable {
                             ty: m,
                             name: *name.data()
                         },
@@ -959,11 +962,11 @@ impl Checker {
                 };
 
                 let map = HashMap::from([(INTERFACE_CONSTANT_IDX, m.clone())]);
-                Ok(MonoType::Function(variable_function.clone()).replace_type_constants(&map))
+                Ok((MonoType::Function(variable_function.clone()).replace_type_constants(&map), false))
             }
             _ => {
                 self.error(
-                    TypeCheckError::HasNoMethod {
+                    TypeCheckError::NotProjectable {
                         ty: m,
                         name: *name.data()
                     },
@@ -1032,6 +1035,24 @@ impl Checker {
 
         let function_type = FunctionType { arguments, return_type };
         Ok(MonoType::Function(function_type))
+    }
+
+    fn assignment(&mut self, assignment: &AssignmentExpression) -> ReportableResult<MonoType> {
+        let AssignmentExpression { assignable, expression } = assignment;
+
+        let (assignable_type, is_assignable) = match assignable.data() {
+            Expression::Path(path) => self.path(path)?,
+            Expression::Projection(projection) => self.projection(projection)?,
+            _ => return self.error(TypeCheckError::NotAssignable, assignable.location())
+        };
+
+        if !is_assignable {
+            return self.error(TypeCheckError::NotAssignable, assignable.location());
+        }
+
+        self.check(expression, assignable_type)?;
+
+        Ok(MonoType::Unit)
     }
 
     // TODO: unify should return Result for better error reporting
@@ -1160,7 +1181,7 @@ pub enum TypeCheckError {
         expected: usize,
         encountered: usize,
     },
-    HasNoMethod {
+    NotProjectable {
         ty: MonoType,
         name: InternIdx,
     },
@@ -1177,7 +1198,8 @@ pub enum TypeCheckError {
     DontImplementInterfaces {
         t: MonoType,
         interfaces: HashSet<Path>,
-    }
+    },
+    NotAssignable
 }
 
 impl Reportable for (Located<TypeCheckError>, String) {
@@ -1246,8 +1268,8 @@ impl Reportable for (Located<TypeCheckError>, String) {
                     expected, encountered
                 )
             }
-            TypeCheckError::HasNoMethod { ty, name } => {
-                format!("`{}` has no method named `{}`.",
+            TypeCheckError::NotProjectable { ty, name } => {
+                format!("`{}` has no method or field named `{}`.",
                     ty.display(interner), interner.get(name)
                 )
             }
@@ -1266,6 +1288,9 @@ impl Reportable for (Located<TypeCheckError>, String) {
                 format!("Type `{}` does not implement interfaces: {}.",
                     t.display(interner), interfaces.iter().map(|path| path.as_string(interner)).collect::<Vec<_>>().join(" ")
                 )
+            }
+            TypeCheckError::NotAssignable => {
+                "Expression is not assignable.".into()
             }
         }
     }

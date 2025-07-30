@@ -1,6 +1,6 @@
 use std::{collections::HashMap, rc::Rc};
 
-use crate::{bound::{Bound, Path}, declaration::{Declaration, FunctionDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, VariantDeclaration}, expression::{ApplicationExpression, Expression, LambdaExpression, LetExpression, MatchExpression, PathExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, VariantCasePattern}, interner::{InternIdx, Interner}, location::Located, value::{ConstructorInstance, FunctionInstance, InstanceInstance, LambdaInstance, MethodInstance, Value}};
+use crate::{bound::{Bound, Path}, declaration::{Declaration, FunctionDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, VariantDeclaration}, expression::{ApplicationExpression, AssignmentExpression, Expression, LambdaExpression, LetExpression, MatchExpression, PathExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, VariantCasePattern}, interner::{InternIdx, Interner}, location::Located, value::{ConstructorInstance, FunctionInstance, InstanceInstance, LambdaInstance, MethodInstance, Value}};
 
 pub struct Interpreter {
     methods: HashMap<Path, HashMap<InternIdx, Rc<FunctionInstance>>>,
@@ -224,6 +224,7 @@ impl Interpreter {
             Expression::Lambda(lambda) => self.lambda(lambda),
             Expression::Match(matc) => self.matc(matc),
             Expression::Return(retrn) => self.retrn(retrn),
+            Expression::Assignment(assignment) => self.assignment(assignment)
         }
     }
 
@@ -397,5 +398,31 @@ impl Interpreter {
         let lambda = LambdaInstance { capture, body };
 
         Ok(Value::Lambda(Rc::new(lambda)))
+    }
+
+    fn assignment(&mut self, assignment: &AssignmentExpression) -> ControlFlow {
+        let AssignmentExpression { assignable, expression } = assignment;
+
+        let value = self.expression(expression)?;
+        match assignable.data() {
+            Expression::Path(path) => {
+                let PathExpression { bound, .. } = path;
+
+                match bound {
+                    Bound::Local(idx) => {
+                        let index = self.locals.len() - 1 - idx;
+                        self.locals[index] = value
+                    },
+                    Bound::Absolute(_) |
+                    Bound::Undetermined => unreachable!(),
+                }
+            },
+            Expression::Projection(_projection) => {
+                todo!("Struct field assignment");
+            },
+            _ => unreachable!()
+        }
+
+        Ok(Value::Unit)
     }
 }

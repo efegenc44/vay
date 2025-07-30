@@ -6,7 +6,7 @@ use crate::{
         Constraint, Declaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, TypeVar, TypedIdentifier, VariantCase, VariantDeclaration
     },
     expression::{
-        ApplicationExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchBranch, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
+        ApplicationExpression, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchBranch, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
     },
     interner::{InternIdx, Interner},
     lexer::Lexer,
@@ -170,7 +170,25 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     }
 
     fn expression(&mut self) -> ReportableResult<Located<Expression>> {
-        self.application()
+        self.assignment()
+    }
+
+    fn assignment(&mut self) -> ReportableResult<Located<Expression>> {
+        let expression = self.application()?;
+        if self.peek_is(Token::Equals) {
+            self.advance()?;
+
+            let assign_expression = self.expression()?;
+            let location = expression.location().extend(&assign_expression.location());
+            let assignment = AssignmentExpression {
+                assignable: Box::new(expression),
+                expression: Box::new(assign_expression),
+            };
+
+            Ok(Located::new(Expression::Assignment(assignment), location))
+        } else {
+            Ok(expression)
+        }
     }
 
     fn application(&mut self) -> ReportableResult<Located<Expression>> {
