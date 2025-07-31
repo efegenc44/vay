@@ -249,7 +249,10 @@ impl MonoType {
                 .iter().map(|path| path.as_string(interner))
                 .collect::<Vec<_>>().join(",")
             ),
-            MonoType::Constant(type_var) => format!("c{}", type_var.idx),
+            MonoType::Constant(type_var) => format!("c{} ({})", type_var.idx, type_var.interfaces
+                .iter().map(|path| path.as_string(interner))
+                .collect::<Vec<_>>().join(",")
+            ),
             MonoType::Unit => "()".into(),
             MonoType::Bottom => "Bottom".into()
         }

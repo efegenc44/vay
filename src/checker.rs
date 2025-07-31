@@ -527,13 +527,6 @@ impl Checker {
                     .iter().map(|argument| self.eval_to_mono(argument.data().type_expression()))
                     .collect::<ReportableResult<Vec<_>>>()?;
 
-                let fields = fields
-                    .iter().zip(arguments.clone())
-                    .map(|(field, argument)| (*field.data().indentifier().data(), argument))
-                    .collect::<HashMap<_, _>>();
-
-                *&mut self.structs.get_mut(path).unwrap().fields = fields;
-
                 let return_type = if let Some(return_type) = return_type {
                     Box::new(self.eval_to_mono(return_type)?)
                 } else {
@@ -585,6 +578,13 @@ impl Checker {
             let arguments = fields
                 .iter().map(|field| self.eval_to_mono(field.data().type_expression()))
                 .collect::<ReportableResult<Vec<_>>>()?;
+
+            let fields = fields
+                .iter().zip(arguments.clone())
+                .map(|(field, argument)| (*field.data().indentifier().data(), argument))
+                .collect::<HashMap<_, _>>();
+
+            *&mut self.structs.get_mut(path).unwrap().fields = fields;
 
             let return_type = Box::new(struct_type.clone());
             let function_type = FunctionType { arguments, return_type };
@@ -1195,7 +1195,7 @@ impl Checker {
                             .zip(arguments.clone())
                             .collect();
 
-                        Ok((m.replace_type_constants(&map), true))
+                        Ok((m.substitute(&map), true))
                     } else {
                         Ok((m, true))
                     }
