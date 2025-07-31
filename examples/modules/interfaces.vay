@@ -1,4 +1,4 @@
-module Inter
+module Interfaces
 
 interface Eq t {
     fun eq(that : t) : Bool
@@ -11,9 +11,5 @@ interface Add t {
 variant Bool {
     True
     False
-
-    fun eq(this, that : Bool) : Bool = that
-
-    fun add(this, that : Bool) : Bool = Bool::True
 }
 

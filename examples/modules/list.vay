@@ -1,0 +1,11 @@
+module List
+
+variant List(T) {
+    Nil
+    Cons(T, List(T))
+
+    fun map(this, f: fun(T) : T) : List(T) = match this {
+        let .Nil         : List::Nil
+        let .Cons(x, xs) : List::Cons(f(x), xs.map(f))
+    }
+}

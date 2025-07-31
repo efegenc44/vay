@@ -1,0 +1,21 @@
+module Main
+
+import Numbers (Nat (Nat (Succ, Zero)))
+import Interfaces (Add)
+
+struct Vector2(T) {
+    x : T
+    y : T
+
+    fun:(T (Add)) add(this, that : Vector2(T)) : Vector2(T) = (
+        Vector2(
+            this.x.add(that.x),
+            this.y.add(that.y)
+        )
+    )
+}
+
+fun main() : Vector2(Nat) =
+    Vector2(Zero, Succ(Zero)).add(
+        Vector2(Succ(Succ(Zero)), Zero)
+    )

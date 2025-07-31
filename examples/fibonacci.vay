@@ -1,0 +1,17 @@
+module Main
+
+import Numbers (Nat (Nat (Succ, Zero)))
+import Interfaces (Add, Bool)
+
+fun main() : Bool =
+    let three = Succ(Succ(Succ(Zero))) in
+    let seven = Succ(three.add(three)) in
+    let eigth = Succ(seven) in
+    let twentyone = three.mul(seven) in
+        fibonacci(eigth).eq(twentyone)
+
+fun fibonacci(n : Nat) : Nat = match n {
+    let .Zero           : Zero
+    let .Succ(.Zero)    : Succ(Zero)
+    let .Succ(.Succ(n)) : fibonacci(Succ(n)).add(fibonacci(n))
+}

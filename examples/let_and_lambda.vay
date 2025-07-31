@@ -1,0 +1,16 @@
+module Main
+
+import Numbers (Nat (Nat (Succ, Zero)))
+import Interfaces (Add)
+
+struct Test {}
+
+fun main() : Nat =
+    let I   = fun(x) x in
+    let add = fun(x, y) Add::add(x, y) in (
+        I(())
+        I(Test())
+
+        add(Succ(Zero), Succ(Succ(Zero)))
+    )
+

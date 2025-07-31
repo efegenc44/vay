@@ -1,0 +1,23 @@
+module Main
+
+import Numbers (Nat as MNat (Nat (Succ, Zero)))
+import List (List (Cons, Nil))
+
+struct Cell(T) {
+    inner : T
+
+    fun get(this) : T = this.inner
+    fun set(this, v : T) = this.inner = v
+}
+
+fun cell:(T)(xs : Cell(T)) = ()
+
+fun main() : List(Cell(Nat)) = (
+    let f  = fun(c) (
+        cell(c)
+        c.set(MNat::inc(c.get()))
+        c
+    ) in
+    let xs = Cons(Cell(Succ(Zero)), Cons(Cell(Zero), Nil)) in
+        xs.map(f)
+)
