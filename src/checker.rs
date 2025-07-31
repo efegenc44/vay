@@ -597,21 +597,12 @@ impl Checker {
         let MatchExpression { expression, branches } = matc;
 
         let mut m = self.infer(expression)?;
+        let mut return_type = MonoType::Var(self.newvar());
 
-        let return_type = match &branches[..] {
-            [] => MonoType::Unit,
-            [head, tail@..] => {
-                if !self.type_pattern_match(m.clone(), head.data().pattern())? {
-                    // TODO: Remove push locals by type_pattern_match()
-                    return self.error(
-                        TypeCheckError::NotAPatternOfType { expected: m },
-                        head.data().pattern().location(),
-                    );
-                }
-                let mut return_type = self.infer(head.data().expression())?;
-                m = m.substitute(&self.unification_table);
-
-                for branch in tail {
+        match &branches[..] {
+            [] => return_type = MonoType::Unit,
+            branches => {
+                for branch in branches {
                     scoped!(self, {
                         if !self.type_pattern_match(m.clone(), branch.data().pattern())? {
                             // TODO: Remove push locals by type_pattern_match()
@@ -629,12 +620,11 @@ impl Checker {
                             self.check(branch.data().expression(), return_type.clone())?;
                         }
                         m = m.substitute(&self.unification_table);
+                        return_type = return_type.substitute(&self.unification_table);
                     })
                 }
-
-                return_type
             }
-        };
+        }
 
         Ok(return_type)
     }
