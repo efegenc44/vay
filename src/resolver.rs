@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     bound::{Bound, Path},
-    declaration::{Constraint, Declaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, TypeVar, VariantDeclaration},
+    declaration::{Constraint, Declaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, StructDeclaration, TypeVar, VariantDeclaration},
     expression::{ApplicationExpression, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern},
     interner::{InternIdx, Interner},
     location::{Located, SourceLocation},
@@ -179,6 +179,7 @@ impl Resolver {
                 Declaration::Function(precodure) => self.collect_function_name(precodure)?,
                 Declaration::Variant(variant) => self.collect_variant_name(variant)?,
                 Declaration::Interface(interface) => self.collect_interface_name(interface)?,
+                Declaration::Struct(strct) => self.collect_struct_name(strct)?,
             }
         }
 
@@ -259,6 +260,24 @@ impl Resolver {
             self.value_names.insert(function_path);
         }
         self.current_path_mut().pop();
+
+        Ok(())
+    }
+
+    fn collect_struct_name(&mut self, strct: &mut StructDeclaration) -> ReportableResult<()> {
+        let StructDeclaration { name, path, .. } = strct;
+
+        let struct_path = self.current_path().append(*name.data());
+        if self.type_names.contains(&struct_path) {
+            return self.error(
+                ResolveError::DuplicateTypeDeclaration(struct_path),
+                name.location(),
+            );
+        }
+
+        self.type_names.insert(struct_path.clone());
+        self.value_names.insert(struct_path.clone());
+        *path = struct_path;
 
         Ok(())
     }
@@ -519,6 +538,7 @@ impl Resolver {
             Declaration::Function(function) => self.function(function)?,
             Declaration::Variant(variant) => self.variant(variant)?,
             Declaration::Interface(interface) => self.interface(interface)?,
+            Declaration::Struct(strct) => self.strct(strct)?,
         };
 
         Ok(())
@@ -683,6 +703,27 @@ impl Resolver {
                 if let Some(return_type) = return_type {
                     self.type_expression(return_type)?;
                 }
+            }
+        });
+
+        Ok(())
+    }
+
+    fn strct(&mut self, strct: &mut StructDeclaration) -> ReportableResult<()> {
+        let StructDeclaration { type_vars, fields, methods, .. } = strct;
+
+        scoped!(self, {
+            // TODO: These ones are leaked
+            let type_vars = type_vars.iter().map(|type_var| type_var.data());
+            self.locals.extend(type_vars);
+
+            for field in fields {
+                self.type_expression(field.data_mut().type_expression_mut())?;
+            }
+
+            // TODO: Here we leak type variables in value names, fix
+            for method in methods {
+                self.method(method)?;
             }
         });
 

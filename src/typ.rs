@@ -11,6 +11,7 @@ pub enum Type {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MonoType {
     Variant(Path, Vec<MonoType>),
+    Struct(Path, Vec<MonoType>),
     Function(FunctionType),
     Constant(TypeVar),
     Var(TypeVar),
@@ -53,6 +54,14 @@ impl MonoType {
 
                 MonoType::Variant(path, arguments)
             },
+            MonoType::Struct(path, arguments) => {
+                let arguments = arguments
+                    .into_iter()
+                    .map(|arg| arg.substitute(map))
+                    .collect();
+
+                MonoType::Struct(path, arguments)
+            },
             MonoType::Function(function_type) => {
                 let FunctionType { arguments, return_type } = function_type;
 
@@ -91,6 +100,14 @@ impl MonoType {
 
                 MonoType::Variant(path, arguments)
             },
+            MonoType::Struct(path, arguments) => {
+                let arguments = arguments
+                    .into_iter()
+                    .map(|arg| arg.replace_type_constants(map))
+                    .collect();
+
+                MonoType::Struct(path, arguments)
+            },
             MonoType::Function(function_type) => {
                 let FunctionType { arguments, return_type } = function_type;
 
@@ -127,6 +144,11 @@ impl MonoType {
                         collect_type_vars(argument, vars);
                     }
                 },
+                MonoType::Struct(_, arguments) => {
+                    for argument in arguments {
+                        collect_type_vars(argument, vars);
+                    }
+                },
                 MonoType::Function(t) => {
                     let FunctionType { arguments, return_type } = t;
 
@@ -152,6 +174,9 @@ impl MonoType {
             MonoType::Variant(_, arguments) => {
                 arguments.iter().any(|t| t.occurs(idx))
             },
+            MonoType::Struct(_, arguments) => {
+                arguments.iter().any(|t| t.occurs(idx))
+            },
             MonoType::Function(function) => {
                 let FunctionType { arguments, return_type } = function;
 
@@ -168,6 +193,23 @@ impl MonoType {
     pub fn display(&self, interner: &Interner) -> String {
         match self {
             MonoType::Variant(path, arguments) => {
+                let mut type_string = path.as_string(interner);
+                match &arguments[..] {
+                    [] => (),
+                    [typ] => {
+                        type_string.push_str(&format!("({})", typ.display(interner)));
+                    }
+                    [init @ .., last] => {
+                        type_string.push('(');
+                        for t in init {
+                            type_string.push_str(&format!("{}, ", t.display(interner)));
+                        }
+                        type_string.push_str(&format!("{})", last.display(interner)));
+                    }
+                };
+                type_string
+            },
+            MonoType::Struct(path, arguments) => {
                 let mut type_string = path.as_string(interner);
                 match &arguments[..] {
                     [] => (),

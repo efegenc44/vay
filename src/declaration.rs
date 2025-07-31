@@ -7,7 +7,8 @@ pub enum Declaration {
     Import(ImportDeclaration),
     Function(FunctionDeclaration),
     Variant(VariantDeclaration),
-    Interface(InterfaceDeclaration)
+    Interface(InterfaceDeclaration),
+    Struct(StructDeclaration),
 }
 
 pub struct TypeVar {
@@ -57,6 +58,14 @@ pub struct MethodSignature {
     pub name: Located<InternIdx>,
     pub arguments: Vec<Located<TypedIdentifier>>,
     pub return_type: Option<Located<TypeExpression>>,
+    pub path: Path,
+}
+
+pub struct StructDeclaration {
+    pub name: Located<InternIdx>,
+    pub type_vars: Vec<Located<InternIdx>>,
+    pub fields: Vec<Located<TypedIdentifier>>,
+    pub methods: Vec<MethodDeclaration>,
     pub path: Path,
 }
 

@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     bound::{Bound, Path},
-    declaration::{self, Declaration, FunctionDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, VariantDeclaration},
+    declaration::{self, Declaration, FunctionDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, StructDeclaration, VariantDeclaration},
     expression::{
         ApplicationExpression, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
     },
@@ -38,11 +38,28 @@ impl VariantInformation {
     }
 }
 
+struct StructInformation {
+    ty: Type,
+    fields: HashMap<InternIdx, MonoType>,
+    methods: HashMap<InternIdx, (FunctionType, HashMap<usize, HashSet<Path>>)>,
+}
+
+impl StructInformation {
+    fn with_type(ty: Type) -> Self {
+        Self {
+            ty,
+            fields: HashMap::new(),
+            methods: HashMap::new(),
+        }
+    }
+}
+
 const INTERFACE_CONSTANT_IDX: usize = 0;
 
 pub struct Checker {
     names: HashMap<Path, Type>,
     variants: HashMap<Path, VariantInformation>,
+    structs: HashMap<Path, StructInformation>,
     interfaces: HashMap<Path, Interface>,
 
     // TODO: Seperate type locals and value locals
@@ -61,6 +78,7 @@ impl Checker {
         Self {
             names: HashMap::new(),
             variants: HashMap::new(),
+            structs: HashMap::new(),
             interfaces: HashMap::new(),
             locals: vec![],
             return_type: vec![],
@@ -137,7 +155,13 @@ impl Checker {
                 let index = self.locals.len() - 1 - bound_idx;
                 Ok(self.locals[index].clone())
             }
-            Bound::Absolute(path) => Ok(self.variants[path].ty.clone()),
+            Bound::Absolute(path) => {
+                if let Some(information) = self.variants.get(path) {
+                    Ok(information.ty.clone())
+                } else {
+                    Ok(self.structs[path].ty.clone())
+                }
+            },
             Bound::Undetermined => unreachable!(),
         }
     }
@@ -188,6 +212,12 @@ impl Checker {
                     variant_arguments.push(self.eval_to_mono(argument)?);
                 }
             },
+            MonoType::Struct(_, ref mut variant_arguments) => {
+                for (argument, variable) in arguments.iter().zip(variables) {
+                    assert!(variable.interfaces.is_empty());
+                    variant_arguments.push(self.eval_to_mono(argument)?);
+                }
+            },
             MonoType::Function(_) => todo!(),
 
             MonoType::Constant(_) |
@@ -231,6 +261,7 @@ impl Checker {
             match declaration {
                 Declaration::Interface(interface) => self.collect_interface_type(interface)?,
                 Declaration::Variant(variant) => self.collect_variant_type(variant)?,
+                Declaration::Struct(strct) => self.collect_struct_type(strct)?,
                 _ => ()
             }
         }
@@ -246,8 +277,10 @@ impl Checker {
         }
 
         for declaration in module.declarations() {
-            if let Declaration::Variant(variant) = declaration {
-                self.collect_variant_name(variant)?
+            match declaration {
+                Declaration::Variant(variant) => self.collect_variant_name(variant)?,
+                Declaration::Struct(strct) => self.collect_struct_name(strct)?,
+                _ => (),
             }
         }
 
@@ -306,6 +339,21 @@ impl Checker {
         };
         let variant_information = VariantInformation::with_type(variant_type);
         self.variants.insert(path.clone(), variant_information);
+
+        Ok(())
+    }
+
+    fn collect_struct_type(&mut self, strct: &StructDeclaration) -> ReportableResult<()> {
+        let StructDeclaration { type_vars, path, .. } = strct;
+
+        let struct_type = if type_vars.is_empty() {
+            Type::Mono(MonoType::Struct(path.clone(), vec![]))
+        } else {
+            let variables = type_vars.iter().map(|_| self.newvar()).collect();
+            Type::Forall(variables, MonoType::Struct(path.clone(), vec![]))
+        };
+        let struct_information = StructInformation::with_type(struct_type);
+        self.structs.insert(path.clone(), struct_information);
 
         Ok(())
     }
@@ -445,10 +493,120 @@ impl Checker {
         Ok(())
     }
 
+    fn collect_struct_name(&mut self, strct: &StructDeclaration) -> ReportableResult<()> {
+        let StructDeclaration { fields, methods, path, .. } = strct;
+
+        for method in methods {
+            let MethodDeclaration { constraints, name, arguments, return_type, .. } = method;
+
+            let constraints = constraints
+                .iter().map(|constraint| (
+                    constraint.nth,
+                    constraint
+                        .type_var.data()
+                        .interfaces.iter().map(|interface| interface.1.clone())
+                        .collect::<HashSet<_>>()
+                ))
+                .collect::<HashMap<_, _>>();
+
+            scoped!(self, {
+                if let Type::Forall(variables, _) = self.structs[path].ty.clone() {
+                    self.locals.extend(variables.iter().enumerate().map(|(idx, variable)| {
+                        let interfaces = constraints
+                            .get(&idx)
+                            .cloned()
+                            .unwrap_or(HashSet::new());
+
+                        let mut variable = variable.clone();
+                        variable.interfaces.extend(interfaces);
+                        Type::Mono(MonoType::Constant(variable))
+                    }));
+                }
+
+                let arguments = arguments
+                    .iter().map(|argument| self.eval_to_mono(argument.data().type_expression()))
+                    .collect::<ReportableResult<Vec<_>>>()?;
+
+                let fields = fields
+                    .iter().zip(arguments.clone())
+                    .map(|(field, argument)| (*field.data().indentifier().data(), argument))
+                    .collect::<HashMap<_, _>>();
+
+                *&mut self.structs.get_mut(path).unwrap().fields = fields;
+
+                let return_type = if let Some(return_type) = return_type {
+                    Box::new(self.eval_to_mono(return_type)?)
+                } else {
+                    Box::new(MonoType::Unit)
+                };
+
+                let function_type = FunctionType { arguments, return_type };
+                if self.structs
+                    .get_mut(path)
+                    .unwrap()
+                    .methods
+                    .insert(*name.data(), (function_type, constraints))
+                    .is_some()
+                {
+                    return self.error(
+                        TypeCheckError::DuplicateMethodDeclaration {
+                            variant_path: path.clone(),
+                            method_name: *name.data(),
+                        },
+                        method.name.location(),
+                    );
+                };
+            });
+        }
+
+        scoped!(self, {
+            if let Type::Forall(vars, _) = self.structs[path].ty.clone() {
+                self.locals.extend(vars
+                    .iter().cloned()
+                    .map(MonoType::Var)
+                    .map(Type::Mono)
+                );
+            };
+
+            // NOTE: Not using instantiate() here because variables of the struct
+            //   must remain unchanged for substitution
+            let struct_type = match self.structs[path].ty.clone() {
+                Type::Mono(m) => m,
+                Type::Forall(variables, _) => {
+                    let arguments = variables
+                        .iter().cloned()
+                        .map(MonoType::Var)
+                        .collect();
+
+                    MonoType::Struct(path.clone(), arguments)
+                },
+            };
+
+            let arguments = fields
+                .iter().map(|field| self.eval_to_mono(field.data().type_expression()))
+                .collect::<ReportableResult<Vec<_>>>()?;
+
+            let return_type = Box::new(struct_type.clone());
+            let function_type = FunctionType { arguments, return_type };
+
+            // Generalization
+            let t = if let Type::Forall(variables, _) = self.structs[path].ty.clone() {
+                Type::Forall(variables, MonoType::Function(function_type))
+            } else {
+                Type::Mono(MonoType::Function(function_type))
+            };
+
+            self.names.insert(path.clone(), t);
+        });
+
+        Ok(())
+    }
+
     fn declaration(&mut self, declaration: &Declaration) -> ReportableResult<()> {
         match declaration {
             Declaration::Variant(variant) => self.variant(variant),
             Declaration::Function(function) => self.function(function),
+            Declaration::Struct(strct) => self.strct(strct),
             _ => Ok(())
         }
     }
@@ -518,6 +676,46 @@ impl Checker {
             self.check(body, *return_type)?;
             self.return_type.pop();
         });
+
+        Ok(())
+    }
+
+    fn strct(&mut self, strct: &StructDeclaration) -> ReportableResult<()> {
+        let StructDeclaration { methods, path, .. } = strct;
+
+        for method in methods {
+            let MethodDeclaration { name, body, .. } = method;
+
+            let (method_type, constraints) = &self.structs[path].methods[name.data()];
+            let FunctionType { arguments, return_type } = method_type.clone();
+
+            let struct_type = match self.structs[path].ty.clone() {
+                Type::Mono(m) => m,
+                Type::Forall(variables, _) => {
+                    let arguments = variables.iter().enumerate().map(|(idx, variable)| {
+                        let interfaces = constraints
+                            .get(&idx)
+                            .cloned()
+                            .unwrap_or(HashSet::new());
+
+                        let mut variable = variable.clone();
+                        variable.interfaces.extend(interfaces);
+                        MonoType::Constant(variable)
+                    })
+                    .collect();
+
+                    MonoType::Struct(path.clone(), arguments)
+                },
+            };
+
+            scoped!(self, {
+                self.locals.push(Type::Mono(struct_type));
+                self.locals.extend(arguments.into_iter().map(Type::Mono));
+                self.return_type.push(*return_type.clone());
+                self.check(body, *return_type)?;
+                self.return_type.pop();
+            });
+        }
 
         Ok(())
     }
@@ -780,6 +978,53 @@ impl Checker {
 
                 true
             },
+            MonoType::Struct(path, arguments) => {
+                for interface_path in interfaces {
+                    let interface = &self.interfaces[interface_path];
+                    for (name, interface_function) in &interface.methods {
+                        let Some((struct_function, constraints)) = self.structs[path].methods.get(name) else {
+                            return false;
+                        };
+
+                        for (idx, argument) in arguments.iter().enumerate() {
+                            let empty_constraint = &HashSet::new();
+                            let constraint = constraints
+                                .get(&idx)
+                                .unwrap_or(empty_constraint);
+
+                            if !self.does_satisfy_constraint(argument, constraint) {
+                                return false;
+                            }
+                        }
+
+                        let struct_function = if let Type::Forall(variables, _) = &self.structs[path].ty {
+                            let map = variables
+                                .iter()
+                                .cloned()
+                                .map(|variable| variable.idx)
+                                .zip(arguments.clone())
+                                .collect();
+
+                            MonoType::Function(struct_function.clone())
+                                .replace_type_constants(&map)
+                                .into_function()
+                        } else {
+                            struct_function.clone()
+                        };
+
+                        let map = HashMap::from([(INTERFACE_CONSTANT_IDX, m.clone())]);
+                        let interface_function = MonoType::Function(interface_function.clone())
+                            .replace_type_constants(&map)
+                            .into_function();
+
+                        if struct_function != interface_function {
+                            return false;
+                        }
+                    }
+                }
+
+                true
+            },
             MonoType::Var(type_var) | MonoType::Constant(type_var) => {
                 for path in interfaces {
                     let interface = &self.interfaces[path];
@@ -940,6 +1185,62 @@ impl Checker {
                     Ok((MonoType::Function(method_type.clone()), false))
                 }
             },
+            MonoType::Struct(path, arguments) => {
+                if let Some(m) = self.structs[path].fields.get(name.data()).cloned() {
+                    return if let Type::Forall(variables, _) = &self.structs[path].ty {
+                        let map = variables
+                            .iter()
+                            .cloned()
+                            .map(|variable| variable.idx)
+                            .zip(arguments.clone())
+                            .collect();
+
+                        Ok((m.replace_type_constants(&map), true))
+                    } else {
+                        Ok((m, true))
+                    }
+                };
+
+                let Some((method_type, constraints)) = self.structs[path].methods.get(name.data()) else {
+                    return self.error(
+                        TypeCheckError::NotProjectable {
+                            ty: m,
+                            name: *name.data()
+                        },
+                        name.location()
+                    );
+                };
+
+                for (idx, argument) in arguments.iter().enumerate() {
+                    let empyt_constraint = &HashSet::new();
+                    let constraint = constraints
+                        .get(&idx)
+                        .unwrap_or(empyt_constraint);
+
+                    if !self.does_satisfy_constraint(argument, constraint) {
+                        return self.error(
+                            TypeCheckError::DontImplementInterfaces {
+                                t: argument.clone(),
+                                interfaces: constraint.clone()
+                            },
+                            expression.location(),
+                        );
+                    }
+                }
+
+                if let Type::Forall(variables, _) = &self.structs[path].ty {
+                    let map = variables
+                        .iter()
+                        .cloned()
+                        .map(|variable| variable.idx)
+                        .zip(arguments.clone())
+                        .collect();
+
+                    Ok((MonoType::Function(method_type.clone()).replace_type_constants(&map), false))
+                } else {
+                    Ok((MonoType::Function(method_type.clone()), false))
+                }
+            }
             MonoType::Constant(type_var) | MonoType::Var(type_var) => {
                 let Some(variable_function) = self.find_method_in_interfaces(name.data(), &type_var.interfaces) else {
                     return self.error(

@@ -99,6 +99,7 @@ impl<'source, 'interner> Lexer<'source, 'interner> {
             "in" => Token::InKeyword,
             "as" => Token::AsKeyword,
             "return" => Token::ReturnKeyword,
+            "struct" => Token::StructKeyword,
             "" => unreachable!(),
             _ => Token::Identifier(self.interner.intern(lexeme)),
         };

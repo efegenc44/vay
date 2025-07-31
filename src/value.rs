@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{bound::Path, expression::Expression, interner::{InternIdx, Interner}, location::Located};
 
@@ -10,6 +10,8 @@ pub enum Value {
     InterfaceFunction(InternIdx),
     Constructor(Rc<ConstructorInstance>),
     Instance(Rc<InstanceInstance>),
+    StructConstructor(Rc<StructConstructorInstance>),
+    StructInstance(Rc<StructInstanceInstance>),
     Unit
 }
 
@@ -21,6 +23,7 @@ impl Value {
             Value::Lambda(..) => "<function>".into(),
             Value::InterfaceFunction(..) => "<function>".into(),
             Value::Constructor(..) => "<function>".into(),
+            Value::StructConstructor(..) => "<function>".into(),
             Value::Instance(instance) => {
                 let InstanceInstance { constructor, values, .. } = instance.as_ref();
                 let ConstructorInstance { case, .. } = constructor.as_ref();
@@ -38,6 +41,22 @@ impl Value {
                         string.push_str(", ");
                     }
                     string.push_str(&value.as_string(interner));
+                }
+                string.push(')');
+                string
+            },
+            Value::StructInstance(instance) => {
+                let StructInstanceInstance { type_path, fields } = instance.as_ref();
+
+                let mut string = format!("{}(", type_path.as_string(interner));
+                let mut first = true;
+                for (name, value) in fields.borrow().iter() {
+                    if first {
+                        first = false;
+                    } else {
+                        string.push_str(", ");
+                    }
+                    string.push_str(&format!("{}={}", interner.get(name), value.as_string(interner)));
                 }
                 string.push(')');
                 string
@@ -69,4 +88,14 @@ pub struct ConstructorInstance {
 pub struct InstanceInstance {
     pub constructor: Rc<ConstructorInstance>,
     pub values: Vec<Value>
+}
+
+pub struct StructConstructorInstance {
+    pub type_path: Path,
+    pub fields: Vec<InternIdx>
+}
+
+pub struct StructInstanceInstance {
+    pub type_path: Path,
+    pub fields: RefCell<HashMap<InternIdx, Value>>
 }

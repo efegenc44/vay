@@ -3,7 +3,7 @@ use std::iter::Peekable;
 use crate::{
     bound::{Bound, Path},
     declaration::{
-        Constraint, Declaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, TypeVar, TypedIdentifier, VariantCase, VariantDeclaration
+        Constraint, Declaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, StructDeclaration, TypeVar, TypedIdentifier, VariantCase, VariantDeclaration
     },
     expression::{
         ApplicationExpression, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchBranch, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
@@ -37,6 +37,7 @@ const DECLARATION_KEYWORDS: &[Token] = &[
     Token::VariantKeyword,
     Token::ImportKeyword,
     Token::InterfaceKeyword,
+    Token::StructKeyword,
 ];
 
 const PATTERN_TOKEN_STARTS: &[Token] = &[
@@ -397,6 +398,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             Token::FunKeyword => self.function(),
             Token::VariantKeyword => self.variant(),
             Token::InterfaceKeyword => self.interface(),
+            Token::StructKeyword => self.strct(),
             _ => unreachable!()
         }
     }
@@ -638,6 +640,41 @@ impl<'source, 'interner> Parser<'source, 'interner> {
 
         let interface = InterfaceDeclaration { name, type_name, methods, path: Path::empty() };
         Ok(Declaration::Interface(interface))
+    }
+
+    fn strct(&mut self) -> ReportableResult<Declaration> {
+        self.expect(Token::StructKeyword)?;
+        let name = self.expect_identifier()?;
+        let type_vars = if self.peek_is(Token::LeftParenthesis) {
+            self.advance()?;
+            self.until(
+                Token::RightParenthesis,
+                Self::expect_identifier,
+                Some(Token::Comma)
+            )?.0
+        } else {
+            vec![]
+        };
+        self.expect(Token::LeftCurly)?;
+        let mut fields = vec![];
+        let mut methods = vec![];
+        while self.terminator(Token::RightCurly)?.is_none() {
+            if self.peek_is(Token::FunKeyword) {
+                methods.push(self.method_declaration()?);
+            } else {
+                fields.push(self.typed_identifier()?)
+            }
+        }
+
+        let strct = StructDeclaration {
+            name,
+            type_vars,
+            fields,
+            methods,
+            path: Path::empty(),
+        };
+
+        Ok(Declaration::Struct(strct))
     }
 
     fn type_expression(&mut self) -> ReportableResult<Located<TypeExpression>> {

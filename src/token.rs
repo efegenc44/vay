@@ -25,6 +25,7 @@ pub enum Token {
     InKeyword,
     AsKeyword,
     ReturnKeyword,
+    StructKeyword,
 }
 
 impl Token {
@@ -57,6 +58,7 @@ impl Token {
             Token::InKeyword => "keyword `in`",
             Token::AsKeyword => "keyword `as`",
             Token::ReturnKeyword => "keyword `return`",
+            Token::StructKeyword => "keyword `struct`",
         }
     }
 }

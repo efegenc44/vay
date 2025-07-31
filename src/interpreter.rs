@@ -1,6 +1,6 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::{bound::{Bound, Path}, declaration::{Declaration, FunctionDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, VariantDeclaration}, expression::{ApplicationExpression, AssignmentExpression, Expression, LambdaExpression, LetExpression, MatchExpression, PathExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, VariantCasePattern}, interner::{InternIdx, Interner}, location::Located, value::{ConstructorInstance, FunctionInstance, InstanceInstance, LambdaInstance, MethodInstance, Value}};
+use crate::{bound::{Bound, Path}, declaration::{Declaration, FunctionDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, StructDeclaration, VariantDeclaration}, expression::{ApplicationExpression, AssignmentExpression, Expression, LambdaExpression, LetExpression, MatchExpression, PathExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, VariantCasePattern}, interner::{InternIdx, Interner}, location::Located, value::{ConstructorInstance, FunctionInstance, InstanceInstance, LambdaInstance, MethodInstance, StructConstructorInstance, StructInstanceInstance, Value}};
 
 pub struct Interpreter {
     methods: HashMap<Path, HashMap<InternIdx, Rc<FunctionInstance>>>,
@@ -69,7 +69,11 @@ impl Interpreter {
 
         let value = self.expression(&function.body);
         let value = match value {
-            Ok(value) | Err(value) => value,
+            Ok(value) => value,
+            Err(value) => {
+                println!("Merhaba");
+                value
+            },
         };
 
         println!("\nResult = {}", value.as_string(interner));
@@ -83,6 +87,7 @@ impl Interpreter {
                 Declaration::Interface(interface) => self.collect_interface_name(interface),
                 Declaration::Function(function) => self.collect_function_name(function),
                 Declaration::Variant(variant) => self.collect_variant_name(variant),
+                Declaration::Struct(strct) => self.collect_struct_name(strct),
             }
         }
     }
@@ -120,6 +125,24 @@ impl Interpreter {
 
             self.names.insert(case.data().path().clone(), value);
         }
+
+        self.methods.insert(path.clone(), HashMap::new());
+        for method in methods {
+            let MethodDeclaration { name, body, .. } = method;
+
+            let function = FunctionInstance { body: body.clone() };
+            self.methods.get_mut(path).unwrap().insert(*name.data(), Rc::new(function));
+        }
+    }
+
+    fn collect_struct_name(&mut self, strct: &StructDeclaration) {
+        let StructDeclaration { methods, path, fields, .. } = strct;
+
+        let fields = fields
+            .iter().map(|field| *field.data().indentifier().data())
+            .collect();
+        let constructor = StructConstructorInstance { type_path: path.clone(), fields };
+        self.names.insert(path.clone(), Value::StructConstructor(Rc::new(constructor)));
 
         self.methods.insert(path.clone(), HashMap::new());
         for method in methods {
@@ -341,6 +364,21 @@ impl Interpreter {
                     Ok(value) | Err(value) => Ok(value),
                 }
             }
+            Value::StructConstructor(constructor) => {
+                let StructConstructorInstance { fields, type_path } = constructor.as_ref();
+
+                let mut values = HashMap::new();
+                for (argument, field_name) in arguments.iter().zip(fields.iter()) {
+                    values.insert(*field_name, self.expression(argument)?);
+                }
+
+                let instance = StructInstanceInstance {
+                    type_path: type_path.clone(),
+                    fields: RefCell::new(values)
+                };
+                Ok(Value::StructInstance(Rc::new(instance)))
+            },
+
             _ => unreachable!()
         }
     }
@@ -349,16 +387,29 @@ impl Interpreter {
         let ProjectionExpression { expression, name } = projection;
 
         let instance = self.expression(expression)?;
-        let Value::Instance(instanceinstance) = &instance else {
-            unreachable!();
-        };
 
-        let InstanceInstance { constructor, .. } = instanceinstance.as_ref();
-        let ConstructorInstance { type_path, .. } = constructor.as_ref();
+        match &instance {
+            Value::Instance(instanceinstance) => {
+                let InstanceInstance { constructor, .. } = instanceinstance.as_ref();
+                let ConstructorInstance { type_path, .. } = constructor.as_ref();
 
-        let function = self.methods[type_path][name.data()].clone();
-        let method = MethodInstance { instance, function };
-        Ok(Value::Method(Rc::new(method)))
+                let function = self.methods[type_path][name.data()].clone();
+                let method = MethodInstance { instance, function };
+                Ok(Value::Method(Rc::new(method)))
+            }
+            Value::StructInstance(structinstanceinstance) => {
+                let StructInstanceInstance { type_path, fields } = structinstanceinstance.as_ref();
+
+                if fields.borrow().contains_key(name.data()) {
+                    Ok(fields.borrow().get(name.data()).unwrap().clone())
+                } else {
+                    let function = self.methods[type_path][name.data()].clone();
+                    let method = MethodInstance { instance, function };
+                    Ok(Value::Method(Rc::new(method)))
+                }
+            },
+            _ => unreachable!(),
+        }
     }
 
     fn lett(&mut self, lett: &LetExpression) -> ControlFlow {
@@ -417,8 +468,14 @@ impl Interpreter {
                     Bound::Undetermined => unreachable!(),
                 }
             },
-            Expression::Projection(_projection) => {
-                todo!("Struct field assignment");
+            Expression::Projection(projection) => {
+                let ProjectionExpression { expression, name } = projection;
+                let Value::StructInstance(instance) = self.expression(expression)? else {
+                    unreachable!()
+                };
+
+                let StructInstanceInstance { fields, .. } = instance.as_ref();
+                *fields.borrow_mut().get_mut(name.data()).unwrap() = value;
             },
             _ => unreachable!()
         }
