@@ -381,9 +381,9 @@ impl Interpreter {
         match &expressions[..] {
             [] => Ok(Value::Unit),
             [init@.., last] => {
-                let _ = init
-                    .iter().map(|expression| self.expression(expression))
-                    .collect::<Vec<_>>();
+                for expression in init {
+                    self.expression(expression)?;
+                }
 
                 self.expression(last)
             }
