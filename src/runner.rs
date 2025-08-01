@@ -43,12 +43,13 @@ impl Runner {
             // TODO: Better error reporting here
             let source_content = fs::read_to_string(&source)
                 .map_err(|error| println!("\n    Error {}: {}", source, error))?;
-            let lexer = Lexer::new(source.clone(), &source_content, &mut self.interner);
-            let mut parser = Parser::new(lexer);
+            self.source_contents.insert(source.clone(), source_content);
+            let source_content = &self.source_contents[&source];
             print!("{:>20}: {}", "Parsing", source);
+            let lexer = Lexer::new(source, source_content, &mut self.interner);
+            let mut parser = Parser::new(lexer);
             let module = runner_error!(self, parser.module(), "parsing");
             modules.push(module);
-            self.source_contents.insert(source, source_content);
         }
 
         Ok(modules)
