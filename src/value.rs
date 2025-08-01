@@ -8,10 +8,12 @@ pub enum Value {
     Method(Rc<MethodInstance>),
     Lambda(Rc<LambdaInstance>),
     InterfaceFunction(InternIdx),
+    BuiltinMethod(Box<Value>, fn(Vec<Value>) -> Value),
     Constructor(Rc<ConstructorInstance>),
     Instance(Rc<InstanceInstance>),
     StructConstructor(Rc<StructConstructorInstance>),
     StructInstance(Rc<StructInstanceInstance>),
+    U64(u64),
     Unit
 }
 
@@ -22,6 +24,7 @@ impl Value {
             Value::Method(..) => "<function>".into(),
             Value::Lambda(..) => "<function>".into(),
             Value::InterfaceFunction(..) => "<function>".into(),
+            Value::BuiltinMethod(..) => "<function>".into(),
             Value::Constructor(..) => "<function>".into(),
             Value::StructConstructor(..) => "<function>".into(),
             Value::Instance(instance) => {
@@ -61,8 +64,17 @@ impl Value {
                 string.push(')');
                 string
             },
+            Value::U64(u64) => u64.to_string(),
             Value::Unit => "()".into(),
         }
+    }
+
+    pub fn into_u64(&self) -> u64 {
+        let Self::U64(v) = self else {
+            panic!();
+        };
+
+        *v
     }
 }
 
@@ -70,6 +82,8 @@ pub struct FunctionInstance {
     pub body: Located<Expression>
 }
 
+// TODO: Method probably should take something like Callable
+//   instead of FunctionInstance
 pub struct MethodInstance {
     pub instance: Value,
     pub function: Rc<FunctionInstance>

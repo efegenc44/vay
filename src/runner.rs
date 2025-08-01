@@ -37,8 +37,9 @@ impl Runner {
         }
     }
 
-    pub fn parse_all(&mut self, sources: Vec<String>) -> Result<Vec<Module>, ()> {
+    pub fn parse_all(&mut self, mut sources: Vec<String>) -> Result<Vec<Module>, ()> {
         let mut modules = vec![];
+        sources.push("./src/primitive.vay".into());
         for source in sources {
             // TODO: Better error reporting here
             let source_content = fs::read_to_string(&source)
@@ -59,15 +60,15 @@ impl Runner {
         let mut resolver = Resolver::new();
         print!("{:>20}:", "Name Resolution");
         let modules = runner_error!(self, resolver.resolve(modules), "name resolution");
-        let mut checker = Checker::new();
+        let mut checker = Checker::new(&self.interner);
         print!("{:>20}:", "Type Checking");
         runner_error!(self, checker.type_check(&modules), "type checking");
         Ok(modules)
     }
 
-    pub fn interpret(&self, modules: &[Module]) {
-        let mut interpreter = Interpreter::new();
+    pub fn interpret(&mut self, modules: &[Module]) {
+        let mut interpreter = Interpreter::new(&mut self.interner);
         print!("{:>20}\n", "Interpreting");
-        interpreter.evaluate_main(modules, &self.interner);
+        interpreter.evaluate_main(modules);
     }
 }

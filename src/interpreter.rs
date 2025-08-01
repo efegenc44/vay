@@ -1,11 +1,13 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::{bound::{Bound, Path}, declaration::{Declaration, FunctionDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, StructDeclaration, VariantDeclaration}, expression::{ApplicationExpression, AssignmentExpression, Expression, LambdaExpression, LetExpression, MatchExpression, PathExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, VariantCasePattern}, interner::{InternIdx, Interner}, location::Located, value::{ConstructorInstance, FunctionInstance, InstanceInstance, LambdaInstance, MethodInstance, StructConstructorInstance, StructInstanceInstance, Value}};
+use crate::{bound::{Bound, Path}, declaration::{BuiltInDeclaration, Declaration, FunctionDeclaration, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, StructDeclaration, VariantDeclaration}, expression::{ApplicationExpression, AssignmentExpression, Expression, LambdaExpression, LetExpression, MatchExpression, PathExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, VariantCasePattern}, interner::{InternIdx, Interner}, location::Located, primitive::PRIMITIVE_FUNCTIONS, value::{ConstructorInstance, FunctionInstance, InstanceInstance, LambdaInstance, MethodInstance, StructConstructorInstance, StructInstanceInstance, Value}};
 
-pub struct Interpreter {
+pub struct Interpreter<'interner> {
     methods: HashMap<Path, HashMap<InternIdx, Rc<FunctionInstance>>>,
+    builtin_methods: HashMap<Path, HashMap<InternIdx, fn(Vec<Value>) -> Value>>,
     names: HashMap<Path, Value>,
     locals: Vec<Value>,
+    interner: &'interner mut Interner
 }
 
 macro_rules! scoped {
@@ -21,23 +23,25 @@ macro_rules! scoped {
 // NOTE: Err variant describes an exception
 type ControlFlow = Result<Value, Value>;
 
-impl Interpreter {
-    pub fn new() -> Self {
+impl<'interner> Interpreter<'interner> {
+    pub fn new(interner: &'interner mut Interner) -> Self {
         Self {
             methods: HashMap::new(),
+            builtin_methods: HashMap::new(),
             names: HashMap::new(),
             locals: vec![],
+            interner
         }
     }
 
-    pub fn evaluate_main(&mut self, modules: &[Module], interner: &Interner) {
+    pub fn evaluate_main(&mut self, modules: &[Module]) {
         for module in modules {
             self.collect_names(module);
         }
 
         let mut main_module = None;
         for module in modules {
-            if module.path().as_string(interner) == "Main" {
+            if module.path().as_string(&self.interner) == "Main" {
                 main_module = Some(module);
                 break;
             }
@@ -49,7 +53,7 @@ impl Interpreter {
         let mut main_function = None;
         'outer: for declaration in main_module.declarations() {
             if let Declaration::Function(function) = declaration {
-                if interner.get(function.name.data()) == "main" {
+                if self.interner.get(function.name.data()) == "main" {
                     main_function = Some(declaration);
                     break 'outer;
                 }
@@ -76,7 +80,7 @@ impl Interpreter {
             },
         };
 
-        println!("\nResult = {}", value.as_string(interner));
+        println!("\nResult = {}", value.as_string(&self.interner));
     }
 
     fn collect_names(&mut self, module: &Module) {
@@ -88,6 +92,7 @@ impl Interpreter {
                 Declaration::Function(function) => self.collect_function_name(function),
                 Declaration::Variant(variant) => self.collect_variant_name(variant),
                 Declaration::Struct(strct) => self.collect_struct_name(strct),
+                Declaration::BuiltIn(builtin) => self.collect_builtin_name(builtin),
             }
         }
     }
@@ -157,10 +162,28 @@ impl Interpreter {
         let InterfaceDeclaration { methods, .. } = interface;
 
         for method in methods {
-            let MethodSignature { path, name, .. } = method;
+            let InterfaceMethodSignature { path, name, .. } = method;
 
             let function = Value::InterfaceFunction(*name.data());
             self.names.insert(path.clone(), function);
+        }
+    }
+
+    fn collect_builtin_name(&mut self, builtin: &BuiltInDeclaration) {
+        let BuiltInDeclaration { methods, path, ..  } = builtin;
+
+        self.builtin_methods.insert(path.clone(), HashMap::new());
+        for method in methods {
+            let MethodSignature { name, .. } = method;
+
+            let mpath = path.append(*name.data());
+
+            // TODO: Better error reporting here
+            let f = PRIMITIVE_FUNCTIONS
+                .iter().find(|(ppath, _)| ppath == &mpath.as_string(&self.interner))
+                .unwrap().1;
+
+            self.builtin_methods.get_mut(path).unwrap().insert(*name.data(), f);
         }
     }
 
@@ -185,6 +208,7 @@ impl Interpreter {
     fn does_value_pattern_match(&mut self, value: &Value, pattern: &Located<Pattern>) -> bool {
         match (value, pattern.data()) {
             (_, Pattern::Any(_)) => true,
+            (Value::U64(u64_1), Pattern::Natural(u64_2)) => u64_1 == u64_2,
             (Value::Instance(instance), Pattern::VariantCase(variant_case)) => {
                 let VariantCasePattern { name, fields } = variant_case;
                 let InstanceInstance { constructor, values } = instance.as_ref();
@@ -214,6 +238,7 @@ impl Interpreter {
             (value, Pattern::Any(_)) => {
                 self.locals.push(value.clone());
             }
+            (Value::U64(_), Pattern::Natural(_)) => (),
             (Value::Instance(instance), Pattern::VariantCase(variant_case)) => {
                 let InstanceInstance { values, .. } = instance.as_ref();
                 let VariantCasePattern { fields, .. } = variant_case;
@@ -239,6 +264,7 @@ impl Interpreter {
 
     fn expression(&mut self, expression: &Located<Expression>) -> ControlFlow {
         match expression.data() {
+            Expression::Natural(u64) => Ok(Value::U64(*u64)),
             Expression::Path(path) => self.path(path),
             Expression::Application(application) => self.application(application),
             Expression::Projection(projection) => self.projection(projection),
@@ -264,6 +290,7 @@ impl Interpreter {
         }
     }
 
+    // TODO: Abstract application on Value and use it here
     fn application(&mut self, application: &ApplicationExpression) -> ControlFlow {
         let ApplicationExpression { function, arguments } = application;
 
@@ -338,14 +365,36 @@ impl Interpreter {
             }
             Value::InterfaceFunction(name) => {
                 let instance = self.expression(&arguments[0])?.clone();
-                let Value::Instance(value) = &instance else {
-                    unreachable!();
+                // TODO: Abstract projection on Value and use it here
+                let method = match &instance {
+                    Value::Instance(value) => {
+                        let InstanceInstance { constructor, .. } = value.as_ref();
+                        let ConstructorInstance { type_path, .. } = constructor.as_ref();
+
+                        self.methods[type_path][&name].clone()
+                    },
+                    Value::StructInstance(value) => {
+                        let StructInstanceInstance { type_path, .. } = value.as_ref();
+
+                        self.methods[type_path][&name].clone()
+                    },
+                    Value::U64(u64) => {
+                        let primitive = self.interner.intern("Primitive".into());
+                        let u64name = self.interner.intern("U64".into());
+                        let type_path = Path::empty().append(primitive).append(u64name);
+
+                        let f = self.builtin_methods[&type_path][&name].clone();
+
+                        let mut argument_values = vec![Value::U64(*u64)];
+                        for argument in arguments {
+                            argument_values.push(self.expression(argument)?);
+                        }
+
+                        return Ok(f(argument_values));
+                    },
+                    _ => { unreachable!(); }
                 };
 
-                let InstanceInstance { constructor, .. } = value.as_ref();
-                let ConstructorInstance { type_path, .. } = constructor.as_ref();
-
-                let method = self.methods[type_path][&name].clone();
                 let FunctionInstance { body } = method.as_ref();
 
                 let return_value;
@@ -378,7 +427,14 @@ impl Interpreter {
                 };
                 Ok(Value::StructInstance(Rc::new(instance)))
             },
+            Value::BuiltinMethod(v, f) => {
+                let mut argument_values = vec![*v];
+                for argument in arguments {
+                    argument_values.push(self.expression(argument)?);
+                }
 
+                Ok(f(argument_values))
+            }
             _ => unreachable!()
         }
     }
@@ -408,6 +464,14 @@ impl Interpreter {
                     Ok(Value::Method(Rc::new(method)))
                 }
             },
+            Value::U64(i64) => {
+                let primitive = self.interner.intern("Primitive".into());
+                let u64name = self.interner.intern("U64".into());
+                let type_path = Path::empty().append(primitive).append(u64name);
+
+                let function = self.builtin_methods[&type_path][name.data()].clone();
+                Ok(Value::BuiltinMethod(Box::new(Value::U64(*i64)), function))
+            }
             _ => unreachable!(),
         }
     }

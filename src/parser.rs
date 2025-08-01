@@ -3,7 +3,7 @@ use std::iter::Peekable;
 use crate::{
     bound::{Bound, Path},
     declaration::{
-        Constraint, Declaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, StructDeclaration, TypeVar, TypedIdentifier, VariantCase, VariantDeclaration
+        BuiltInDeclaration, Constraint, Declaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, StructDeclaration, TypeVar, TypedIdentifier, VariantCase, VariantDeclaration
     },
     expression::{
         ApplicationExpression, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchBranch, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
@@ -17,6 +17,7 @@ use crate::{
 
 const PRIMARY_TOKEN_STARTS: &[Token] = &[
     Token::dummy_identifier(),
+    Token::Natural(0),
     Token::LetKeyword,
     Token::LeftParenthesis,
     Token::FunKeyword,
@@ -38,10 +39,12 @@ const DECLARATION_KEYWORDS: &[Token] = &[
     Token::ImportKeyword,
     Token::InterfaceKeyword,
     Token::StructKeyword,
+    Token::BuiltInKeyword,
 ];
 
 const PATTERN_TOKEN_STARTS: &[Token] = &[
     Token::dummy_identifier(),
+    Token::Natural(0),
     Token::Dot,
     Token::LeftParenthesis,
 ];
@@ -92,6 +95,8 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             .find(|expected| {
                 if matches!(expected, Token::Identifier(_)) {
                     matches!(token.data(), Token::Identifier(_))
+                } else if matches!(expected, Token::Natural(_)) {
+                    matches!(token.data(), Token::Natural(_))
                 } else {
                     expected == &token.data()
                 }
@@ -230,6 +235,11 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     fn primary(&mut self) -> ReportableResult<Located<Expression>> {
         let token = self.peek_one_of(PRIMARY_TOKEN_STARTS)?;
         match token.data() {
+            Token::Natural(u64) => {
+                // TODO: Factor this out like the other ones
+                self.advance()?;
+                Ok(Located::new(Expression::Natural(*u64), token.location()))
+            },
             Token::Identifier(_) => self.path(),
             Token::LetKeyword => self.lett(),
             Token::LeftParenthesis => self.sequence(),
@@ -342,6 +352,11 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     fn pattern(&mut self) -> ReportableResult<Located<Pattern>> {
         let token = self.peek_one_of(PATTERN_TOKEN_STARTS)?;
         match token.data() {
+            Token::Natural(u64) => {
+                // TODO: Factor this out like the other ones
+                self.advance()?;
+                Ok(Located::new(Pattern::Natural(*u64), token.location()))
+            }
             Token::Identifier(_) => self.any_pattern(),
             Token::Dot => self.varint_case_pattern(),
             Token::LeftParenthesis => self.pattern_grouping(),
@@ -399,6 +414,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             Token::VariantKeyword => self.variant(),
             Token::InterfaceKeyword => self.interface(),
             Token::StructKeyword => self.strct(),
+            Token::BuiltInKeyword => self.builtin(),
             _ => unreachable!()
         }
     }
@@ -610,7 +626,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         Ok(Declaration::Variant(variant))
     }
 
-    fn method_signature(&mut self) -> ReportableResult<MethodSignature> {
+    fn interface_method_signature(&mut self) -> ReportableResult<InterfaceMethodSignature> {
         self.expect(Token::FunKeyword)?;
         let name = self.expect_identifier()?;
         self.expect(Token::LeftParenthesis)?;
@@ -627,7 +643,46 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             None
         };
 
-        Ok(MethodSignature { name, arguments, return_type, path: Path::empty() })
+        Ok(InterfaceMethodSignature { name, arguments, return_type, path: Path::empty() })
+    }
+
+    fn method_signature(&mut self) -> ReportableResult<MethodSignature> {
+        self.expect(Token::FunKeyword)?;
+
+        let constraints = if self.peek_is(Token::Colon) {
+            self.advance()?;
+            self.expect(Token::LeftParenthesis)?;
+            self.until(
+                Token::RightParenthesis,
+                Self::constraint,
+                Some(Token::Comma)
+            )?.0
+        } else {
+            vec![]
+        };
+
+        let name = self.expect_identifier()?;
+        self.expect(Token::LeftParenthesis)?;
+
+        // TODO: Better error message
+        let instance = self.expect_identifier()?;
+        let (arguments, _) = self.until(
+            Token::RightParenthesis,
+            |parser| {
+                parser.expect(Token::Comma)?;
+                parser.typed_identifier()
+            },
+            None
+        )?;
+
+        let return_type = if self.peek_is(Token::Colon) {
+            self.advance()?;
+            Some(self.type_expression()?)
+        } else {
+            None
+        };
+
+        Ok(MethodSignature { name, constraints, instance, arguments, return_type })
     }
 
     fn interface(&mut self) -> ReportableResult<Declaration> {
@@ -635,7 +690,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         let name = self.expect_identifier()?;
         let type_name = self.expect_identifier()?;
         self.expect(Token::LeftCurly)?;
-        let (methods, _) = self.until(Token::RightCurly, Self::method_signature, None)?;
+        let (methods, _) = self.until(Token::RightCurly, Self::interface_method_signature, None)?;
 
 
         let interface = InterfaceDeclaration { name, type_name, methods, path: Path::empty() };
@@ -675,6 +730,26 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         };
 
         Ok(Declaration::Struct(strct))
+    }
+
+    fn builtin(&mut self) -> ReportableResult<Declaration> {
+        self.expect(Token::BuiltInKeyword)?;
+        let name = self.expect_identifier()?;
+        let type_vars = if self.peek_is(Token::LeftParenthesis) {
+            self.advance()?;
+            self.until(
+                Token::RightParenthesis,
+                Self::expect_identifier,
+                Some(Token::Comma)
+            )?.0
+        } else {
+            vec![]
+        };
+        self.expect(Token::LeftCurly)?;
+        let (methods, _) = self.until(Token::RightCurly, Self::method_signature, None)?;
+
+        let builtin = BuiltInDeclaration { name, methods, path: Path::empty(), type_vars };
+        Ok(Declaration::BuiltIn(builtin))
     }
 
     fn type_expression(&mut self) -> ReportableResult<Located<TypeExpression>> {

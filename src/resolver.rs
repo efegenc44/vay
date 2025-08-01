@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     bound::{Bound, Path},
-    declaration::{Constraint, Declaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, StructDeclaration, TypeVar, VariantDeclaration},
+    declaration::{BuiltInDeclaration, Constraint, Declaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, StructDeclaration, TypeVar, VariantDeclaration},
     expression::{ApplicationExpression, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern},
     interner::{InternIdx, Interner},
     location::{Located, SourceLocation},
@@ -180,6 +180,7 @@ impl Resolver {
                 Declaration::Variant(variant) => self.collect_variant_name(variant)?,
                 Declaration::Interface(interface) => self.collect_interface_name(interface)?,
                 Declaration::Struct(strct) => self.collect_struct_name(strct)?,
+                Declaration::BuiltIn(builtin) => self.collect_builtin_name(builtin)?,
             }
         }
 
@@ -282,6 +283,23 @@ impl Resolver {
         Ok(())
     }
 
+    fn collect_builtin_name(&mut self, builtin: &mut BuiltInDeclaration) -> ReportableResult<()> {
+        let BuiltInDeclaration { name, path, .. } = builtin;
+
+        let builtin = self.current_path().append(*name.data());
+        if self.type_names.contains(&builtin) {
+            return self.error(
+                ResolveError::DuplicateTypeDeclaration(builtin),
+                name.location(),
+            );
+        }
+
+        self.type_names.insert(builtin.clone());
+        *path = builtin;
+
+        Ok(())
+    }
+
     fn find_name(&self, intern_idx: &InternIdx) -> Option<Bound> {
         // Local Scope
         for (index, name_idx) in self.locals.iter().rev().enumerate() {
@@ -333,6 +351,7 @@ impl Resolver {
     fn expression(&mut self, expression: &mut Located<Expression>) -> ReportableResult<()> {
         let location = expression.location();
         match expression.data_mut() {
+            Expression::Natural(_) => Ok(()),
             Expression::Path(path) => self.path(path, location),
             Expression::Application(application) => self.application(application),
             Expression::Projection(projection) => self.projection(projection),
@@ -509,6 +528,7 @@ impl Resolver {
             Pattern::Any(identifier) => {
                 self.locals.push(*identifier);
             }
+            Pattern::Natural(_) => (),
             Pattern::VariantCase(variant_case) => {
                 let VariantCasePattern { fields, .. } = variant_case;
 
@@ -539,6 +559,7 @@ impl Resolver {
             Declaration::Variant(variant) => self.variant(variant)?,
             Declaration::Interface(interface) => self.interface(interface)?,
             Declaration::Struct(strct) => self.strct(strct)?,
+            Declaration::BuiltIn(builtin) => self.builtin(builtin)?,
         };
 
         Ok(())
@@ -694,7 +715,7 @@ impl Resolver {
             self.locals.push(*type_name.data());
 
             for method in methods {
-                let MethodSignature { arguments, return_type, .. } = method;
+                let InterfaceMethodSignature { arguments, return_type, .. } = method;
 
                 for argument in arguments {
                     self.type_expression(argument.data_mut().type_expression_mut())?;
@@ -724,6 +745,29 @@ impl Resolver {
             // TODO: Here we leak type variables in value names, fix
             for method in methods {
                 self.method(method)?;
+            }
+        });
+
+        Ok(())
+    }
+
+    fn builtin(&mut self, builtin: &mut BuiltInDeclaration) -> ReportableResult<()> {
+        let BuiltInDeclaration { type_vars, methods, .. } = builtin;
+
+        scoped!(self, {
+            let type_vars = type_vars.iter().map(|type_var| type_var.data());
+            self.locals.extend(type_vars);
+
+            for method in methods {
+                let MethodSignature { arguments, return_type, .. } = method;
+
+                for argument in arguments {
+                    self.type_expression(argument.data_mut().type_expression_mut())?;
+                }
+
+                if let Some(return_type) = return_type {
+                    self.type_expression(return_type)?;
+                }
             }
         });
 

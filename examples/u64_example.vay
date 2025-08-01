@@ -1,0 +1,10 @@
+module Main
+
+import Primitive (U64)
+import Interfaces (Add)
+
+fun main() : U64 =
+    let x = 5 in match x {
+        let 100 : Add::add(x, 5)
+        let 5   : Add::add(x, 100)
+    }

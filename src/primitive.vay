@@ -1,6 +1,5 @@
 module Primitive
 
-builtin I64 {
-    fun builtin add(this, that : I64) : I64
-    fun
+builtin U64 {
+    fun add(this, that : U64) : U64
 }

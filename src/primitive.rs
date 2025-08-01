@@ -1,9 +1,10 @@
 use crate::value::Value;
 
 pub const PRIMITIVE_FUNCTIONS: &[(&str, fn(Vec<Value>) -> Value)] = &[
-    (&"Primitive::I64::add", |mut _arguments| {
-        println!("Merhaba");
+    (&"Primitive::U64::add", |mut arguments| {
+        let b = arguments.pop().unwrap().into_u64();
+        let a = arguments.pop().unwrap().into_u64();
 
-        Value::Unit
+        Value::U64(a + b)
     })
 ];

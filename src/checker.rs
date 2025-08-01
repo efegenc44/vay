@@ -2,14 +2,14 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     bound::{Bound, Path},
-    declaration::{self, Declaration, FunctionDeclaration, InterfaceDeclaration, MethodDeclaration, MethodSignature, Module, StructDeclaration, VariantDeclaration},
+    declaration::{self, BuiltInDeclaration, Declaration, FunctionDeclaration, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, StructDeclaration, VariantDeclaration},
     expression::{
         ApplicationExpression, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
     },
     interner::{InternIdx, Interner},
     location::{Located, SourceLocation},
     reportable::{Reportable, ReportableResult},
-    typ::{FunctionType, Interface, MonoType, Type, TypeVar},
+    typ::{BuiltInType, FunctionType, Interface, MonoType, Type, TypeVar},
 };
 
 macro_rules! scoped {
@@ -54,13 +54,31 @@ impl StructInformation {
     }
 }
 
+struct BuiltInInformation {
+    ty: Type,
+    methods: HashMap<InternIdx, (FunctionType, HashMap<usize, HashSet<Path>>)>,
+}
+
+impl BuiltInInformation {
+    fn with_type(ty: Type) -> Self {
+        Self {
+            ty,
+            methods: HashMap::new(),
+        }
+    }
+}
+
 const INTERFACE_CONSTANT_IDX: usize = 0;
 
-pub struct Checker {
+pub struct Checker<'interner> {
     names: HashMap<Path, Type>,
     variants: HashMap<Path, VariantInformation>,
     structs: HashMap<Path, StructInformation>,
     interfaces: HashMap<Path, Interface>,
+    builtins: HashMap<Path, BuiltInInformation>,
+    builtin_paths: HashMap<BuiltInType, Path>,
+
+    interner: &'interner Interner,
 
     // TODO: Seperate type locals and value locals
     locals: Vec<Type>,
@@ -73,13 +91,16 @@ pub struct Checker {
     unification_table: HashMap<usize, MonoType>
 }
 
-impl Checker {
-    pub fn new() -> Self {
+impl<'interner> Checker<'interner> {
+    pub fn new(interner: &'interner Interner) -> Self {
         Self {
             names: HashMap::new(),
             variants: HashMap::new(),
             structs: HashMap::new(),
             interfaces: HashMap::new(),
+            builtins: HashMap::new(),
+            builtin_paths: HashMap::new(),
+            interner,
             locals: vec![],
             return_type: vec![],
             // NOTE: 0 is reserved for interfaces' self reference type constant
@@ -158,8 +179,10 @@ impl Checker {
             Bound::Absolute(path) => {
                 if let Some(information) = self.variants.get(path) {
                     Ok(information.ty.clone())
-                } else {
-                    Ok(self.structs[path].ty.clone())
+                } else if let Some(information) = self.structs.get(path) {
+                    Ok(information.ty.clone())
+                } else{
+                    Ok(self.builtins[path].ty.clone())
                 }
             },
             Bound::Undetermined => unreachable!(),
@@ -218,6 +241,12 @@ impl Checker {
                     variant_arguments.push(self.eval_to_mono(argument)?);
                 }
             },
+            MonoType::BuiltIn(_, _, ref mut variant_arguments) => {
+                for (argument, variable) in arguments.iter().zip(variables) {
+                    assert!(variable.interfaces.is_empty());
+                    variant_arguments.push(self.eval_to_mono(argument)?);
+                }
+            },
             MonoType::Function(_) => todo!(),
 
             MonoType::Constant(_) |
@@ -262,6 +291,7 @@ impl Checker {
                 Declaration::Interface(interface) => self.collect_interface_type(interface)?,
                 Declaration::Variant(variant) => self.collect_variant_type(variant)?,
                 Declaration::Struct(strct) => self.collect_struct_type(strct)?,
+                Declaration::BuiltIn(builtin) => self.collect_builtin_type(builtin)?,
                 _ => ()
             }
         }
@@ -280,6 +310,7 @@ impl Checker {
             match declaration {
                 Declaration::Variant(variant) => self.collect_variant_name(variant)?,
                 Declaration::Struct(strct) => self.collect_struct_name(strct)?,
+                Declaration::BuiltIn(builtin) => self.collect_builtin_name(builtin)?,
                 _ => (),
             }
         }
@@ -362,6 +393,28 @@ impl Checker {
         let InterfaceDeclaration { path, .. } = interface;
 
         self.interfaces.insert(path.clone(), Interface { methods: HashMap::new() });
+
+        Ok(())
+    }
+
+    fn collect_builtin_type(&mut self, builtin: &BuiltInDeclaration) -> ReportableResult<()> {
+        let BuiltInDeclaration { type_vars, path, name, .. } = builtin;
+
+        let t = match self.interner.get(name.data()) {
+            "U64" => BuiltInType::U64,
+            _ => panic!("Unknown builtin")
+        };
+
+        self.builtin_paths.insert(t.clone(), path.clone());
+
+        let builtin_type = if type_vars.is_empty() {
+            Type::Mono(MonoType::BuiltIn(path.clone(), t, vec![]))
+        } else {
+            let variables = type_vars.iter().map(|_| self.newvar()).collect();
+            Type::Forall(variables, MonoType::BuiltIn(path.clone(), t, vec![]))
+        };
+        let builtin_information = BuiltInInformation::with_type(builtin_type);
+        self.builtins.insert(path.clone(), builtin_information);
 
         Ok(())
     }
@@ -602,6 +655,68 @@ impl Checker {
         Ok(())
     }
 
+    fn collect_builtin_name(&mut self, builtin: &BuiltInDeclaration) -> ReportableResult<()> {
+        let BuiltInDeclaration { methods, path, .. } = builtin;
+
+        for method in methods {
+            let MethodSignature { constraints, name, arguments, return_type, .. } = method;
+
+            let constraints = constraints
+                .iter().map(|constraint| (
+                    constraint.nth,
+                    constraint
+                        .type_var.data()
+                        .interfaces.iter().map(|interface| interface.1.clone())
+                        .collect::<HashSet<_>>()
+                ))
+                .collect::<HashMap<_, _>>();
+
+            scoped!(self, {
+                if let Type::Forall(variables, _) = self.builtins[path].ty.clone() {
+                    self.locals.extend(variables.iter().enumerate().map(|(idx, variable)| {
+                        let interfaces = constraints
+                            .get(&idx)
+                            .cloned()
+                            .unwrap_or(HashSet::new());
+
+                        let mut variable = variable.clone();
+                        variable.interfaces.extend(interfaces);
+                        Type::Mono(MonoType::Constant(variable.clone()))
+                    }));
+                }
+
+                let arguments = arguments
+                    .iter().map(|argument| self.eval_to_mono(argument.data().type_expression()))
+                    .collect::<ReportableResult<Vec<_>>>()?;
+
+                let return_type = if let Some(return_type) = return_type {
+                    Box::new(self.eval_to_mono(return_type)?)
+                } else {
+                    Box::new(MonoType::Unit)
+                };
+
+                let function_type = FunctionType { arguments, return_type };
+                if self.builtins
+                    .get_mut(path)
+                    .unwrap()
+                    .methods
+                    .insert(*name.data(), (function_type, constraints))
+                    .is_some()
+                {
+                    return self.error(
+                        TypeCheckError::DuplicateMethodDeclaration {
+                            variant_path: path.clone(),
+                            method_name: *name.data(),
+                        },
+                        method.name.location(),
+                    );
+                };
+            });
+        }
+
+        Ok(())
+    }
+
     fn declaration(&mut self, declaration: &Declaration) -> ReportableResult<()> {
         match declaration {
             Declaration::Variant(variant) => self.variant(variant),
@@ -738,7 +853,7 @@ impl Checker {
             );
 
             for method in methods {
-                let MethodSignature { name, arguments, return_type, .. } = method;
+                let InterfaceMethodSignature { name, arguments, return_type, .. } = method;
 
                 let arguments = arguments
                     .iter().map(|argument| self.eval_to_mono(argument.data().type_expression()))
@@ -765,7 +880,7 @@ impl Checker {
             );
 
             for method in methods {
-                let MethodSignature { arguments, return_type, path, .. } = method;
+                let InterfaceMethodSignature { arguments, return_type, path, .. } = method;
 
                 let mut arguments_with_instance = vec![MonoType::Var(instance_type_var.clone())];
 
@@ -833,6 +948,7 @@ impl Checker {
                 self.locals.push(Type::Mono(t));
                 Ok(true)
             },
+            (MonoType::BuiltIn(_, BuiltInType::U64, _), Pattern::Natural(_)) => Ok(true),
             (MonoType::Variant(path, arguments), Pattern::VariantCase(variant_case)) => {
                 let VariantCasePattern { name, fields } = variant_case;
 
@@ -1025,6 +1141,53 @@ impl Checker {
 
                 true
             },
+            MonoType::BuiltIn(path, _, arguments) => {
+                for interface_path in interfaces {
+                    let interface = &self.interfaces[interface_path];
+                    for (name, interface_function) in &interface.methods {
+                        let Some((builtin_function, constraints)) = self.builtins[path].methods.get(name) else {
+                            return false;
+                        };
+
+                        for (idx, argument) in arguments.iter().enumerate() {
+                            let empty_constraint = &HashSet::new();
+                            let constraint = constraints
+                                .get(&idx)
+                                .unwrap_or(empty_constraint);
+
+                            if !self.does_satisfy_constraint(argument, constraint) {
+                                return false;
+                            }
+                        }
+
+                        let builtin_function = if let Type::Forall(variables, _) = &self.builtins[path].ty {
+                            let map = variables
+                                .iter()
+                                .cloned()
+                                .map(|variable| variable.idx)
+                                .zip(arguments.clone())
+                                .collect();
+
+                            MonoType::Function(builtin_function.clone())
+                                .replace_type_constants(&map)
+                                .into_function()
+                        } else {
+                            builtin_function.clone()
+                        };
+
+                        let map = HashMap::from([(INTERFACE_CONSTANT_IDX, m.clone())]);
+                        let interface_function = MonoType::Function(interface_function.clone())
+                            .replace_type_constants(&map)
+                            .into_function();
+
+                        if builtin_function != interface_function {
+                            return false;
+                        }
+                    }
+                }
+
+                true
+            },
             MonoType::Var(type_var) | MonoType::Constant(type_var) => {
                 for path in interfaces {
                     let interface = &self.interfaces[path];
@@ -1057,6 +1220,11 @@ impl Checker {
 
     fn infer(&mut self, expression: &Located<Expression>) -> ReportableResult<MonoType> {
         match expression.data() {
+            Expression::Natural(_) => Ok(MonoType::BuiltIn(
+                self.builtin_paths[&BuiltInType::U64].clone(),
+                BuiltInType::U64,
+                vec![])
+            ),
             Expression::Path(path) => self.path(path).map(|p| p.0),
             Expression::Application(application) => self.application(application),
             Expression::Projection(projection) => self.projection(projection).map(|p| p.0),
@@ -1241,6 +1409,47 @@ impl Checker {
                     Ok((MonoType::Function(method_type.clone()), false))
                 }
             }
+            MonoType::BuiltIn(path, _, arguments) => {
+                let Some((method_type, constraints)) = self.builtins[path].methods.get(name.data()) else {
+                    return self.error(
+                        TypeCheckError::NotProjectable {
+                            ty: m,
+                            name: *name.data()
+                        },
+                        name.location()
+                    );
+                };
+
+                for (idx, argument) in arguments.iter().enumerate() {
+                    let empyt_constraint = &HashSet::new();
+                    let constraint = constraints
+                        .get(&idx)
+                        .unwrap_or(empyt_constraint);
+
+                    if !self.does_satisfy_constraint(argument, constraint) {
+                        return self.error(
+                            TypeCheckError::DontImplementInterfaces {
+                                t: argument.clone(),
+                                interfaces: constraint.clone()
+                            },
+                            expression.location(),
+                        );
+                    }
+                }
+
+                if let Type::Forall(variables, _) = &self.builtins[path].ty {
+                    let map = variables
+                        .iter()
+                        .cloned()
+                        .map(|variable| variable.idx)
+                        .zip(arguments.clone())
+                        .collect();
+
+                    Ok((MonoType::Function(method_type.clone()).replace_type_constants(&map), false))
+                } else {
+                    Ok((MonoType::Function(method_type.clone()), false))
+                }
+            },
             MonoType::Constant(type_var) | MonoType::Var(type_var) => {
                 let Some(variable_function) = self.find_method_in_interfaces(name.data(), &type_var.interfaces) else {
                     return self.error(
@@ -1368,6 +1577,21 @@ impl Checker {
                 if path1 != path2 {
                     return false;
                 }
+
+                for (arg1, arg2) in args1.into_iter().zip(args2) {
+                    if !self.unify(arg1, arg2) {
+                        return false;
+                    }
+                }
+
+                true
+            },
+            (MonoType::BuiltIn(path1, b1, args1), MonoType::BuiltIn(path2, b2, args2)) => {
+                if path1 != path2 {
+                    return false;
+                }
+
+                assert!(b1 == b2);
 
                 for (arg1, arg2) in args1.into_iter().zip(args2) {
                     if !self.unify(arg1, arg2) {

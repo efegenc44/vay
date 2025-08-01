@@ -100,9 +100,28 @@ impl<'source, 'interner> Lexer<'source, 'interner> {
             "as" => Token::AsKeyword,
             "return" => Token::ReturnKeyword,
             "struct" => Token::StructKeyword,
+            "builtin" => Token::BuiltInKeyword,
             "" => unreachable!(),
             _ => Token::Identifier(self.interner.intern(lexeme)),
         };
+
+        Located::new(token, location)
+    }
+
+    fn natural(&mut self) -> Located<Token> {
+        let mut lexeme = String::new();
+        let location = locate!(self, {
+            while let Some(ch) = self.peek_ch() {
+                if ch.is_ascii_digit() {
+                    lexeme.push(self.advance().unwrap());
+                } else {
+                    break;
+                }
+            }
+        });
+
+        let natural = lexeme.parse::<u64>().unwrap();
+        let token = Token::Natural(natural);
 
         Located::new(token, location)
     }
@@ -151,6 +170,8 @@ impl Iterator for Lexer<'_, '_> {
 
         let result = if ch.is_alphabetic() {
             Ok(self.identifier_or_keyword())
+        } else if ch.is_ascii_digit() {
+            Ok(self.natural())
         } else if PUNCTUATION_CHARS.contains(&ch) {
             Ok(self.punctuation())
         } else {

@@ -9,6 +9,7 @@ pub enum Declaration {
     Variant(VariantDeclaration),
     Interface(InterfaceDeclaration),
     Struct(StructDeclaration),
+    BuiltIn(BuiltInDeclaration),
 }
 
 pub struct TypeVar {
@@ -50,11 +51,11 @@ pub struct VariantDeclaration {
 pub struct InterfaceDeclaration {
     pub name: Located<InternIdx>,
     pub type_name: Located<InternIdx>,
-    pub methods: Vec<MethodSignature>,
+    pub methods: Vec<InterfaceMethodSignature>,
     pub path: Path,
 }
 
-pub struct MethodSignature {
+pub struct InterfaceMethodSignature {
     pub name: Located<InternIdx>,
     pub arguments: Vec<Located<TypedIdentifier>>,
     pub return_type: Option<Located<TypeExpression>>,
@@ -69,6 +70,23 @@ pub struct StructDeclaration {
     pub path: Path,
 }
 
+pub struct BuiltInDeclaration {
+    pub name: Located<InternIdx>,
+    pub type_vars: Vec<Located<InternIdx>>,
+    pub methods: Vec<MethodSignature>,
+    pub path: Path,
+}
+
+pub struct MethodSignature {
+    pub name: Located<InternIdx>,
+    pub constraints: Vec<Constraint>,
+    #[allow(unused)]
+    pub instance: Located<InternIdx>,
+    pub arguments: Vec<Located<TypedIdentifier>>,
+    pub return_type: Option<Located<TypeExpression>>,
+}
+
+// TODO: MethodDeclaration should take MethodSignature
 pub struct MethodDeclaration {
     pub name: Located<InternIdx>,
     pub constraints: Vec<Constraint>,

@@ -3,6 +3,7 @@ use crate::interner::InternIdx;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Token {
     Identifier(InternIdx),
+    Natural(u64),
 
     Semicolon,
     Colon,
@@ -26,6 +27,7 @@ pub enum Token {
     AsKeyword,
     ReturnKeyword,
     StructKeyword,
+    BuiltInKeyword,
 }
 
 impl Token {
@@ -36,6 +38,7 @@ impl Token {
     pub fn kind_name(&self) -> &str {
         match self {
             Token::Identifier(_) => "an identifier",
+            Token::Natural(_) => "a natural number",
 
             Token::Semicolon => "`;`",
             Token::Colon => "`:`",
@@ -59,6 +62,7 @@ impl Token {
             Token::AsKeyword => "keyword `as`",
             Token::ReturnKeyword => "keyword `return`",
             Token::StructKeyword => "keyword `struct`",
+            Token::BuiltInKeyword => "keyword `builtin`",
         }
     }
 }
