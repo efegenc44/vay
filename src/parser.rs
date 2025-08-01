@@ -399,7 +399,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             Ok(Located::new(pattern, start.extend(&end)))
         } else {
             let pattern = self.pattern()?;
-            let end = self.expect(Token::LeftParenthesis)?.location();
+            let end = self.expect(Token::RightParenthesis)?.location();
 
             Ok(Located::new(pattern.data().to_owned(), start.extend(&end)))
         }
@@ -836,7 +836,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             Ok(Located::new(type_expression, start.extend(&end)))
         } else {
             let type_expression = self.type_expression()?;
-            let end = self.expect(Token::LeftParenthesis)?.location();
+            let end = self.expect(Token::RightParenthesis)?.location();
 
             Ok(Located::new(type_expression.data().to_owned(), start.extend(&end)))
         }
