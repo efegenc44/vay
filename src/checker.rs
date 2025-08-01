@@ -1364,6 +1364,19 @@ impl Checker {
 
                 true
             },
+            (MonoType::Struct(path1, args1), MonoType::Struct(path2, args2)) => {
+                if path1 != path2 {
+                    return false;
+                }
+
+                for (arg1, arg2) in args1.into_iter().zip(args2) {
+                    if !self.unify(arg1, arg2) {
+                        return false;
+                    }
+                }
+
+                true
+            },
             (MonoType::Function(function1), MonoType::Function(function2)) => {
                 let FunctionType { arguments: args1, return_type: return1 } = function1;
                 let FunctionType { arguments: args2, return_type: return2 } = function2;
