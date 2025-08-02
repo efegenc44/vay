@@ -1,12 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    bound::{Bound, Path},
-    declaration::{BuiltInDeclaration, Constraint, Declaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, StructDeclaration, TypeVar, VariantDeclaration},
-    expression::{ApplicationExpression, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern},
-    interner::{InternIdx, Interner},
-    location::{Located, SourceLocation},
-    reportable::{Reportable, ReportableResult},
+    bound::{Bound, Path}, declaration::{BuiltInDeclaration, Constraint, Declaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, StructDeclaration, TypeVar, VariantDeclaration}, expression::{ApplicationExpression, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern}, interner::{InternIdx, Interner}, intrinsics::INTRINSICS_MODULE_NAME, location::{Located, SourceLocation}, reportable::{Reportable, ReportableResult}
 };
 
 macro_rules! scoped {
@@ -33,8 +28,10 @@ impl ModuleInformation {
     }
 }
 
-pub struct Resolver {
+pub struct Resolver<'interner> {
     modules: HashMap<Path, ModuleInformation>,
+
+    interner: &'interner Interner,
 
     // TODO: Seperete interface and type names
     type_names: HashSet<Path>,
@@ -47,10 +44,12 @@ pub struct Resolver {
     current_source: String,
 }
 
-impl Resolver {
-    pub fn new() -> Self {
+impl<'interner> Resolver<'interner> {
+    pub fn new(interner: &'interner Interner) -> Self {
         Self {
             modules: HashMap::new(),
+
+            interner,
 
             type_names: HashSet::new(),
             value_names: HashSet::new(),
@@ -285,6 +284,10 @@ impl Resolver {
 
     fn collect_builtin_name(&mut self, builtin: &mut BuiltInDeclaration) -> ReportableResult<()> {
         let BuiltInDeclaration { name, path, .. } = builtin;
+
+        if self.current_path().as_string(self.interner) != INTRINSICS_MODULE_NAME {
+            panic!("Not allowed in builtin declarations outside of Intrinsics Module.")
+        }
 
         let builtin = self.current_path().append(*name.data());
         if self.type_names.contains(&builtin) {

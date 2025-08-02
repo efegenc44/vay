@@ -58,7 +58,7 @@ impl Runner {
     }
 
     pub fn check(&mut self, modules: Vec<Module>) -> Result<Vec<Module>, ()> {
-        let mut resolver = Resolver::new();
+        let mut resolver = Resolver::new(&self.interner);
         print!("{:>20}:", "Name Resolution");
         let modules = runner_error!(self, resolver.resolve(modules), "name resolution");
         let mut checker = Checker::new(&self.interner);
