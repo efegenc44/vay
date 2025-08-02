@@ -163,7 +163,7 @@ impl Resolver {
             );
             if let Some(subnames) = &import_name.subnames {
                 for import_name in subnames {
-                    f(&import_name, import_path.clone(), module_information);
+                    f(import_name, import_path.clone(), module_information);
                 }
             }
         }

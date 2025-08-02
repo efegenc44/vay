@@ -349,7 +349,7 @@ impl<'interner> Checker<'interner> {
             _ => panic!("Unknown builtin")
         };
 
-        self.builtin_paths.insert(t.clone(), path.clone());
+        self.builtin_paths.insert(t, path.clone());
 
         let builtin_type = if type_vars.is_empty() {
             Type::Mono(MonoType::BuiltIn(path.clone(), t, vec![]))
@@ -377,7 +377,7 @@ impl<'interner> Checker<'interner> {
             .collect::<HashMap<_, _>>();
 
         scoped!(self, {
-            if let Type::Forall(variables, _) = self.types[&path].clone() {
+            if let Type::Forall(variables, _) = self.types[path].clone() {
                 self.locals.extend(variables.iter().enumerate().map(|(idx, variable)| {
                     let interfaces = constraints
                         .get(&idx)
@@ -833,13 +833,13 @@ impl<'interner> Checker<'interner> {
                         .collect();
 
                     for (t, field_pattern) in case_fields.into_iter().zip(fields) {
-                        if !self.type_pattern_match(t.substitute(&map), &field_pattern)? {
+                        if !self.type_pattern_match(t.substitute(&map), field_pattern)? {
                             return Ok(false);
                         };
                     }
                 } else {
                     for (t, field_pattern) in case_fields.into_iter().zip(fields) {
-                        if !self.type_pattern_match(t, &field_pattern)? {
+                        if !self.type_pattern_match(t, field_pattern)? {
                             return Ok(false);
                         }
                     }

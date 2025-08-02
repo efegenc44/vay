@@ -41,7 +41,7 @@ impl<'interner> Interpreter<'interner> {
 
         let mut main_module = None;
         for module in modules {
-            if module.path().as_string(&self.interner) == "Main" {
+            if module.path().as_string(self.interner) == "Main" {
                 main_module = Some(module);
                 break;
             }
@@ -76,7 +76,7 @@ impl<'interner> Interpreter<'interner> {
             Ok(value) | Err(value) => value,
         };
 
-        println!("\nResult = {}", value.as_string(&self.interner));
+        println!("\nResult = {}", value.as_string(self.interner));
     }
 
     fn collect_names(&mut self, module: &Module) {
@@ -180,7 +180,7 @@ impl<'interner> Interpreter<'interner> {
 
             // TODO: Better error reporting here
             let f = INTRINSIC_FUNCTIONS
-                .iter().find(|(ppath, _)| ppath == &mpath.as_string(&self.interner))
+                .iter().find(|(ppath, _)| ppath == &mpath.as_string(self.interner))
                 .unwrap().1;
 
             self.builtin_methods.get_mut(&t).unwrap().insert(*name.data(), f);
@@ -192,7 +192,7 @@ impl<'interner> Interpreter<'interner> {
 
         let value = self.expression(expression)?;
         for branch in branches {
-            if self.does_value_pattern_match(&value, branch.data().pattern()) {
+            if value.matches(branch.data().pattern().data()) {
                 let return_value;
                 scoped!(self, {
                     self.value_pattern_match(&value, branch.data().pattern());
@@ -203,34 +203,6 @@ impl<'interner> Interpreter<'interner> {
         }
 
         todo!("Unexhaustive pattern matching")
-    }
-
-    fn does_value_pattern_match(&mut self, value: &Value, pattern: &Located<Pattern>) -> bool {
-        match (value, pattern.data()) {
-            (_, Pattern::Any(_)) => true,
-            (Value::U64(u64_1), Pattern::Natural(u64_2)) => u64_1 == u64_2,
-            (Value::Instance(instance), Pattern::VariantCase(variant_case)) => {
-                let VariantCasePattern { name, fields } = variant_case;
-                let InstanceInstance { constructor, values } = instance.as_ref();
-
-                if &constructor.case != name.data() {
-                    return false;
-                }
-
-                let empty_field = vec![];
-                let fields = fields.as_ref().unwrap_or(&empty_field);
-
-                for (value, field) in values.iter().zip(fields) {
-                    if !self.does_value_pattern_match(value, field) {
-                        return false;
-                    }
-                }
-
-                true
-            }
-            (Value::Unit, Pattern::Unit) => true,
-            _ => unreachable!(),
-        }
     }
 
     fn value_pattern_match(&mut self, value: &Value, pattern: &Located<Pattern>) {
@@ -379,7 +351,7 @@ impl<'interner> Interpreter<'interner> {
                         self.methods[type_path][&name].clone()
                     },
                     Value::U64(u64) => {
-                        let f = self.builtin_methods[&BuiltInType::U64][&name].clone();
+                        let f = self.builtin_methods[&BuiltInType::U64][&name];
 
                         let mut argument_values = vec![Value::U64(*u64)];
                         for argument in arguments {
@@ -461,7 +433,7 @@ impl<'interner> Interpreter<'interner> {
                 }
             },
             Value::U64(i64) => {
-                let function = self.builtin_methods[&BuiltInType::U64][name.data()].clone();
+                let function = self.builtin_methods[&BuiltInType::U64][name.data()];
                 Ok(Value::BuiltinMethod(Box::new(Value::U64(*i64)), function))
             }
             _ => unreachable!(),

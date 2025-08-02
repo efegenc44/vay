@@ -47,7 +47,8 @@ const COMMANDS: &[Command] = &[
             if !arguments.is_empty() {
                 let command = arguments.first().unwrap();
                 let Some(command) = COMMANDS.iter().find(|cmd| cmd.name == command) else {
-                    return Err(error(&format!("unknown command `{}`", command)));
+                    error(&format!("unknown command `{}`", command));
+                    return Err(());
                 };
 
                 help_command(command);
@@ -80,7 +81,7 @@ fn help_command(command: &Command) {
 fn error(msg: &str) {
     println!();
     println!("    Error: {}", msg);
-    return help();
+    help();
 }
 
 pub fn execute() {

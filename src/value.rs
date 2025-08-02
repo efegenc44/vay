@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::{bound::Path, expression::Expression, interner::{InternIdx, Interner}, intrinsics::IntrinsicFunction, location::Located};
+use crate::{bound::Path, expression::{Expression, Pattern, VariantCasePattern}, interner::{InternIdx, Interner}, intrinsics::IntrinsicFunction, location::Located};
 
 #[derive(Clone)]
 pub enum Value {
@@ -69,12 +69,40 @@ impl Value {
         }
     }
 
-    pub fn into_u64(&self) -> u64 {
+    pub fn matches(&self, pattern: &Pattern) -> bool {
+        match (self, pattern) {
+            (_, Pattern::Any(_)) => true,
+            (Value::U64(u64_1), Pattern::Natural(u64_2)) => u64_1 == u64_2,
+            (Value::Instance(instance), Pattern::VariantCase(variant_case)) => {
+                let VariantCasePattern { name, fields } = variant_case;
+                let InstanceInstance { constructor, values } = instance.as_ref();
+
+                if &constructor.case != name.data() {
+                    return false;
+                }
+
+                let empty_field = vec![];
+                let fields = fields.as_ref().unwrap_or(&empty_field);
+
+                for (value, field) in values.iter().zip(fields) {
+                    if !value.matches(field.data()) {
+                        return false;
+                    }
+                }
+
+                true
+            }
+            (Value::Unit, Pattern::Unit) => true,
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn into_u64(self) -> u64 {
         let Self::U64(v) = self else {
             panic!();
         };
 
-        *v
+        v
     }
 }
 

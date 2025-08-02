@@ -69,7 +69,7 @@ impl Runner {
 
     pub fn interpret(&mut self, modules: &[Module]) {
         let mut interpreter = Interpreter::new(&mut self.interner);
-        print!("{:>20}\n", "Interpreting");
+        println!("{:>20}", "Interpreting");
         interpreter.evaluate_main(modules);
     }
 }
