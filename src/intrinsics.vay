@@ -1,4 +1,4 @@
-module Primitive
+module Intrinsics
 
 builtin U64 {
     fun add(this, that : U64) : U64

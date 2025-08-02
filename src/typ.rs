@@ -37,7 +37,7 @@ pub struct TypeVar {
     pub interfaces: HashSet<Path>
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum BuiltInType {
     U64,
 }

@@ -1,6 +1,6 @@
 module Main
 
-import Primitive (U64)
+import Intrinsics (U64)
 import Interfaces (Add)
 
 fun main() : U64 =

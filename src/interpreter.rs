@@ -1,10 +1,10 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::{bound::{Bound, Path}, declaration::{BuiltInDeclaration, Declaration, FunctionDeclaration, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, StructDeclaration, VariantDeclaration}, expression::{ApplicationExpression, AssignmentExpression, Expression, LambdaExpression, LetExpression, MatchExpression, PathExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, VariantCasePattern}, interner::{InternIdx, Interner}, location::Located, primitive::PRIMITIVE_FUNCTIONS, value::{ConstructorInstance, FunctionInstance, InstanceInstance, LambdaInstance, MethodInstance, StructConstructorInstance, StructInstanceInstance, Value}};
+use crate::{bound::{Bound, Path}, declaration::{BuiltInDeclaration, Declaration, FunctionDeclaration, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, StructDeclaration, VariantDeclaration}, expression::{ApplicationExpression, AssignmentExpression, Expression, LambdaExpression, LetExpression, MatchExpression, PathExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, VariantCasePattern}, interner::{InternIdx, Interner}, intrinsics::{IntrinsicFunction, INTRINSIC_FUNCTIONS}, location::Located, typ::BuiltInType, value::{ConstructorInstance, FunctionInstance, InstanceInstance, LambdaInstance, MethodInstance, StructConstructorInstance, StructInstanceInstance, Value}};
 
 pub struct Interpreter<'interner> {
     methods: HashMap<Path, HashMap<InternIdx, Rc<FunctionInstance>>>,
-    builtin_methods: HashMap<Path, HashMap<InternIdx, fn(Vec<Value>) -> Value>>,
+    builtin_methods: HashMap<BuiltInType, HashMap<InternIdx, IntrinsicFunction>>,
     names: HashMap<Path, Value>,
     locals: Vec<Value>,
     interner: &'interner mut Interner
@@ -170,20 +170,25 @@ impl<'interner> Interpreter<'interner> {
     }
 
     fn collect_builtin_name(&mut self, builtin: &BuiltInDeclaration) {
-        let BuiltInDeclaration { methods, path, ..  } = builtin;
+        let BuiltInDeclaration { name, methods, path, ..  } = builtin;
 
-        self.builtin_methods.insert(path.clone(), HashMap::new());
+        let t = match self.interner.get(name.data()) {
+            "U64" => BuiltInType::U64,
+            _ => unreachable!()
+        };
+
+        self.builtin_methods.insert(t, HashMap::new());
         for method in methods {
             let MethodSignature { name, .. } = method;
 
             let mpath = path.append(*name.data());
 
             // TODO: Better error reporting here
-            let f = PRIMITIVE_FUNCTIONS
+            let f = INTRINSIC_FUNCTIONS
                 .iter().find(|(ppath, _)| ppath == &mpath.as_string(&self.interner))
                 .unwrap().1;
 
-            self.builtin_methods.get_mut(path).unwrap().insert(*name.data(), f);
+            self.builtin_methods.get_mut(&t).unwrap().insert(*name.data(), f);
         }
     }
 
@@ -379,11 +384,7 @@ impl<'interner> Interpreter<'interner> {
                         self.methods[type_path][&name].clone()
                     },
                     Value::U64(u64) => {
-                        let primitive = self.interner.intern("Primitive".into());
-                        let u64name = self.interner.intern("U64".into());
-                        let type_path = Path::empty().append(primitive).append(u64name);
-
-                        let f = self.builtin_methods[&type_path][&name].clone();
+                        let f = self.builtin_methods[&BuiltInType::U64][&name].clone();
 
                         let mut argument_values = vec![Value::U64(*u64)];
                         for argument in arguments {
@@ -465,11 +466,7 @@ impl<'interner> Interpreter<'interner> {
                 }
             },
             Value::U64(i64) => {
-                let primitive = self.interner.intern("Primitive".into());
-                let u64name = self.interner.intern("U64".into());
-                let type_path = Path::empty().append(primitive).append(u64name);
-
-                let function = self.builtin_methods[&type_path][name.data()].clone();
+                let function = self.builtin_methods[&BuiltInType::U64][name.data()].clone();
                 Ok(Value::BuiltinMethod(Box::new(Value::U64(*i64)), function))
             }
             _ => unreachable!(),

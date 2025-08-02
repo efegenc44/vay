@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fs};
 
 use crate::{
-    checker::Checker, declaration::Module, interner::Interner, interpreter::Interpreter, lexer::Lexer, parser::Parser, resolver::Resolver
+    checker::Checker, declaration::Module, interner::Interner, interpreter::Interpreter, intrinsics::INTRINSICS_FILE_PATH, lexer::Lexer, parser::Parser, resolver::Resolver
 };
 
 macro_rules! runner_error {
@@ -38,8 +38,9 @@ impl Runner {
     }
 
     pub fn parse_all(&mut self, mut sources: Vec<String>) -> Result<Vec<Module>, ()> {
+        sources.push(INTRINSICS_FILE_PATH.into());
+
         let mut modules = vec![];
-        sources.push("./src/primitive.vay".into());
         for source in sources {
             // TODO: Better error reporting here
             let source_content = fs::read_to_string(&source)

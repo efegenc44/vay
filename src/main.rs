@@ -14,7 +14,7 @@ mod interpreter;
 mod value;
 mod commandline;
 mod runner;
-mod primitive;
+mod intrinsics;
 
 fn main() {
     commandline::execute()

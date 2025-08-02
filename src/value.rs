@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::{bound::Path, expression::Expression, interner::{InternIdx, Interner}, location::Located};
+use crate::{bound::Path, expression::Expression, interner::{InternIdx, Interner}, intrinsics::IntrinsicFunction, location::Located};
 
 #[derive(Clone)]
 pub enum Value {
@@ -8,7 +8,7 @@ pub enum Value {
     Method(Rc<MethodInstance>),
     Lambda(Rc<LambdaInstance>),
     InterfaceFunction(InternIdx),
-    BuiltinMethod(Box<Value>, fn(Vec<Value>) -> Value),
+    BuiltinMethod(Box<Value>, IntrinsicFunction),
     Constructor(Rc<ConstructorInstance>),
     Instance(Rc<InstanceInstance>),
     StructConstructor(Rc<StructConstructorInstance>),
