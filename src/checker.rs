@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     bound::{Bound, Path},
-    declaration::{self, BuiltInDeclaration, Declaration, FunctionDeclaration, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, StructDeclaration, VariantDeclaration},
+    declaration::{self, BuiltInDeclaration, Declaration, FunctionDeclaration, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, StructDeclaration, TypedIdentifier, VariantDeclaration},
     expression::{
         ApplicationExpression, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
     },
@@ -101,6 +101,14 @@ impl<'interner> Checker<'interner> {
         }
     }
 
+    fn declaration_type(&mut self, m: MonoType, type_vars: Vec<TypeVar>) -> Type {
+        if type_vars.is_empty() {
+            Type::Mono(m)
+        } else {
+            Type::Forall(type_vars, m)
+        }
+    }
+
     fn type_vars(&mut self, type_vars: &[Located<declaration::TypeVar>]) -> Vec<TypeVar> {
         let mut vars = vec![];
         for var in type_vars {
@@ -117,11 +125,142 @@ impl<'interner> Checker<'interner> {
         vars
     }
 
+    fn type_vars_of_type(&self, type_path: &Path) -> Vec<TypeVar> {
+        if let Type::Forall(type_vars, _) = self.types[type_path].clone() {
+            type_vars
+        } else {
+            vec![]
+        }
+    }
+
+    fn get_function_type(
+        &mut self,
+        arguments: &[Located<TypedIdentifier>],
+        return_type: &Option<Located<TypeExpression>>,
+    ) -> ReportableResult<FunctionType> {
+        let arguments = arguments
+            .iter().map(|argument| self.eval_to_mono(argument.data().type_expression()))
+            .collect::<ReportableResult<Vec<_>>>()?;
+
+        let return_type = if let Some(return_type) = return_type {
+            Box::new(self.eval_to_mono(return_type)?)
+        } else {
+            Box::new(MonoType::Unit)
+        };
+
+        Ok(FunctionType { arguments, return_type })
+    }
+
+    fn define_type_vars(&mut self, type_vars: Vec<TypeVar>) {
+        let ms = type_vars
+            .into_iter()
+            .map(MonoType::Var)
+            .map(Type::Mono);
+
+        self.locals.extend(ms);
+    }
+
+    fn define_type_constants(&mut self, type_vars: Vec<TypeVar>) {
+        let ms = type_vars
+            .into_iter()
+            .map(MonoType::Constant)
+            .map(Type::Mono);
+
+        self.locals.extend(ms);
+    }
+
+    fn define_constrained_type_constants(
+        &mut self,
+        type_vars: Vec<TypeVar>,
+        constraints: &HashMap<usize, HashSet<Path>>
+    ) {
+        let ms = type_vars
+            .into_iter().enumerate()
+            .map(|(idx, mut type_var)| {
+                type_var.interfaces = constraints.get(&idx).cloned().unwrap_or(HashSet::new());
+                type_var
+            })
+            .map(MonoType::Constant)
+            .map(Type::Mono);
+
+        self.locals.extend(ms);
+    }
+
+    fn argumented_typed(&self, type_path: &Path) -> MonoType {
+        match self.types[type_path].clone() {
+            Type::Mono(m) => m,
+            Type::Forall(variables, m) => {
+                let arguments = variables
+                    .iter().cloned()
+                    .map(MonoType::Var)
+                    .collect();
+
+                match m {
+                    MonoType::Variant(path, _) => MonoType::Variant(path, arguments),
+                    MonoType::Struct(path, _) => MonoType::Struct(path, arguments),
+                    MonoType::BuiltIn(path, builtin, _) => MonoType::BuiltIn(path, builtin, arguments),
+                    _ => unreachable!()
+                }
+            },
+        }
+    }
+
+    fn constantize(&self, t: Type) -> MonoType {
+        match t {
+            Type::Mono(m) => m,
+            Type::Forall(type_vars, m) => {
+                let map = type_vars
+                    .iter().cloned()
+                    .map(|var| (var.idx, MonoType::Constant(var)))
+                    .collect();
+
+                m.substitute(&map)
+            }
+        }
+    }
+
+    fn substitute_arguments(&self, type_path: &Path, arguments: Vec<MonoType>, ms: Vec<MonoType>) -> Vec<MonoType> {
+        if let Type::Forall(type_variables, _) = &self.types[type_path] {
+            let map = type_variables
+                .iter().cloned()
+                .map(|variable| variable.idx)
+                .zip(arguments)
+                .collect();
+
+            ms.into_iter().map(|m| m.substitute(&map)).collect()
+        } else {
+            ms
+        }
+    }
+
+    fn substitute_arguments_one(&self, type_path: &Path, arguments: Vec<MonoType>, m: MonoType) -> MonoType {
+        let mut m = self.substitute_arguments(type_path, arguments, vec![m]);
+        m.pop().unwrap()
+    }
+
+    fn replace_arguments(&self, type_path: &Path, arguments: Vec<MonoType>, ms: Vec<MonoType>) -> Vec<MonoType> {
+        if let Type::Forall(type_variables, _) = &self.types[type_path] {
+            let map = type_variables
+                .iter().cloned()
+                .map(|variable| variable.idx)
+                .zip(arguments)
+                .collect();
+
+            ms.into_iter().map(|m| m.replace_type_constants(&map)).collect()
+        } else {
+            ms
+        }
+    }
+
+    fn replace_arguments_one(&self, type_path: &Path, arguments: Vec<MonoType>, m: MonoType) -> MonoType {
+        let mut m = self.replace_arguments(type_path, arguments, vec![m]);
+        m.pop().unwrap()
+    }
+
     fn eval_type_expression(&mut self, type_expression: &Located<TypeExpression>) -> ReportableResult<Type> {
         match type_expression.data() {
             TypeExpression::Path(type_path) => self.eval_path_type(type_path),
             TypeExpression::Function(function) => self.eval_function_type(function),
-            // TODO: Inconsistent naming?
             TypeExpression::Application(type_application) => self.eval_type_application(type_application),
             TypeExpression::Unit => Ok(Type::Mono(MonoType::Unit)),
         }
@@ -149,11 +288,12 @@ impl<'interner> Checker<'interner> {
             .iter().map(|argument| self.eval_to_mono(argument))
             .collect::<ReportableResult<Vec<_>>>()?;
 
-        let return_type = if let Some(return_type) = return_type {
-            Box::new(self.eval_to_mono(return_type)?)
-        } else {
-            Box::new(MonoType::Unit)
-        };
+        let return_type = return_type
+            .as_ref()
+            .map(|return_type| self.eval_to_mono(return_type))
+            .unwrap_or(Ok(MonoType::Unit))?;
+
+        let return_type = Box::new(return_type);
 
         Ok(Type::Mono(MonoType::Function(FunctionType { arguments, return_type })))
     }
@@ -181,11 +321,11 @@ impl<'interner> Checker<'interner> {
             )
         }
 
-        match m {
-            MonoType::Variant(_, ref mut variant_arguments) |
-            MonoType::Struct(_, ref mut variant_arguments) |
-            MonoType::BuiltIn(_, _, ref mut variant_arguments) => {
-                    for (argument, variable) in arguments.iter().zip(variables) {
+        match &mut m {
+            MonoType::Variant(_, variant_arguments) |
+            MonoType::Struct(_, variant_arguments) |
+            MonoType::BuiltIn(_, _, variant_arguments) => {
+                for (argument, variable) in arguments.iter().zip(variables) {
                     assert!(variable.interfaces.is_empty());
                     variant_arguments.push(self.eval_to_mono(argument)?);
                 }
@@ -271,31 +411,13 @@ impl<'interner> Checker<'interner> {
     fn collect_function_name(&mut self, function: &FunctionDeclaration) -> ReportableResult<()> {
         let FunctionDeclaration { type_vars, arguments, return_type, path, .. } = function;
 
+        let type_vars = self.type_vars(type_vars);
+
         scoped!(self, {
-            let type_vars = self.type_vars(type_vars);
-            self.locals.extend(type_vars
-                .iter().cloned()
-                .map(MonoType::Var)
-                .map(Type::Mono)
-            );
+            self.define_type_vars(type_vars.clone());
 
-            let arguments = arguments
-                .iter().map(|argument| self.eval_to_mono(argument.data().type_expression()))
-                .collect::<ReportableResult<Vec<_>>>()?;
-
-            let return_type = if let Some(return_type) = return_type {
-                Box::new(self.eval_to_mono(return_type)?)
-            } else {
-                Box::new(MonoType::Unit)
-            };
-
-            let function = MonoType::Function(FunctionType { arguments, return_type });
-
-            let t = if type_vars.is_empty() {
-                Type::Mono(function)
-            } else {
-                Type::Forall(type_vars, function)
-            };
+            let m = self.get_function_type(arguments, return_type)?.into_mono();
+            let t = self.declaration_type(m, type_vars);
 
             self.value_types.insert(path.clone(), t);
         });
@@ -306,14 +428,12 @@ impl<'interner> Checker<'interner> {
     fn collect_variant_type(&mut self, variant: &VariantDeclaration) -> ReportableResult<()> {
         let VariantDeclaration { path, type_vars, .. } = variant;
 
-        let variant_type = if type_vars.is_empty() {
-            Type::Mono(MonoType::Variant(path.clone(), vec![]))
-        } else {
-            let variables = type_vars.iter().map(|_| self.newvar()).collect();
-            Type::Forall(variables, MonoType::Variant(path.clone(), vec![]))
-        };
+        let type_vars = type_vars.iter().map(|_| self.newvar()).collect();
 
-        self.types.insert(path.clone(), variant_type);
+        let m = MonoType::Variant(path.clone(), vec![]);
+        let t = self.declaration_type(m, type_vars);
+
+        self.types.insert(path.clone(), t);
 
         Ok(())
     }
@@ -321,14 +441,12 @@ impl<'interner> Checker<'interner> {
     fn collect_struct_type(&mut self, strct: &StructDeclaration) -> ReportableResult<()> {
         let StructDeclaration { type_vars, path, .. } = strct;
 
-        let struct_type = if type_vars.is_empty() {
-            Type::Mono(MonoType::Struct(path.clone(), vec![]))
-        } else {
-            let variables = type_vars.iter().map(|_| self.newvar()).collect();
-            Type::Forall(variables, MonoType::Struct(path.clone(), vec![]))
-        };
+        let type_vars = type_vars.iter().map(|_| self.newvar()).collect();
 
-        self.types.insert(path.clone(), struct_type);
+        let m = MonoType::Struct(path.clone(), vec![]);
+        let t = self.declaration_type(m, type_vars);
+
+        self.types.insert(path.clone(), t);
 
         Ok(())
     }
@@ -344,63 +462,47 @@ impl<'interner> Checker<'interner> {
     fn collect_builtin_type(&mut self, builtin: &BuiltInDeclaration) -> ReportableResult<()> {
         let BuiltInDeclaration { type_vars, path, name, .. } = builtin;
 
-        let t = match self.interner.get(name.data()) {
+        let builtin_type = match self.interner.get(name.data()) {
             "U64" => BuiltInType::U64,
             _ => panic!("Unknown builtin")
         };
 
-        self.builtin_paths.insert(t, path.clone());
+        let type_vars = type_vars.iter().map(|_| self.newvar()).collect();
 
-        let builtin_type = if type_vars.is_empty() {
-            Type::Mono(MonoType::BuiltIn(path.clone(), t, vec![]))
-        } else {
-            let variables = type_vars.iter().map(|_| self.newvar()).collect();
-            Type::Forall(variables, MonoType::BuiltIn(path.clone(), t, vec![]))
-        };
+        let m = MonoType::BuiltIn(path.clone(), builtin_type, vec![]);
+        let t = self.declaration_type(m, type_vars);
 
-        self.types.insert(path.clone(), builtin_type);
+        self.builtin_paths.insert(builtin_type, path.clone());
+        self.types.insert(path.clone(), t);
 
         Ok(())
+    }
+
+    fn method_constraints(constraints: &[declaration::Constraint]) -> HashMap<usize, HashSet<Path>> {
+        fn interfaces(type_var: &Located<declaration::TypeVar>) -> HashSet<Path> {
+            type_var
+                .data().interfaces
+                .iter().map(|interface| interface.1.clone())
+                .collect()
+        }
+
+        constraints
+            .iter()
+            .map(|constraint| (constraint.nth, interfaces(&constraint.type_var)))
+            .collect()
     }
 
     fn collect_method_signatures(&mut self, path: &Path, signature: &MethodSignature) -> ReportableResult<()> {
         let MethodSignature { constraints, name, arguments, return_type, .. } = signature;
 
-        let constraints = constraints
-            .iter().map(|constraint| (
-                constraint.nth,
-                constraint
-                    .type_var.data()
-                    .interfaces.iter().map(|interface| interface.1.clone())
-                    .collect::<HashSet<_>>()
-            ))
-            .collect::<HashMap<_, _>>();
+        let constraints = Self::method_constraints(constraints);
 
         scoped!(self, {
-            if let Type::Forall(variables, _) = self.types[path].clone() {
-                self.locals.extend(variables.iter().enumerate().map(|(idx, variable)| {
-                    let interfaces = constraints
-                        .get(&idx)
-                        .cloned()
-                        .unwrap_or(HashSet::new());
-
-                    let mut variable = variable.clone();
-                    variable.interfaces.extend(interfaces);
-                    Type::Mono(MonoType::Constant(variable))
-                }));
+            if let Type::Forall(type_vars, _) = self.types[path].clone() {
+                self.define_constrained_type_constants(type_vars, &constraints);
             }
 
-            let arguments = arguments
-                .iter().map(|argument| self.eval_to_mono(argument.data().type_expression()))
-                .collect::<ReportableResult<Vec<_>>>()?;
-
-            let return_type = if let Some(return_type) = return_type {
-                Box::new(self.eval_to_mono(return_type)?)
-            } else {
-                Box::new(MonoType::Unit)
-            };
-
-            let function_type = FunctionType { arguments, return_type };
+            let function_type = self.get_function_type(arguments, return_type)?;
             let method_type = MethodType { function_type, constraints };
 
             let methods = self.methods.get_mut(path).unwrap();
@@ -426,35 +528,19 @@ impl<'interner> Checker<'interner> {
             self.collect_method_signatures(path, &method.signature)?;
         }
 
+        let type_vars = self.type_vars_of_type(path);
+
         scoped!(self, {
-            if let Type::Forall(vars, _) = self.types[path].clone() {
-                self.locals.extend(vars
-                    .iter().cloned()
-                    .map(MonoType::Var)
-                    .map(Type::Mono)
-                );
-            };
-
-            // NOTE: Not using instantiate() here because variables of the variant
-            //   must remain unchanged for substitution
-            let variant_type = match self.types[path].clone() {
-                Type::Mono(m) => m,
-                Type::Forall(variables, _) => {
-                    let arguments = variables
-                        .iter().cloned()
-                        .map(MonoType::Var)
-                        .collect();
-
-                    MonoType::Variant(path.clone(), arguments)
-                },
-            };
+            self.define_type_vars(type_vars.clone());
+            let variant_type = self.argumented_typed(path);
+            self.cases.insert(path.clone(), HashMap::new());
 
             let mut variant_cases = HashMap::new();
             for case in cases {
                 let case_name = *case.data().identifier().data();
                 let case_path = case.data().path().clone();
 
-                if let Some(arguments) = case.data().arguments() {
+                let m = if let Some(arguments) = case.data().arguments() {
                     let arguments = arguments
                         .iter().map(|argument| self.eval_to_mono(argument))
                         .collect::<ReportableResult<Vec<_>>>()?;
@@ -462,29 +548,14 @@ impl<'interner> Checker<'interner> {
                     let return_type = Box::new(variant_type.clone());
 
                     variant_cases.insert(case_name, arguments.clone());
-
-                    let function_type = FunctionType { arguments, return_type };
-
-                    // Generalization
-                    let t = if let Type::Forall(variables, _) = self.types[path].clone() {
-                        Type::Forall(variables, MonoType::Function(function_type))
-                    } else {
-                        Type::Mono(MonoType::Function(function_type))
-                    };
-
-                    self.value_types.insert(case_path, t);
+                    FunctionType { arguments, return_type }.into_mono()
                 } else {
                     variant_cases.insert(case_name, vec![]);
+                    variant_type.clone()
+                };
 
-                    // Generalization
-                    let t = if let Type::Forall(vars, _) = self.types[path].clone() {
-                        Type::Forall(vars, variant_type.clone())
-                    } else {
-                        Type::Mono(variant_type.clone())
-                    };
-
-                    self.value_types.insert(case_path, t);
-                }
+                let t = self.declaration_type(m, type_vars.clone());
+                self.value_types.insert(case_path, t);
             }
 
             self.cases.insert(path.clone(), variant_cases);
@@ -501,28 +572,12 @@ impl<'interner> Checker<'interner> {
             self.collect_method_signatures(path, &method.signature)?;
         }
 
+        let type_vars = self.type_vars_of_type(path);
+
         scoped!(self, {
-            if let Type::Forall(vars, _) = self.types[path].clone() {
-                self.locals.extend(vars
-                    .iter().cloned()
-                    .map(MonoType::Var)
-                    .map(Type::Mono)
-                );
-            };
+            self.define_type_vars(type_vars.clone());
 
-            // NOTE: Not using instantiate() here because variables of the struct
-            //   must remain unchanged for substitution
-            let struct_type = match self.types[path].clone() {
-                Type::Mono(m) => m,
-                Type::Forall(variables, _) => {
-                    let arguments = variables
-                        .iter().cloned()
-                        .map(MonoType::Var)
-                        .collect();
-
-                    MonoType::Struct(path.clone(), arguments)
-                },
-            };
+            let struct_type = self.argumented_typed(path);
 
             let arguments = fields
                 .iter().map(|field| self.eval_to_mono(field.data().type_expression()))
@@ -533,18 +588,12 @@ impl<'interner> Checker<'interner> {
                 .map(|(field, argument)| (*field.data().indentifier().data(), argument))
                 .collect::<HashMap<_, _>>();
 
-
             self.fields.insert(path.clone(), fields);
 
             let return_type = Box::new(struct_type.clone());
-            let function_type = FunctionType { arguments, return_type };
 
-            // Generalization
-            let t = if let Type::Forall(variables, _) = self.types[path].clone() {
-                Type::Forall(variables, MonoType::Function(function_type))
-            } else {
-                Type::Mono(MonoType::Function(function_type))
-            };
+            let m = FunctionType { arguments, return_type }.into_mono();
+            let t = self.declaration_type(m, type_vars.clone());
 
             self.value_types.insert(path.clone(), t);
         });
@@ -576,29 +625,11 @@ impl<'interner> Checker<'interner> {
         let VariantDeclaration { methods, path, .. } = variant;
 
         for method in methods {
-            let MethodDeclaration { signature, body, .. } = method;
+            let MethodDeclaration { signature, body } = method;
 
             let method_type = &self.methods[path][signature.name.data()];
             let FunctionType { arguments, return_type } = method_type.function_type.clone();
-
-            let variant_type = match self.types[path].clone() {
-                Type::Mono(m) => m,
-                Type::Forall(variables, _) => {
-                    let arguments = variables.iter().enumerate().map(|(idx, variable)| {
-                        let interfaces = method_type.constraints
-                            .get(&idx)
-                            .cloned()
-                            .unwrap_or(HashSet::new());
-
-                        let mut variable = variable.clone();
-                        variable.interfaces.extend(interfaces);
-                        MonoType::Constant(variable)
-                    })
-                    .collect();
-
-                    MonoType::Variant(path.clone(), arguments)
-                },
-            };
+            let variant_type = self.method_instance_type(path, &method_type.constraints);
 
             scoped!(self, {
                 self.locals.push(Type::Mono(variant_type));
@@ -612,24 +643,34 @@ impl<'interner> Checker<'interner> {
         Ok(())
     }
 
+    fn method_instance_type(&self, type_path: &Path, constraints: &HashMap<usize, HashSet<Path>>) -> MonoType {
+        match self.types[type_path].clone() {
+            Type::Mono(m) => m,
+            Type::Forall(type_vars, m) => {
+                let arguments = type_vars
+                    .into_iter().enumerate()
+                    .map(|(idx, mut type_var)| {
+                        type_var.interfaces = constraints.get(&idx).cloned().unwrap_or(HashSet::new());
+                        type_var
+                    })
+                    .map(MonoType::Constant)
+                    .collect();
+
+                match m {
+                    MonoType::Variant(path, _) => MonoType::Variant(path, arguments),
+                    MonoType::Struct(path, _) => MonoType::Struct(path, arguments),
+                    MonoType::BuiltIn(path, builtin, _) => MonoType::BuiltIn(path, builtin, arguments),
+                    _ => unreachable!()
+                }
+            },
+        }
+    }
+
     fn function(&mut self, function: &FunctionDeclaration) -> ReportableResult<()> {
         let FunctionDeclaration { body, path, .. } = function;
 
-        let function_type = match self.value_types[path].clone() {
-            Type::Mono(m) => m.into_function(),
-            Type::Forall(variables, m) => {
-                let function_type = m.into_function();
-                let map = variables
-                    .iter().cloned()
-                    .map(|var| (var.idx, MonoType::Constant(var)))
-                    .collect();
-
-                MonoType::Function(function_type.clone())
-                    .substitute(&map)
-                    .into_function()
-            }
-        };
-        let FunctionType { arguments, return_type } = function_type;
+        let t = self.value_types[path].clone();
+        let FunctionType { arguments, return_type } = self.constantize(t).into_function();
 
         scoped!(self, {
             self.locals.extend(arguments.into_iter().map(Type::Mono));
@@ -649,25 +690,7 @@ impl<'interner> Checker<'interner> {
 
             let method_type = &self.methods[path][signature.name.data()];
             let FunctionType { arguments, return_type } = method_type.function_type.clone();
-
-            let struct_type = match self.types[path].clone() {
-                Type::Mono(m) => m,
-                Type::Forall(variables, _) => {
-                    let arguments = variables.iter().enumerate().map(|(idx, variable)| {
-                        let interfaces = method_type.constraints
-                            .get(&idx)
-                            .cloned()
-                            .unwrap_or(HashSet::new());
-
-                        let mut variable = variable.clone();
-                        variable.interfaces.extend(interfaces);
-                        MonoType::Constant(variable)
-                    })
-                    .collect();
-
-                    MonoType::Struct(path.clone(), arguments)
-                },
-            };
+            let struct_type = self.method_instance_type(path, &method_type.constraints);
 
             scoped!(self, {
                 self.locals.push(Type::Mono(struct_type));
@@ -689,64 +712,36 @@ impl<'interner> Checker<'interner> {
             interfaces: HashSet::from([path.clone()])
         };
 
-        let vars = vec![instance_type_var.clone()];
+        let type_vars = vec![instance_type_var.clone()];
 
         scoped!(self, {
-            self.locals.extend(vars
-                .iter().cloned()
-                .map(MonoType::Constant)
-                .map(Type::Mono)
-            );
+            self.define_type_constants(type_vars.clone());
 
             for method in methods {
                 let InterfaceMethodSignature { name, arguments, return_type, .. } = method;
 
-                let arguments = arguments
-                    .iter().map(|argument| self.eval_to_mono(argument.data().type_expression()))
-                    .collect::<ReportableResult<Vec<_>>>()?;
+                let function_type = self.get_function_type(arguments, return_type)?;
 
-                let return_type = if let Some(return_type) = return_type {
-                    Box::new(self.eval_to_mono(return_type)?)
-                } else {
-                    Box::new(MonoType::Unit)
-                };
-
-                let method_type = FunctionType { arguments, return_type };
-                self.interfaces
-                    .get_mut(path).unwrap()
-                    .methods.insert(*name.data(), method_type);
+                self.interfaces.get_mut(path).unwrap().methods
+                    .insert(*name.data(), function_type);
             }
         });
 
         scoped!(self, {
-            self.locals.extend(vars
-                .iter().cloned()
-                .map(MonoType::Var)
-                .map(Type::Mono)
-            );
+            self.define_type_vars(type_vars.clone());
 
             for method in methods {
                 let InterfaceMethodSignature { arguments, return_type, path, .. } = method;
 
                 let mut arguments_with_instance = vec![MonoType::Var(instance_type_var.clone())];
+                let mut function_type = self.get_function_type(arguments, return_type)?;
+                arguments_with_instance.extend(function_type.arguments);
+                function_type.arguments = arguments_with_instance;
 
-                for argument in arguments {
-                    arguments_with_instance.push(self.eval_to_mono(argument.data().type_expression())?);
-                }
-
-                let return_type = if let Some(return_type) = return_type {
-                    Box::new(self.eval_to_mono(return_type)?)
-                } else {
-                    Box::new(MonoType::Unit)
-                };
-
-                let standalone_function = FunctionType { arguments: arguments_with_instance, return_type };
-                let function_type = Type::Forall(vars.clone(), MonoType::Function(standalone_function));
-
-                self.value_types.insert(path.clone(), function_type);
+                let t = self.declaration_type(function_type.into_mono(), type_vars.clone());
+                self.value_types.insert(path.clone(), t);
             }
         });
-
 
         Ok(())
     }
@@ -825,27 +820,17 @@ impl<'interner> Checker<'interner> {
                     );
                 }
 
-                if let Type::Forall(variables, _) = &self.types[&path] {
-                    let map = variables
-                        .iter().cloned()
-                        .map(|variable| variable.idx)
-                        .zip(arguments)
-                        .collect();
+                let case_fields = self.substitute_arguments(&path, arguments, case_fields);
 
-                    for (t, field_pattern) in case_fields.into_iter().zip(fields) {
-                        if !self.type_pattern_match(t.substitute(&map), field_pattern)? {
-                            return Ok(false);
-                        };
-                    }
-                } else {
-                    for (t, field_pattern) in case_fields.into_iter().zip(fields) {
-                        if !self.type_pattern_match(t, field_pattern)? {
-                            return Ok(false);
-                        }
-                    }
-                }
+                let result = case_fields
+                    .into_iter()
+                    .zip(fields)
+                    .map(|(field, pattern)| self.type_pattern_match(field, pattern))
+                    .collect::<ReportableResult<Vec<_>>>()?
+                    .iter()
+                    .all(|x| *x);
 
-                Ok(true)
+                Ok(result)
             }
             (MonoType::Unit, Pattern::Unit)  => Ok(true),
             _ => Ok(false)
@@ -914,25 +899,17 @@ impl<'interner> Checker<'interner> {
                             }
                         }
 
-                        let function = if let Type::Forall(variables, _) = &self.types[path] {
-                            let map = variables
-                                .iter()
-                                .cloned()
-                                .map(|variable| variable.idx)
-                                .zip(arguments.clone())
-                                .collect();
+                        let function = method_type.function_type.clone().into_mono();
+                        let function = self.replace_arguments_one(
+                            path,
+                            arguments.clone(),
+                            function
+                        ).into_function();
 
-                            MonoType::Function(method_type.function_type.clone())
-                                .replace_type_constants(&map)
-                                .into_function()
-                        } else {
-                            method_type.function_type.clone()
-                        };
-
-                        let map = HashMap::from([(INTERFACE_CONSTANT_IDX, m.clone())]);
-                        let interface_function = MonoType::Function(interface_function.clone())
-                            .replace_type_constants(&map)
-                            .into_function();
+                        let interface_function = Self::replace_interface_constants(
+                            interface_function.clone().into_mono(),
+                            m.clone()
+                        ).into_function();
 
                         if function != interface_function {
                             return false;
@@ -950,15 +927,15 @@ impl<'interner> Checker<'interner> {
                             return false;
                         };
 
-                        let map = HashMap::from([(INTERFACE_CONSTANT_IDX, m.clone())]);
-                        let variable_function = MonoType::Function(variable_function.clone())
-                            .replace_type_constants(&map)
-                            .into_function();
+                        let variable_function = Self::replace_interface_constants(
+                            variable_function.clone().into_mono(),
+                            m.clone()
+                        ).into_function();
 
-                        let map = HashMap::from([(INTERFACE_CONSTANT_IDX, m.clone())]);
-                        let interface_function = MonoType::Function(interface_function.clone())
-                            .replace_type_constants(&map)
-                            .into_function();
+                        let interface_function = Self::replace_interface_constants(
+                            interface_function.clone().into_mono(),
+                            m.clone()
+                        ).into_function();
 
                         if variable_function != interface_function {
                             return false;
@@ -970,6 +947,11 @@ impl<'interner> Checker<'interner> {
             }
             _ => interfaces.is_empty()
         }
+    }
+
+    fn replace_interface_constants(m: MonoType, instance: MonoType) -> MonoType {
+        let map = HashMap::from([(INTERFACE_CONSTANT_IDX, instance)]);
+        m.replace_type_constants(&map)
     }
 
     fn infer(&mut self, expression: &Located<Expression>) -> ReportableResult<MonoType> {
@@ -1075,18 +1057,9 @@ impl<'interner> Checker<'interner> {
         // Field Projection (Only structs)
         if let MonoType::Struct(path, arguments) = &m {
             if let Some(m) = self.fields[path].get(name.data()).cloned() {
-                return if let Type::Forall(variables, _) = &self.types[path] {
-                    let map = variables
-                        .iter()
-                        .cloned()
-                        .map(|variable| variable.idx)
-                        .zip(arguments.clone())
-                        .collect();
+                let m = self.substitute_arguments_one(path, arguments.clone(), m);
 
-                    Ok((m.substitute(&map), true))
-                } else {
-                    Ok((m, true))
-                }
+                return Ok((m, true))
             }
         };
 
@@ -1122,18 +1095,13 @@ impl<'interner> Checker<'interner> {
                     }
                 }
 
-                if let Type::Forall(variables, _) = &self.types[path] {
-                    let map = variables
-                        .iter()
-                        .cloned()
-                        .map(|variable| variable.idx)
-                        .zip(arguments.clone())
-                        .collect();
+                let m = self.replace_arguments_one(
+                    path,
+                    arguments.clone(),
+                    method_type.function_type.clone().into_mono()
+                );
 
-                    Ok((MonoType::Function(method_type.function_type.clone()).replace_type_constants(&map), false))
-                } else {
-                    Ok((MonoType::Function(method_type.function_type.clone()), false))
-                }
+                Ok((m, false))
             },
             MonoType::Constant(type_var) | MonoType::Var(type_var) => {
                 let Some(variable_function) = self.find_method_in_interfaces(name.data(), &type_var.interfaces) else {
@@ -1146,8 +1114,11 @@ impl<'interner> Checker<'interner> {
                     );
                 };
 
-                let map = HashMap::from([(INTERFACE_CONSTANT_IDX, m.clone())]);
-                Ok((MonoType::Function(variable_function.clone()).replace_type_constants(&map), false))
+                let variable_function = Self::replace_interface_constants(
+                    variable_function.clone().into_mono(), m
+                );
+
+                Ok((variable_function, false))
             }
             _ => {
                 self.error(
@@ -1248,29 +1219,13 @@ impl<'interner> Checker<'interner> {
             (MonoType::Variant(path1, args1), MonoType::Variant(path2, args2)) |
             (MonoType::Struct(path1, args1), MonoType::Struct(path2, args2)) |
             (MonoType::BuiltIn(path1, _, args1), MonoType::BuiltIn(path2, _, args2)) => {
-                if path1 != path2 {
-                    return false;
-                }
-
-                for (arg1, arg2) in args1.into_iter().zip(args2) {
-                    if !self.unify(arg1, arg2) {
-                        return false;
-                    }
-                }
-
-                true
+                path1 == path2 && args1.into_iter().zip(args2).all(|(arg1, arg2)| self.unify(arg1, arg2))
             },
             (MonoType::Function(function1), MonoType::Function(function2)) => {
                 let FunctionType { arguments: args1, return_type: return1 } = function1;
                 let FunctionType { arguments: args2, return_type: return2 } = function2;
 
-                for (arg1, arg2) in args1.into_iter().zip(args2) {
-                    if !self.unify(arg1, arg2) {
-                        return false;
-                    }
-                }
-
-                self.unify(*return1, *return2)
+                args1.into_iter().zip(args2).all(|(arg1, arg2)| self.unify(arg1, arg2)) && self.unify(*return1, *return2)
             },
             (MonoType::Var(var1), MonoType::Var(var2)) => {
                 let TypeVar { idx: idx1, interfaces: interfaces1 } = &var1;

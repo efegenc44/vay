@@ -26,6 +26,12 @@ pub struct FunctionType {
     pub return_type: Box<MonoType>,
 }
 
+impl FunctionType {
+    pub fn into_mono(self) -> MonoType {
+        MonoType::Function(self)
+    }
+}
+
 pub struct MethodType {
     pub function_type: FunctionType,
     pub constraints: HashMap<usize, HashSet<Path>>
