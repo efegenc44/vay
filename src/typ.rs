@@ -26,6 +26,11 @@ pub struct FunctionType {
     pub return_type: Box<MonoType>,
 }
 
+pub struct MethodType {
+    pub function_type: FunctionType,
+    pub constraints: HashMap<usize, HashSet<Path>>
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Interface {
     pub methods: HashMap<InternIdx, FunctionType>,
