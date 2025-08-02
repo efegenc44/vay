@@ -17,7 +17,7 @@ use crate::{
 
 const PRIMARY_TOKEN_STARTS: &[Token] = &[
     Token::dummy_identifier(),
-    Token::Natural(0),
+    Token::U64(0),
     Token::LetKeyword,
     Token::LeftParenthesis,
     Token::FunKeyword,
@@ -44,7 +44,7 @@ const DECLARATION_KEYWORDS: &[Token] = &[
 
 const PATTERN_TOKEN_STARTS: &[Token] = &[
     Token::dummy_identifier(),
-    Token::Natural(0),
+    Token::U64(0),
     Token::Dot,
     Token::LeftParenthesis,
 ];
@@ -95,8 +95,8 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             .find(|expected| {
                 if matches!(expected, Token::Identifier(_)) {
                     matches!(token.data(), Token::Identifier(_))
-                } else if matches!(expected, Token::Natural(_)) {
-                    matches!(token.data(), Token::Natural(_))
+                } else if matches!(expected, Token::U64(_)) {
+                    matches!(token.data(), Token::U64(_))
                 } else {
                     expected == &token.data()
                 }
@@ -235,10 +235,10 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     fn primary(&mut self) -> ReportableResult<Located<Expression>> {
         let token = self.peek_one_of(PRIMARY_TOKEN_STARTS)?;
         match token.data() {
-            Token::Natural(u64) => {
+            Token::U64(u64) => {
                 // TODO: Factor this out like the other ones
                 self.advance()?;
-                Ok(Located::new(Expression::Natural(*u64), token.location()))
+                Ok(Located::new(Expression::U64(*u64), token.location()))
             },
             Token::Identifier(_) => self.path(),
             Token::LetKeyword => self.lett(),
@@ -352,10 +352,10 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     fn pattern(&mut self) -> ReportableResult<Located<Pattern>> {
         let token = self.peek_one_of(PATTERN_TOKEN_STARTS)?;
         match token.data() {
-            Token::Natural(u64) => {
+            Token::U64(u64) => {
                 // TODO: Factor this out like the other ones
                 self.advance()?;
-                Ok(Located::new(Pattern::Natural(*u64), token.location()))
+                Ok(Located::new(Pattern::U64(*u64), token.location()))
             }
             Token::Identifier(_) => self.any_pattern(),
             Token::Dot => self.varint_case_pattern(),

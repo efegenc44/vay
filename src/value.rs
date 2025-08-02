@@ -72,7 +72,7 @@ impl Value {
     pub fn matches(&self, pattern: &Pattern) -> bool {
         match (self, pattern) {
             (_, Pattern::Any(_)) => true,
-            (Value::U64(u64_1), Pattern::Natural(u64_2)) => u64_1 == u64_2,
+            (Value::U64(u64_1), Pattern::U64(u64_2)) => u64_1 == u64_2,
             (Value::Instance(instance), Pattern::VariantCase(variant_case)) => {
                 let VariantCasePattern { name, fields } = variant_case;
                 let InstanceInstance { constructor, values } = instance.as_ref();

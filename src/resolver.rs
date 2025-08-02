@@ -354,7 +354,7 @@ impl<'interner> Resolver<'interner> {
     fn expression(&mut self, expression: &mut Located<Expression>) -> ReportableResult<()> {
         let location = expression.location();
         match expression.data_mut() {
-            Expression::Natural(_) => Ok(()),
+            Expression::U64(_) => Ok(()),
             Expression::Path(path) => self.path(path, location),
             Expression::Application(application) => self.application(application),
             Expression::Projection(projection) => self.projection(projection),
@@ -531,7 +531,7 @@ impl<'interner> Resolver<'interner> {
             Pattern::Any(identifier) => {
                 self.locals.push(*identifier);
             }
-            Pattern::Natural(_) => (),
+            Pattern::U64(_) => (),
             Pattern::VariantCase(variant_case) => {
                 let VariantCasePattern { fields, .. } = variant_case;
 

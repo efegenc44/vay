@@ -2,7 +2,7 @@ use crate::{bound::Bound, interner::InternIdx, location::Located};
 
 #[derive(Clone)]
 pub enum Expression {
-    Natural(u64),
+    U64(u64),
     Path(PathExpression),
     Application(ApplicationExpression),
     Projection(ProjectionExpression),
@@ -94,7 +94,7 @@ pub struct AssignmentExpression {
 #[derive(Clone)]
 pub enum Pattern {
     Any(InternIdx),
-    Natural(u64),
+    U64(u64),
     VariantCase(VariantCasePattern),
     Unit
 }

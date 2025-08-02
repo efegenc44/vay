@@ -794,7 +794,7 @@ impl<'interner> Checker<'interner> {
                 self.locals.push(Type::Mono(t));
                 Ok(true)
             },
-            (MonoType::BuiltIn(_, BuiltInType::U64, _), Pattern::Natural(_)) => Ok(true),
+            (MonoType::BuiltIn(_, BuiltInType::U64, _), Pattern::U64(_)) => Ok(true),
             (MonoType::Variant(path, arguments), Pattern::VariantCase(variant_case)) => {
                 let VariantCasePattern { name, fields } = variant_case;
 
@@ -974,11 +974,7 @@ impl<'interner> Checker<'interner> {
 
     fn infer(&mut self, expression: &Located<Expression>) -> ReportableResult<MonoType> {
         match expression.data() {
-            Expression::Natural(_) => Ok(MonoType::BuiltIn(
-                self.builtin_paths[&BuiltInType::U64].clone(),
-                BuiltInType::U64,
-                vec![])
-            ),
+            Expression::U64(_) => self.u64(),
             Expression::Path(path) => self.path(path).map(|p| p.0),
             Expression::Application(application) => self.application(application),
             Expression::Projection(projection) => self.projection(projection).map(|p| p.0),
@@ -989,6 +985,16 @@ impl<'interner> Checker<'interner> {
             Expression::Return(retrn) => self.retrn(retrn),
             Expression::Assignment(assignment) => self.assignment(assignment),
         }
+    }
+
+    fn u64(&self) -> ReportableResult<MonoType> {
+        let m = MonoType::BuiltIn(
+            self.builtin_paths[&BuiltInType::U64].clone(),
+            BuiltInType::U64,
+            vec![]
+        );
+
+        Ok(m)
     }
 
     // NOTE: bool indicates if the path is assignable

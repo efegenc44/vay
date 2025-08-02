@@ -108,7 +108,7 @@ impl<'source, 'interner> Lexer<'source, 'interner> {
         Located::new(token, location)
     }
 
-    fn natural(&mut self) -> Located<Token> {
+    fn number(&mut self) -> Located<Token> {
         let mut lexeme = String::new();
         let location = locate!(self, {
             while let Some(ch) = self.peek_ch() {
@@ -120,8 +120,8 @@ impl<'source, 'interner> Lexer<'source, 'interner> {
             }
         });
 
-        let natural = lexeme.parse::<u64>().unwrap();
-        let token = Token::Natural(natural);
+        let number = lexeme.parse::<u64>().unwrap();
+        let token = Token::U64(number);
 
         Located::new(token, location)
     }
@@ -171,7 +171,7 @@ impl Iterator for Lexer<'_, '_> {
         let result = if ch.is_alphabetic() {
             Ok(self.identifier_or_keyword())
         } else if ch.is_ascii_digit() {
-            Ok(self.natural())
+            Ok(self.number())
         } else if PUNCTUATION_CHARS.contains(&ch) {
             Ok(self.punctuation())
         } else {

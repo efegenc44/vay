@@ -210,7 +210,7 @@ impl<'interner> Interpreter<'interner> {
             (value, Pattern::Any(_)) => {
                 self.locals.push(value.clone());
             }
-            (Value::U64(_), Pattern::Natural(_)) => (),
+            (Value::U64(_), Pattern::U64(_)) => (),
             (Value::Instance(instance), Pattern::VariantCase(variant_case)) => {
                 let InstanceInstance { values, .. } = instance.as_ref();
                 let VariantCasePattern { fields, .. } = variant_case;
@@ -236,7 +236,7 @@ impl<'interner> Interpreter<'interner> {
 
     fn expression(&mut self, expression: &Located<Expression>) -> ControlFlow {
         match expression.data() {
-            Expression::Natural(u64) => Ok(Value::U64(*u64)),
+            Expression::U64(u64) => Ok(Value::U64(*u64)),
             Expression::Path(path) => self.path(path),
             Expression::Application(application) => self.application(application),
             Expression::Projection(projection) => self.projection(projection),
