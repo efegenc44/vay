@@ -86,13 +86,8 @@ pub struct MethodSignature {
     pub return_type: Option<Located<TypeExpression>>,
 }
 
-// TODO: MethodDeclaration should take MethodSignature
 pub struct MethodDeclaration {
-    pub name: Located<InternIdx>,
-    pub constraints: Vec<Constraint>,
-    pub instance: Located<InternIdx>,
-    pub arguments: Vec<Located<TypedIdentifier>>,
-    pub return_type: Option<Located<TypeExpression>>,
+    pub signature: MethodSignature,
     pub body: Located<Expression>,
 }
 

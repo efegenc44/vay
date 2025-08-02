@@ -532,50 +532,12 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     }
 
     fn method_declaration(&mut self) -> ReportableResult<MethodDeclaration> {
-        self.expect(Token::FunKeyword)?;
-
-        let constraints = if self.peek_is(Token::Colon) {
-            self.advance()?;
-            self.expect(Token::LeftParenthesis)?;
-            self.until(
-                Token::RightParenthesis,
-                Self::constraint,
-                Some(Token::Comma)
-            )?.0
-        } else {
-            vec![]
-        };
-
-        let name = self.expect_identifier()?;
-        self.expect(Token::LeftParenthesis)?;
-
-        // TODO: Better error message
-        let instance = self.expect_identifier()?;
-        let (arguments, _) = self.until(
-            Token::RightParenthesis,
-            |parser| {
-                parser.expect(Token::Comma)?;
-                parser.typed_identifier()
-            },
-            None
-        )?;
-
-        let return_type = if self.peek_is(Token::Colon) {
-            self.advance()?;
-            Some(self.type_expression()?)
-        } else {
-            None
-        };
-
+        let signature = self.method_signature()?;
         self.expect(Token::Equals)?;
         let body = self.expression()?;
 
         Ok(MethodDeclaration {
-            name,
-            constraints,
-            instance,
-            arguments,
-            return_type,
+            signature,
             body,
         })
     }

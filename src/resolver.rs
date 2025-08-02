@@ -637,8 +637,8 @@ impl Resolver {
         Ok(())
     }
 
-    fn method(&mut self, method: &mut MethodDeclaration) -> ReportableResult<()> {
-        let MethodDeclaration { constraints, instance, arguments, return_type, body, .. } = method;
+    fn method_signature(&mut self, signature: &mut MethodSignature) -> ReportableResult<()> {
+        let MethodSignature { constraints, arguments, return_type, .. } = signature;
 
         for constraint in constraints.iter_mut() {
             self.constraint(constraint)?;
@@ -652,9 +652,17 @@ impl Resolver {
             self.type_expression(return_type)?;
         }
 
+        Ok(())
+    }
+
+    fn method(&mut self, method: &mut MethodDeclaration) -> ReportableResult<()> {
+        let MethodDeclaration { signature, body, .. } = method;
+
+        self.method_signature(signature)?;
+
         scoped!(self, {
-            self.locals.push(*instance.data());
-            let argument_names = arguments.iter().map(|idx| *idx.data().indentifier().data());
+            self.locals.push(*signature.instance.data());
+            let argument_names = signature.arguments.iter().map(|idx| *idx.data().indentifier().data());
             self.locals.extend(argument_names);
 
             self.expression(body)?;
@@ -759,15 +767,7 @@ impl Resolver {
             self.locals.extend(type_vars);
 
             for method in methods {
-                let MethodSignature { arguments, return_type, .. } = method;
-
-                for argument in arguments {
-                    self.type_expression(argument.data_mut().type_expression_mut())?;
-                }
-
-                if let Some(return_type) = return_type {
-                    self.type_expression(return_type)?;
-                }
+                self.method_signature(method)?;
             }
         });
 

@@ -363,62 +363,67 @@ impl<'interner> Checker<'interner> {
         Ok(())
     }
 
+    fn collect_method_signatures(&mut self, path: &Path, signature: &MethodSignature) -> ReportableResult<()> {
+        let MethodSignature { constraints, name, arguments, return_type, .. } = signature;
+
+        let constraints = constraints
+            .iter().map(|constraint| (
+                constraint.nth,
+                constraint
+                    .type_var.data()
+                    .interfaces.iter().map(|interface| interface.1.clone())
+                    .collect::<HashSet<_>>()
+            ))
+            .collect::<HashMap<_, _>>();
+
+        scoped!(self, {
+            if let Type::Forall(variables, _) = self.types[&path].clone() {
+                self.locals.extend(variables.iter().enumerate().map(|(idx, variable)| {
+                    let interfaces = constraints
+                        .get(&idx)
+                        .cloned()
+                        .unwrap_or(HashSet::new());
+
+                    let mut variable = variable.clone();
+                    variable.interfaces.extend(interfaces);
+                    Type::Mono(MonoType::Constant(variable))
+                }));
+            }
+
+            let arguments = arguments
+                .iter().map(|argument| self.eval_to_mono(argument.data().type_expression()))
+                .collect::<ReportableResult<Vec<_>>>()?;
+
+            let return_type = if let Some(return_type) = return_type {
+                Box::new(self.eval_to_mono(return_type)?)
+            } else {
+                Box::new(MonoType::Unit)
+            };
+
+            let function_type = FunctionType { arguments, return_type };
+
+            let methods = self.methods.get_mut(path).unwrap();
+            if methods.insert(*name.data(), (function_type, constraints)).is_some() {
+                return self.error(
+                    TypeCheckError::DuplicateMethodDeclaration {
+                        variant_path: path.clone(),
+                        method_name: *name.data(),
+                    },
+                    name.location(),
+                );
+            }
+        });
+
+        Ok(())
+    }
+
     fn collect_variant_name(&mut self, variant: &VariantDeclaration) -> ReportableResult<()> {
         let VariantDeclaration { cases, methods, path, .. } = variant;
 
-        let mut variant_methods = HashMap::new();
+        self.methods.insert(path.clone(), HashMap::new());
         for method in methods {
-            let MethodDeclaration { constraints, name, arguments, return_type, .. } = method;
-
-            let constraints = constraints
-                .iter().map(|constraint| (
-                    constraint.nth,
-                    constraint
-                        .type_var.data()
-                        .interfaces.iter().map(|interface| interface.1.clone())
-                        .collect::<HashSet<_>>()
-                ))
-                .collect::<HashMap<_, _>>();
-
-            scoped!(self, {
-                if let Type::Forall(variables, _) = self.types[path].clone() {
-                    self.locals.extend(variables.iter().enumerate().map(|(idx, variable)| {
-                        let interfaces = constraints
-                            .get(&idx)
-                            .cloned()
-                            .unwrap_or(HashSet::new());
-
-                        let mut variable = variable.clone();
-                        variable.interfaces.extend(interfaces);
-                        Type::Mono(MonoType::Constant(variable))
-                    }));
-                }
-
-                let arguments = arguments
-                    .iter().map(|argument| self.eval_to_mono(argument.data().type_expression()))
-                    .collect::<ReportableResult<Vec<_>>>()?;
-
-                let return_type = if let Some(return_type) = return_type {
-                    Box::new(self.eval_to_mono(return_type)?)
-                } else {
-                    Box::new(MonoType::Unit)
-                };
-
-                let function_type = FunctionType { arguments, return_type };
-
-                if variant_methods.insert(*name.data(), (function_type, constraints)).is_some() {
-                    return self.error(
-                        TypeCheckError::DuplicateMethodDeclaration {
-                            variant_path: path.clone(),
-                            method_name: *name.data(),
-                        },
-                        method.name.location(),
-                    );
-                }
-            });
+            self.collect_method_signatures(path, &method.signature)?;
         }
-
-        self.methods.insert(path.clone(), variant_methods);
 
         scoped!(self, {
             if let Type::Forall(vars, _) = self.types[path].clone() {
@@ -490,58 +495,10 @@ impl<'interner> Checker<'interner> {
     fn collect_struct_name(&mut self, strct: &StructDeclaration) -> ReportableResult<()> {
         let StructDeclaration { fields, methods, path, .. } = strct;
 
-        let mut struct_methods = HashMap::new();
+        self.methods.insert(path.clone(), HashMap::new());
         for method in methods {
-            let MethodDeclaration { constraints, name, arguments, return_type, .. } = method;
-
-            let constraints = constraints
-                .iter().map(|constraint| (
-                    constraint.nth,
-                    constraint
-                        .type_var.data()
-                        .interfaces.iter().map(|interface| interface.1.clone())
-                        .collect::<HashSet<_>>()
-                ))
-                .collect::<HashMap<_, _>>();
-
-            scoped!(self, {
-                if let Type::Forall(variables, _) = self.types[path].clone() {
-                    self.locals.extend(variables.iter().enumerate().map(|(idx, variable)| {
-                        let interfaces = constraints
-                            .get(&idx)
-                            .cloned()
-                            .unwrap_or(HashSet::new());
-
-                        let mut variable = variable.clone();
-                        variable.interfaces.extend(interfaces);
-                        Type::Mono(MonoType::Constant(variable))
-                    }));
-                }
-
-                let arguments = arguments
-                    .iter().map(|argument| self.eval_to_mono(argument.data().type_expression()))
-                    .collect::<ReportableResult<Vec<_>>>()?;
-
-                let return_type = if let Some(return_type) = return_type {
-                    Box::new(self.eval_to_mono(return_type)?)
-                } else {
-                    Box::new(MonoType::Unit)
-                };
-
-                let function_type = FunctionType { arguments, return_type };
-                if struct_methods.insert(*name.data(), (function_type, constraints)).is_some() {
-                    return self.error(
-                        TypeCheckError::DuplicateMethodDeclaration {
-                            variant_path: path.clone(),
-                            method_name: *name.data(),
-                        },
-                        method.name.location(),
-                    );
-                };
-            });
+            self.collect_method_signatures(path, &method.signature)?;
         }
-
-        self.methods.insert(path.clone(), struct_methods);
 
         scoped!(self, {
             if let Type::Forall(vars, _) = self.types[path].clone() {
@@ -597,58 +554,10 @@ impl<'interner> Checker<'interner> {
     fn collect_builtin_name(&mut self, builtin: &BuiltInDeclaration) -> ReportableResult<()> {
         let BuiltInDeclaration { methods, path, .. } = builtin;
 
-        let mut builtin_methods = HashMap::new();
-        for method in methods {
-            let MethodSignature { constraints, name, arguments, return_type, .. } = method;
-
-            let constraints = constraints
-                .iter().map(|constraint| (
-                    constraint.nth,
-                    constraint
-                        .type_var.data()
-                        .interfaces.iter().map(|interface| interface.1.clone())
-                        .collect::<HashSet<_>>()
-                ))
-                .collect::<HashMap<_, _>>();
-
-            scoped!(self, {
-                if let Type::Forall(variables, _) = self.types[path].clone() {
-                    self.locals.extend(variables.iter().enumerate().map(|(idx, variable)| {
-                        let interfaces = constraints
-                            .get(&idx)
-                            .cloned()
-                            .unwrap_or(HashSet::new());
-
-                        let mut variable = variable.clone();
-                        variable.interfaces.extend(interfaces);
-                        Type::Mono(MonoType::Constant(variable.clone()))
-                    }));
-                }
-
-                let arguments = arguments
-                    .iter().map(|argument| self.eval_to_mono(argument.data().type_expression()))
-                    .collect::<ReportableResult<Vec<_>>>()?;
-
-                let return_type = if let Some(return_type) = return_type {
-                    Box::new(self.eval_to_mono(return_type)?)
-                } else {
-                    Box::new(MonoType::Unit)
-                };
-
-                let function_type = FunctionType { arguments, return_type };
-                if builtin_methods.insert(*name.data(), (function_type, constraints)).is_some() {
-                    return self.error(
-                        TypeCheckError::DuplicateMethodDeclaration {
-                            variant_path: path.clone(),
-                            method_name: *name.data(),
-                        },
-                        method.name.location(),
-                    );
-                };
-            });
+        self.methods.insert(path.clone(), HashMap::new());
+        for signature in methods {
+            self.collect_method_signatures(path, signature)?;
         }
-
-        self.methods.insert(path.clone(), builtin_methods);
 
         Ok(())
     }
@@ -666,9 +575,9 @@ impl<'interner> Checker<'interner> {
         let VariantDeclaration { methods, path, .. } = variant;
 
         for method in methods {
-            let MethodDeclaration { name, body, .. } = method;
+            let MethodDeclaration { signature, body, .. } = method;
 
-            let (method_type, constraints) = &self.methods[path][name.data()];
+            let (method_type, constraints) = &self.methods[path][signature.name.data()];
             let FunctionType { arguments, return_type } = method_type.clone();
 
             let variant_type = match self.types[path].clone() {
@@ -735,9 +644,9 @@ impl<'interner> Checker<'interner> {
         let StructDeclaration { methods, path, .. } = strct;
 
         for method in methods {
-            let MethodDeclaration { name, body, .. } = method;
+            let MethodDeclaration { signature, body, .. } = method;
 
-            let (method_type, constraints) = &self.methods[path][name.data()];
+            let (method_type, constraints) = &self.methods[path][signature.name.data()];
             let FunctionType { arguments, return_type } = method_type.clone();
 
             let struct_type = match self.types[path].clone() {

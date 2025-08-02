@@ -73,11 +73,7 @@ impl<'interner> Interpreter<'interner> {
 
         let value = self.expression(&function.body);
         let value = match value {
-            Ok(value) => value,
-            Err(value) => {
-                println!("Merhaba");
-                value
-            },
+            Ok(value) | Err(value) => value,
         };
 
         println!("\nResult = {}", value.as_string(&self.interner));
@@ -106,6 +102,13 @@ impl<'interner> Interpreter<'interner> {
         self.names.insert(path.clone(), value);
     }
 
+    fn collect_method_name(&mut self, path: &Path, method: &MethodDeclaration) {
+        let MethodDeclaration { signature, body, .. } = method;
+
+        let function = FunctionInstance { body: body.clone() };
+        self.methods.get_mut(path).unwrap().insert(*signature.name.data(), Rc::new(function));
+    }
+
     fn collect_variant_name(&mut self, variant: &VariantDeclaration) {
         let VariantDeclaration { cases, methods, path, .. } = variant;
 
@@ -116,9 +119,7 @@ impl<'interner> Interpreter<'interner> {
             };
 
             let value = match case.data().arguments() {
-                Some(..) => {
-                    Value::Constructor(Rc::new(constructor))
-                },
+                Some(_) => Value::Constructor(Rc::new(constructor)),
                 None => {
                     let instance = InstanceInstance {
                         constructor: Rc::new(constructor),
@@ -133,10 +134,7 @@ impl<'interner> Interpreter<'interner> {
 
         self.methods.insert(path.clone(), HashMap::new());
         for method in methods {
-            let MethodDeclaration { name, body, .. } = method;
-
-            let function = FunctionInstance { body: body.clone() };
-            self.methods.get_mut(path).unwrap().insert(*name.data(), Rc::new(function));
+            self.collect_method_name(path, method);
         }
     }
 
@@ -151,10 +149,7 @@ impl<'interner> Interpreter<'interner> {
 
         self.methods.insert(path.clone(), HashMap::new());
         for method in methods {
-            let MethodDeclaration { name, body, .. } = method;
-
-            let function = FunctionInstance { body: body.clone() };
-            self.methods.get_mut(path).unwrap().insert(*name.data(), Rc::new(function));
+            self.collect_method_name(path, method);
         }
     }
 
