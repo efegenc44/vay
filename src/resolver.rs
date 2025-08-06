@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    bound::{Bound, Path}, declaration::{BuiltInDeclaration, Constraint, Declaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, StructDeclaration, TypeVar, VariantDeclaration}, expression::{ApplicationExpression, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern}, interner::{InternIdx, Interner}, intrinsics::INTRINSICS_MODULE_NAME, location::{Located, SourceLocation}, reportable::{Reportable, ReportableResult}
+    bound::{Bound, Path}, declaration::{BuiltInDeclaration, Constraint, Declaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, StructDeclaration, TypeVar, VariantDeclaration}, expression::{ApplicationExpression, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern}, interner::{InternIdx, Interner}, intrinsics::INTRINSICS_MODULE_NAME, location::{Located, SourceLocation}, reportable::{Reportable, ReportableResult}, runner::{self}
 };
 
 macro_rules! scoped {
@@ -28,10 +28,8 @@ impl ModuleInformation {
     }
 }
 
-pub struct Resolver<'interner> {
+pub struct Resolver {
     modules: HashMap<Path, ModuleInformation>,
-
-    interner: &'interner Interner,
 
     // TODO: Seperete interface and type names
     type_names: HashSet<Path>,
@@ -44,12 +42,10 @@ pub struct Resolver<'interner> {
     current_source: String,
 }
 
-impl<'interner> Resolver<'interner> {
-    pub fn new(interner: &'interner Interner) -> Self {
+impl Resolver {
+    pub fn new() -> Self {
         Self {
             modules: HashMap::new(),
-
-            interner,
 
             type_names: HashSet::new(),
             value_names: HashSet::new(),
@@ -59,6 +55,16 @@ impl<'interner> Resolver<'interner> {
             current_module_path: Path::empty(),
             current_source: String::new(),
         }
+    }
+
+    pub fn init_interactive_module(&mut self) {
+        self.current_module_path = Path::empty();
+        self.current_source = runner::SESSION_SOURCE.into();
+
+        self.modules.insert(
+            Path::empty(),
+            ModuleInformation::with_path_location(SourceLocation::dummy())
+        );
     }
 
     fn current_imports(&self) -> &HashMap<InternIdx, (Path, SourceLocation)> {
@@ -73,7 +79,7 @@ impl<'interner> Resolver<'interner> {
         &mut self.current_module_path
     }
 
-    pub fn resolve(&mut self, mut modules: Vec<Module>) -> ReportableResult<Vec<Module>> {
+    pub fn resolve(&mut self, mut modules: Vec<Module>, interner: &Interner) -> ReportableResult<Vec<Module>> {
         for module in &mut modules {
             self.current_source = module.source().to_string();
             self.collect_module(module)?;
@@ -87,7 +93,7 @@ impl<'interner> Resolver<'interner> {
         for module in &mut modules {
             self.current_source = module.source().to_string();
             self.current_module_path = module.path().clone();
-            self.collect_names(module)?;
+            self.collect_names(module, interner)?;
         }
 
         for module in &mut modules {
@@ -170,7 +176,7 @@ impl<'interner> Resolver<'interner> {
         f(import_name, Path::empty(), module_information);
     }
 
-    fn collect_names(&mut self, module: &mut Module) -> ReportableResult<()> {
+    fn collect_names(&mut self, module: &mut Module, interner: &Interner) -> ReportableResult<()> {
         for declaration in module.declarations_mut() {
             match declaration {
                 Declaration::Module(..) => {}
@@ -179,7 +185,7 @@ impl<'interner> Resolver<'interner> {
                 Declaration::Variant(variant) => self.collect_variant_name(variant)?,
                 Declaration::Interface(interface) => self.collect_interface_name(interface)?,
                 Declaration::Struct(strct) => self.collect_struct_name(strct)?,
-                Declaration::BuiltIn(builtin) => self.collect_builtin_name(builtin)?,
+                Declaration::BuiltIn(builtin) => self.collect_builtin_name(builtin, interner)?,
             }
         }
 
@@ -282,10 +288,10 @@ impl<'interner> Resolver<'interner> {
         Ok(())
     }
 
-    fn collect_builtin_name(&mut self, builtin: &mut BuiltInDeclaration) -> ReportableResult<()> {
+    fn collect_builtin_name(&mut self, builtin: &mut BuiltInDeclaration, interner: &Interner) -> ReportableResult<()> {
         let BuiltInDeclaration { name, path, .. } = builtin;
 
-        if self.current_path().as_string(self.interner) != INTRINSICS_MODULE_NAME {
+        if self.current_path().as_string(interner) != INTRINSICS_MODULE_NAME {
             panic!("Not allowed in builtin declarations outside of Intrinsics Module.")
         }
 
@@ -351,7 +357,7 @@ impl<'interner> Resolver<'interner> {
         Ok(path.clone())
     }
 
-    fn expression(&mut self, expression: &mut Located<Expression>) -> ReportableResult<()> {
+    pub fn expression(&mut self, expression: &mut Located<Expression>) -> ReportableResult<()> {
         let location = expression.location();
         match expression.data_mut() {
             Expression::U64(_) => Ok(()),
@@ -553,7 +559,7 @@ impl<'interner> Resolver<'interner> {
         Ok(())
     }
 
-    fn declaration(&mut self, declaration: &mut Declaration) -> ReportableResult<()> {
+    pub fn declaration(&mut self, declaration: &mut Declaration) -> ReportableResult<()> {
         // TODO: maybe take Located<Declaration> for better error reporting
         match declaration {
             Declaration::Module(..) => {}

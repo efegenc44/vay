@@ -175,6 +175,15 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         Ok((values, end))
     }
 
+    pub fn session_expression(&mut self) -> ReportableResult<Located<Expression>> {
+        let expression = self.assignment()?;
+        if self.peek()?.is_some() {
+            panic!("Couldnt consume all tokens")
+        }
+
+        Ok(expression)
+    }
+
     fn expression(&mut self) -> ReportableResult<Located<Expression>> {
         self.assignment()
     }
@@ -405,7 +414,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         }
     }
 
-    fn declaration(&mut self) -> ReportableResult<Declaration> {
+    pub fn declaration(&mut self) -> ReportableResult<Declaration> {
         let token = self.peek_one_of(DECLARATION_KEYWORDS)?;
         match token.data() {
             Token::ModuleKeyword => self.modul(),

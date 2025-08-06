@@ -2,12 +2,11 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{bound::{Bound, Path}, declaration::{BuiltInDeclaration, Declaration, FunctionDeclaration, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, StructDeclaration, VariantDeclaration}, expression::{ApplicationExpression, AssignmentExpression, Expression, LambdaExpression, LetExpression, MatchExpression, PathExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, VariantCasePattern}, interner::{InternIdx, Interner}, intrinsics::{IntrinsicFunction, INTRINSIC_FUNCTIONS}, location::Located, typ::BuiltInType, value::{ConstructorInstance, FunctionInstance, InstanceInstance, LambdaInstance, MethodInstance, StructConstructorInstance, StructInstanceInstance, Value}};
 
-pub struct Interpreter<'interner> {
+pub struct Interpreter {
     methods: HashMap<Path, HashMap<InternIdx, Rc<FunctionInstance>>>,
     builtin_methods: HashMap<BuiltInType, HashMap<InternIdx, IntrinsicFunction>>,
     names: HashMap<Path, Value>,
     locals: Vec<Value>,
-    interner: &'interner mut Interner
 }
 
 macro_rules! scoped {
@@ -21,27 +20,26 @@ macro_rules! scoped {
 }
 
 // NOTE: Err variant describes an exception
-type ControlFlow = Result<Value, Value>;
+pub type ControlFlow = Result<Value, Value>;
 
-impl<'interner> Interpreter<'interner> {
-    pub fn new(interner: &'interner mut Interner) -> Self {
+impl Interpreter {
+    pub fn new() -> Self {
         Self {
             methods: HashMap::new(),
             builtin_methods: HashMap::new(),
             names: HashMap::new(),
             locals: vec![],
-            interner
         }
     }
 
-    pub fn evaluate_main(&mut self, modules: &[Module]) {
+    pub fn evaluate_main(&mut self, modules: &[Module], interner: &Interner) {
         for module in modules {
-            self.collect_names(module);
+            self.collect_names(module, interner);
         }
 
         let mut main_module = None;
         for module in modules {
-            if module.path().as_string(self.interner) == "Main" {
+            if module.path().as_string(interner) == "Main" {
                 main_module = Some(module);
                 break;
             }
@@ -53,7 +51,7 @@ impl<'interner> Interpreter<'interner> {
         let mut main_function = None;
         'outer: for declaration in main_module.declarations() {
             if let Declaration::Function(function) = declaration {
-                if self.interner.get(function.name.data()) == "main" {
+                if interner.get(function.name.data()) == "main" {
                     main_function = Some(declaration);
                     break 'outer;
                 }
@@ -76,10 +74,10 @@ impl<'interner> Interpreter<'interner> {
             Ok(value) | Err(value) => value,
         };
 
-        println!("\nResult = {}", value.as_string(self.interner));
+        println!("\nResult = {}", value.as_string(interner));
     }
 
-    fn collect_names(&mut self, module: &Module) {
+    pub fn collect_names(&mut self, module: &Module, interner: &Interner) {
         for declaration in module.declarations() {
             match declaration {
                 Declaration::Module(..) => (),
@@ -88,7 +86,7 @@ impl<'interner> Interpreter<'interner> {
                 Declaration::Function(function) => self.collect_function_name(function),
                 Declaration::Variant(variant) => self.collect_variant_name(variant),
                 Declaration::Struct(strct) => self.collect_struct_name(strct),
-                Declaration::BuiltIn(builtin) => self.collect_builtin_name(builtin),
+                Declaration::BuiltIn(builtin) => self.collect_builtin_name(builtin, interner),
             }
         }
     }
@@ -164,10 +162,10 @@ impl<'interner> Interpreter<'interner> {
         }
     }
 
-    fn collect_builtin_name(&mut self, builtin: &BuiltInDeclaration) {
+    fn collect_builtin_name(&mut self, builtin: &BuiltInDeclaration, interner: &Interner) {
         let BuiltInDeclaration { name, methods, path, ..  } = builtin;
 
-        let t = match self.interner.get(name.data()) {
+        let t = match interner.get(name.data()) {
             "U64" => BuiltInType::U64,
             _ => unreachable!()
         };
@@ -180,7 +178,7 @@ impl<'interner> Interpreter<'interner> {
 
             // TODO: Better error reporting here
             let f = INTRINSIC_FUNCTIONS
-                .iter().find(|(ppath, _)| ppath == &mpath.as_string(self.interner))
+                .iter().find(|(ppath, _)| ppath == &mpath.as_string(interner))
                 .unwrap().1;
 
             self.builtin_methods.get_mut(&t).unwrap().insert(*name.data(), f);
@@ -234,7 +232,7 @@ impl<'interner> Interpreter<'interner> {
         Err(value)
     }
 
-    fn expression(&mut self, expression: &Located<Expression>) -> ControlFlow {
+    pub fn expression(&mut self, expression: &Located<Expression>) -> ControlFlow {
         match expression.data() {
             Expression::U64(u64) => Ok(Value::U64(*u64)),
             Expression::Path(path) => self.path(path),

@@ -36,8 +36,12 @@ const COMMANDS: &[Command] = &[
     Command {
         name: "interactive",
         arguments: &["FILE*"],
-        description: "Enter the interactive shell for vay! with the files provided",
-        action: |_| todo!("Interactive shell."),
+        description: "Enter the interactive session for vay! with the files provided",
+        action: |arguments| {
+            let mut runner = Runner::new();
+            runner.interactive(arguments);
+            Ok(())
+        },
     },
     Command {
         name: "help",

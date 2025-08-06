@@ -24,7 +24,7 @@ macro_rules! scoped {
 
 const INTERFACE_CONSTANT_IDX: usize = 0;
 
-pub struct Checker<'interner> {
+pub struct Checker {
     value_types: HashMap<Path, Type>,
     types: HashMap<Path, Type>,
 
@@ -35,8 +35,6 @@ pub struct Checker<'interner> {
     interfaces: HashMap<Path, Interface>,
 
     builtin_paths: HashMap<BuiltInType, Path>,
-
-    interner: &'interner Interner,
 
     // TODO: Seperate type locals and value locals
     locals: Vec<Type>,
@@ -49,8 +47,8 @@ pub struct Checker<'interner> {
     unification_table: HashMap<usize, MonoType>
 }
 
-impl<'interner> Checker<'interner> {
-    pub fn new(interner: &'interner Interner) -> Self {
+impl Checker {
+    pub fn new() -> Self {
         Self {
             value_types: HashMap::new(),
             types: HashMap::new(),
@@ -59,7 +57,6 @@ impl<'interner> Checker<'interner> {
             methods: HashMap::new(),
             interfaces: HashMap::new(),
             builtin_paths: HashMap::new(),
-            interner,
             locals: vec![],
             return_type: vec![],
             // NOTE: 0 is reserved for interfaces' self reference type constant
@@ -342,10 +339,10 @@ impl<'interner> Checker<'interner> {
         Ok(Type::Mono(m))
     }
 
-    pub fn type_check(&mut self, modules: &[Module]) -> ReportableResult<()> {
+    pub fn type_check(&mut self, modules: &[Module], interner: &Interner) -> ReportableResult<()> {
         for module in modules {
             self.current_source = module.source().to_string();
-            self.collect_types(module)?;
+            self.collect_types(module, interner)?;
         }
 
         for module in modules {
@@ -369,13 +366,13 @@ impl<'interner> Checker<'interner> {
         Ok(())
     }
 
-    fn collect_types(&mut self, module: &Module) -> ReportableResult<()> {
+    fn collect_types(&mut self, module: &Module, interner: &Interner) -> ReportableResult<()> {
         for declaration in module.declarations() {
             match declaration {
                 Declaration::Interface(interface) => self.collect_interface_type(interface)?,
                 Declaration::Variant(variant) => self.collect_variant_type(variant)?,
                 Declaration::Struct(strct) => self.collect_struct_type(strct)?,
-                Declaration::BuiltIn(builtin) => self.collect_builtin_type(builtin)?,
+                Declaration::BuiltIn(builtin) => self.collect_builtin_type(builtin, interner)?,
                 _ => ()
             }
         }
@@ -459,10 +456,10 @@ impl<'interner> Checker<'interner> {
         Ok(())
     }
 
-    fn collect_builtin_type(&mut self, builtin: &BuiltInDeclaration) -> ReportableResult<()> {
+    fn collect_builtin_type(&mut self, builtin: &BuiltInDeclaration, interner: &Interner) -> ReportableResult<()> {
         let BuiltInDeclaration { type_vars, path, name, .. } = builtin;
 
-        let builtin_type = match self.interner.get(name.data()) {
+        let builtin_type = match interner.get(name.data()) {
             "U64" => BuiltInType::U64,
             _ => panic!("Unknown builtin")
         };
@@ -954,7 +951,7 @@ impl<'interner> Checker<'interner> {
         m.replace_type_constants(&map)
     }
 
-    fn infer(&mut self, expression: &Located<Expression>) -> ReportableResult<MonoType> {
+    pub fn infer(&mut self, expression: &Located<Expression>) -> ReportableResult<MonoType> {
         match expression.data() {
             Expression::U64(_) => self.u64(),
             Expression::Path(path) => self.path(path).map(|p| p.0),
