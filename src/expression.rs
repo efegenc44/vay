@@ -52,23 +52,23 @@ pub struct LambdaExpression {
 
 #[derive(Clone)]
 pub struct MatchExpression {
-    pub expression: Box<Located<Expression>>,
+    pub expressions: Vec<Located<Expression>>,
     pub branches: Vec<Located<MatchBranch>>,
 }
 
 #[derive(Clone)]
 pub struct MatchBranch {
-    pattern: Located<Pattern>,
+    patterns: Vec<Located<Pattern>>,
     expression: Located<Expression>,
 }
 
 impl MatchBranch {
-    pub fn new(pattern: Located<Pattern>, expression: Located<Expression>) -> Self {
-        Self { pattern, expression }
+    pub fn new(patterns: Vec<Located<Pattern>>, expression: Located<Expression>) -> Self {
+        Self { patterns, expression }
     }
 
-    pub fn pattern(&self) -> &Located<Pattern> {
-        &self.pattern
+    pub fn patterns(&self) -> &[Located<Pattern>] {
+        &self.patterns
     }
 
     pub fn expression(&self) -> &Located<Expression> {
@@ -91,6 +91,7 @@ pub struct AssignmentExpression {
     pub expression: Box<Located<Expression>>,
 }
 
+// TODO: default pattern
 #[derive(Clone)]
 pub enum Pattern {
     Any(InternIdx),

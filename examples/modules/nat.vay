@@ -17,17 +17,11 @@ variant Nat {
         let .Succ(n) : this.add(this.mul(n))
     }
 
-    fun eq(this, that : Nat) : Bool =
-        match this {
-            let .Zero    : match that {
-                let .Zero    : True
-                let .Succ(m) : False
-            }
-            let .Succ(n) : match that {
-                let .Zero    : False
-                let .Succ(m) : n.eq(m)
-            }
-        }
+    fun eq(this, that : Nat) : Bool = match this, that {
+        let .Zero   , .Zero    : True
+        let .Succ(n), .Succ(m) : n.eq(m)
+        let this    , that     : False
+    }
 }
 
 fun inc(n : Nat) : Nat = Succ(n)

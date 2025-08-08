@@ -519,12 +519,17 @@ impl Resolver {
     }
 
     fn matc(&mut self, matc: &mut MatchExpression) -> ReportableResult<()> {
-        let MatchExpression { expression, branches } = matc;
+        let MatchExpression { expressions, branches } = matc;
 
-        self.expression(expression)?;
+        for expression in expressions {
+            self.expression(expression)?;
+        }
+
         for branch in branches {
             scoped!(self, {
-                self.name_pattern_match(branch.data().pattern());
+                for pattern in branch.data().patterns() {
+                    self.name_pattern_match(pattern);
+                }
                 self.expression(branch.data_mut().expression_mut())?;
             });
         }

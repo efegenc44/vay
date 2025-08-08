@@ -186,14 +186,20 @@ impl Interpreter {
     }
 
     fn matc(&mut self, matc: &MatchExpression) -> ControlFlow {
-        let MatchExpression { expression, branches } = matc;
+        let MatchExpression { expressions, branches } = matc;
 
-        let value = self.expression(expression)?;
+        let mut values = vec![];
+        for expression in expressions {
+            values.push(self.expression(expression)?)
+        }
+
         for branch in branches {
-            if value.matches(branch.data().pattern().data()) {
+            if values.iter().zip(branch.data().patterns()).all(|(v, p)| v.matches(p.data())) {
                 let return_value;
                 scoped!(self, {
-                    self.value_pattern_match(&value, branch.data().pattern());
+                    for (value, pattern) in values.iter().zip(branch.data().patterns()) {
+                        self.value_pattern_match(&value, pattern);
+                    }
                     return_value = self.expression(branch.data().expression());
                 });
                 return return_value;

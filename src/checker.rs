@@ -769,9 +769,11 @@ impl Checker {
 
     fn matc(&mut self, matc: &MatchExpression) -> ReportableResult<MonoType> {
         // TODO: Exhaustiveness check
-        let MatchExpression { expression, branches } = matc;
+        let MatchExpression { expressions, branches } = matc;
 
-        let mut m = self.infer(expression)?;
+        let mut ms = expressions
+            .iter().map(|expression| self.infer(expression))
+            .collect::<ReportableResult<Vec<_>>>()?;
         let mut return_type = MonoType::Var(self.newvar());
 
         match &branches[..] {
@@ -779,12 +781,18 @@ impl Checker {
             branches => {
                 for branch in branches {
                     scoped!(self, {
-                        if !self.type_pattern_match(m.clone(), branch.data().pattern())? {
-                            // TODO: Remove push locals by type_pattern_match()
-                            return self.error(
-                                TypeCheckError::NotAPatternOfType { expected: m },
-                                branch.data().pattern().location(),
-                            );
+                        if ms.len() != branch.data().patterns().len() {
+                            todo!("Patterns dont match");
+                        }
+
+                        for (m, pattern) in ms.iter().zip(branch.data().patterns()) {
+                            if !self.type_pattern_match(m.clone(), pattern)? {
+                                // TODO: Remove push locals by type_pattern_match()
+                                return self.error(
+                                    TypeCheckError::NotAPatternOfType { expected: m.clone() },
+                                    pattern.location(),
+                                );
+                            }
                         }
 
                         // NOTE: Bottom type is the subtype of all types
@@ -794,7 +802,9 @@ impl Checker {
                         } else {
                             self.check(branch.data().expression(), return_type.clone())?;
                         }
-                        m = m.substitute(&self.unification_table);
+                        for m in ms.iter_mut() {
+                            *m = m.clone().substitute(&self.unification_table);
+                        }
                         return_type = return_type.substitute(&self.unification_table);
                     })
                 }

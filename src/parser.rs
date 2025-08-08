@@ -326,13 +326,20 @@ impl<'source, 'interner> Parser<'source, 'interner> {
 
     fn matc(&mut self) -> ReportableResult<Located<Expression>> {
         let start = self.expect(Token::MatchKeyword)?.location();
-        let expression = Box::new(self.expression()?);
+        let expressions = self.until(
+            Token::LeftCurly,
+            Self::expression,
+            Some(Token::Comma)
+        )?.0;
 
-        self.expect(Token::LeftCurly)?;
+        if expressions.is_empty() {
+            todo!("Expression is expected!");
+        }
+
         let (branches, end) = self.until(Token::RightCurly, Self::match_branch, None)?;
         let location = start.extend(&end);
         let matc = MatchExpression {
-            expression,
+            expressions,
             branches
         };
 
@@ -349,13 +356,21 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     }
 
     fn match_branch(&mut self) -> ReportableResult<Located<MatchBranch>> {
-        self.expect(Token::LetKeyword)?;
-        let pattern = self.pattern()?;
-        self.expect(Token::Colon)?;
+        let start = self.expect(Token::LetKeyword)?.location();
+        let patterns = self.until(
+            Token::Colon,
+            Self::pattern,
+            Some(Token::Comma)
+        )?.0;
+
+        if patterns.is_empty() {
+            todo!("Pattern is expected!")
+        }
+
         let expression = self.expression()?;
 
-        let location = pattern.location().extend(&expression.location());
-        Ok(Located::new(MatchBranch::new(pattern, expression), location))
+        let location = start.extend(&expression.location());
+        Ok(Located::new(MatchBranch::new(patterns, expression), location))
     }
 
     fn pattern(&mut self) -> ReportableResult<Located<Pattern>> {
