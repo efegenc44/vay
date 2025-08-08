@@ -659,7 +659,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     fn interface(&mut self) -> ReportableResult<Declaration> {
         self.expect(Token::InterfaceKeyword)?;
         let name = self.expect_identifier()?;
-        let type_name = self.expect_identifier()?;
+        let type_name = self.type_var()?;
         self.expect(Token::LeftCurly)?;
         let (methods, _) = self.until(Token::RightCurly, Self::interface_method_signature, None)?;
 

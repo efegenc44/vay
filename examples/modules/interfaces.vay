@@ -1,5 +1,15 @@
 module Interfaces
 
+variant Ordering {
+    Greater
+    Equal
+    Less
+}
+
+interface Ord t (Eq) {
+    fun ord(that : t) : Ordering
+}
+
 interface Eq t {
     fun eq(that : t) : Bool
 }

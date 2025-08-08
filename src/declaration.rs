@@ -50,7 +50,7 @@ pub struct VariantDeclaration {
 
 pub struct InterfaceDeclaration {
     pub name: Located<InternIdx>,
-    pub type_name: Located<InternIdx>,
+    pub type_name: Located<TypeVar>,
     pub methods: Vec<InterfaceMethodSignature>,
     pub path: Path,
 }

@@ -728,8 +728,10 @@ impl Resolver {
     fn interface(&mut self, interface: &mut InterfaceDeclaration) -> ReportableResult<()> {
         let InterfaceDeclaration { methods, type_name, .. } = interface;
 
+        self.type_var(type_name)?;
+
         scoped!(self, {
-            self.locals.push(*type_name.data());
+            self.locals.push(*type_name.data().name.data());
 
             for method in methods {
                 let InterfaceMethodSignature { arguments, return_type, .. } = method;

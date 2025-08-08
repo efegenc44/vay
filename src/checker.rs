@@ -388,6 +388,12 @@ impl Checker {
         }
 
         for declaration in module.declarations() {
+            if let Declaration::Interface(interface) = declaration {
+                self.collect_interface_name_extras(interface)?
+            }
+        }
+
+        for declaration in module.declarations() {
             match declaration {
                 Declaration::Variant(variant) => self.collect_variant_name(variant)?,
                 Declaration::Struct(strct) => self.collect_struct_name(strct)?,
@@ -739,6 +745,24 @@ impl Checker {
                 self.value_types.insert(path.clone(), t);
             }
         });
+
+        Ok(())
+    }
+
+    fn collect_interface_name_extras(&mut self, interface: &InterfaceDeclaration) -> ReportableResult<()> {
+        let InterfaceDeclaration { type_name, path, .. } = interface;
+
+        let paths = type_name.data().interfaces.iter().map(|interface| &interface.1);
+        let interfaces = paths.map(|path| &self.interfaces[path]);
+
+        let mut extra_methods = HashMap::new();
+        for interface in interfaces {
+            for method in &interface.methods {
+                extra_methods.insert(*method.0, method.1.clone());
+            }
+        }
+
+        self.interfaces.get_mut(path).unwrap().methods.extend(extra_methods);
 
         Ok(())
     }
