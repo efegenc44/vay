@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    bound::{Bound, Path}, declaration::{self, BuiltInDeclaration, Declaration, FunctionDeclaration, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, StructDeclaration, TypedIdentifier, VariantDeclaration}, expression::{
+    bound::{Bound, Path}, declaration::{self, BuiltInDeclaration, Declaration, ExternalDeclaration, FunctionDeclaration, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, StructDeclaration, TypedIdentifier, VariantDeclaration}, expression::{
         ApplicationExpression, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
     }, interner::{InternIdx, Interner}, location::{Located, SourceLocation}, reportable::{Reportable, ReportableResult}, runner, typ::{BuiltInType, FunctionType, Interface, MethodType, MonoType, Type, TypeVar}
 };
@@ -396,6 +396,7 @@ impl Checker {
                 Declaration::Variant(variant) => self.collect_variant_name(variant)?,
                 Declaration::Struct(strct) => self.collect_struct_name(strct)?,
                 Declaration::BuiltIn(builtin) => self.collect_builtin_name(builtin)?,
+                Declaration::External(external) => self.collect_external_name(external)?,
                 _ => (),
             }
         }
@@ -475,6 +476,23 @@ impl Checker {
 
         self.builtin_paths.insert(builtin_type, path.clone());
         self.types.insert(path.clone(), t);
+
+        Ok(())
+    }
+
+    fn collect_external_name(&mut self, external: &ExternalDeclaration) -> ReportableResult<()> {
+        let ExternalDeclaration { type_vars, arguments, return_type, path, .. } = external;
+
+        let type_vars = self.type_vars(type_vars);
+
+        scoped!(self, {
+            self.define_type_vars(type_vars.clone());
+
+            let m = self.get_function_type(arguments, return_type)?.into_mono();
+            let t = self.declaration_type(m, type_vars);
+
+            self.value_types.insert(path.clone(), t);
+        });
 
         Ok(())
     }

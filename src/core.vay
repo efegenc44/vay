@@ -1,5 +1,7 @@
 module Core
 
+import Intrinsics (U64)
+
 interface Addable t {
     fun add(other : t) : t
 }
@@ -77,3 +79,5 @@ variant Bool {
         let this , that  : Bool::False
     }
 }
+
+external println:(T)(x : T)

@@ -3,7 +3,7 @@ use std::{collections::HashMap, iter::Peekable};
 use crate::{
     bound::{Bound, Path},
     declaration::{
-        BuiltInDeclaration, Constraint, Declaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, StructDeclaration, TypeVar, TypedIdentifier, VariantCase, VariantDeclaration
+        BuiltInDeclaration, Constraint, Declaration, ExternalDeclaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, StructDeclaration, TypeVar, TypedIdentifier, VariantCase, VariantDeclaration
     },
     expression::{
         ApplicationExpression, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchBranch, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
@@ -40,6 +40,7 @@ const DECLARATION_KEYWORDS: &[Token] = &[
     Token::InterfaceKeyword,
     Token::StructKeyword,
     Token::BuiltInKeyword,
+    Token::ExternalKeyword,
 ];
 
 const PATTERN_TOKEN_STARTS: &[Token] = &[
@@ -534,6 +535,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             Token::InterfaceKeyword => self.interface(),
             Token::StructKeyword => self.strct(),
             Token::BuiltInKeyword => self.builtin(),
+            Token::ExternalKeyword => self.external(),
             _ => unreachable!()
         }
     }
@@ -831,6 +833,40 @@ impl<'source, 'interner> Parser<'source, 'interner> {
 
         let builtin = BuiltInDeclaration { name, methods, path: Path::empty(), type_vars };
         Ok(Declaration::BuiltIn(builtin))
+    }
+
+    fn external(&mut self) -> ReportableResult<Declaration> {
+        self.expect(Token::ExternalKeyword)?;
+        let name = self.expect_identifier()?;
+
+        let type_vars = if self.peek_is(Token::Colon) {
+            self.advance()?;
+            self.expect(Token::LeftParenthesis)?;
+            self.until(
+                Token::RightParenthesis,
+                Self::type_var,
+                Some(Token::Comma)
+            )?.0
+        } else {
+            vec![]
+        };
+
+        self.expect(Token::LeftParenthesis)?;
+        let (arguments, _) = self.until(
+            Token::RightParenthesis,
+            Self::typed_identifier,
+            Some(Token::Comma)
+        )?;
+
+        let return_type = if self.peek_is(Token::Colon) {
+            self.advance()?;
+            Some(self.type_expression()?)
+        } else {
+            None
+        };
+
+        let external = ExternalDeclaration { name, type_vars, arguments, return_type, path: Path::empty() };
+        Ok(Declaration::External(external))
     }
 
     fn type_expression(&mut self) -> ReportableResult<Located<TypeExpression>> {

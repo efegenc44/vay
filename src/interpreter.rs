@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::{bound::{Bound, Path}, declaration::{BuiltInDeclaration, Declaration, FunctionDeclaration, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, StructDeclaration, VariantDeclaration}, expression::{ApplicationExpression, AssignmentExpression, Expression, LambdaExpression, LetExpression, MatchExpression, PathExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, VariantCasePattern}, interner::{InternIdx, Interner}, intrinsics::{IntrinsicFunction, INTRINSIC_FUNCTIONS}, location::Located, typ::BuiltInType, value::{ConstructorInstance, FunctionInstance, InstanceInstance, LambdaInstance, MethodInstance, StructConstructorInstance, StructInstanceInstance, Value}};
+use crate::{bound::{Bound, Path}, declaration::{BuiltInDeclaration, Declaration, ExternalDeclaration, FunctionDeclaration, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, StructDeclaration, VariantDeclaration}, expression::{ApplicationExpression, AssignmentExpression, Expression, LambdaExpression, LetExpression, MatchExpression, PathExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, VariantCasePattern}, interner::{InternIdx, Interner}, intrinsics::{IntrinsicFunction, EXTERNAL_FUNCTIONS, INTRINSIC_FUNCTIONS}, location::Located, typ::BuiltInType, value::{ConstructorInstance, FunctionInstance, InstanceInstance, LambdaInstance, MethodInstance, StructConstructorInstance, StructInstanceInstance, Value}};
 
 pub struct Interpreter {
     methods: HashMap<Path, HashMap<InternIdx, Rc<FunctionInstance>>>,
@@ -87,6 +87,7 @@ impl Interpreter {
                 Declaration::Variant(variant) => self.collect_variant_name(variant),
                 Declaration::Struct(strct) => self.collect_struct_name(strct),
                 Declaration::BuiltIn(builtin) => self.collect_builtin_name(builtin, interner),
+                Declaration::External(external) => self.collect_external_name(external, interner),
             }
         }
     }
@@ -183,6 +184,19 @@ impl Interpreter {
 
             self.builtin_methods.get_mut(&t).unwrap().insert(*name.data(), f);
         }
+    }
+
+    fn collect_external_name(&mut self, external: &ExternalDeclaration, interner: &Interner) {
+        let ExternalDeclaration { path, .. } = external;
+
+        // TODO: Better error reporting here
+        // TODO: External functions via dynamic loading?
+        let f = EXTERNAL_FUNCTIONS
+            .iter().find(|(ppath, _)| ppath == &path.as_string(interner))
+            .unwrap().1;
+
+        let function = Value::ExternalFunction(f);
+        self.names.insert(path.clone(), function);
     }
 
     fn matc(&mut self, matc: &MatchExpression, interner: &Interner) -> ControlFlow {
@@ -407,6 +421,15 @@ impl Interpreter {
 
                 Ok(f(argument_values, interner))
             }
+            Value::ExternalFunction(f) => {
+                let mut argument_values = vec![];
+                for argument in arguments {
+                    argument_values.push(self.expression(argument, interner)?);
+                }
+
+                Ok(f(argument_values, interner))
+            }
+
             _ => unreachable!()
         }
     }

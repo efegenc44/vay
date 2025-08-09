@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    bound::{Bound, Path}, declaration::{BuiltInDeclaration, Constraint, Declaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, StructDeclaration, TypeVar, VariantDeclaration}, expression::{ApplicationExpression, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern}, interner::{InternIdx, Interner}, intrinsics::INTRINSICS_MODULE_NAME, location::{Located, SourceLocation}, reportable::{Reportable, ReportableResult}, runner::{self}
+    bound::{Bound, Path}, declaration::{BuiltInDeclaration, Constraint, Declaration, ExternalDeclaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, StructDeclaration, TypeVar, VariantDeclaration}, expression::{ApplicationExpression, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern}, interner::{InternIdx, Interner}, intrinsics::INTRINSICS_MODULE_NAME, location::{Located, SourceLocation}, reportable::{Reportable, ReportableResult}, runner::{self}
 };
 
 macro_rules! scoped {
@@ -186,6 +186,7 @@ impl Resolver {
                 Declaration::Interface(interface) => self.collect_interface_name(interface)?,
                 Declaration::Struct(strct) => self.collect_struct_name(strct)?,
                 Declaration::BuiltIn(builtin) => self.collect_builtin_name(builtin, interner)?,
+                Declaration::External(external) => self.collect_external_name(external)?,
             }
         }
 
@@ -305,6 +306,23 @@ impl Resolver {
 
         self.type_names.insert(builtin.clone());
         *path = builtin;
+
+        Ok(())
+    }
+
+    fn collect_external_name(&mut self, external: &mut ExternalDeclaration) -> ReportableResult<()> {
+        let ExternalDeclaration { name, path, .. } = external;
+
+        let external = self.current_path().append(*name.data());
+        if !self.value_names.contains(&external) {
+            self.value_names.insert(external.clone());
+            *path = external;
+        } else {
+            return self.error(
+                ResolveError::DuplicateFunctionDeclaration(external),
+                name.location(),
+            );
+        }
 
         Ok(())
     }
@@ -574,6 +592,7 @@ impl Resolver {
             Declaration::Interface(interface) => self.interface(interface)?,
             Declaration::Struct(strct) => self.strct(strct)?,
             Declaration::BuiltIn(builtin) => self.builtin(builtin)?,
+            Declaration::External(external) => self.external(external)?,
         };
 
         Ok(())
@@ -784,6 +803,30 @@ impl Resolver {
 
             for method in methods {
                 self.method_signature(method)?;
+            }
+        });
+
+        Ok(())
+    }
+
+    fn external(&mut self, external: &mut ExternalDeclaration) -> ReportableResult<()> {
+        let ExternalDeclaration { type_vars, arguments, return_type, .. } = external;
+
+        for type_var in type_vars.iter_mut() {
+            self.type_var(type_var)?;
+        }
+
+        scoped!(self, {
+            for type_var in type_vars {
+                self.locals.push(*type_var.data().name.data());
+            }
+
+            for argument in arguments.iter_mut() {
+                self.type_expression(argument.data_mut().type_expression_mut())?;
+            }
+
+            if let Some(return_type) = return_type {
+                self.type_expression(return_type)?;
             }
         });
 

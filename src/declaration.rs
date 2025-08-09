@@ -10,6 +10,7 @@ pub enum Declaration {
     Interface(InterfaceDeclaration),
     Struct(StructDeclaration),
     BuiltIn(BuiltInDeclaration),
+    External(ExternalDeclaration),
 }
 
 pub struct TypeVar {
@@ -74,6 +75,14 @@ pub struct BuiltInDeclaration {
     pub name: Located<InternIdx>,
     pub type_vars: Vec<Located<InternIdx>>,
     pub methods: Vec<MethodSignature>,
+    pub path: Path,
+}
+
+pub struct ExternalDeclaration {
+    pub name: Located<InternIdx>,
+    pub type_vars: Vec<Located<TypeVar>>,
+    pub arguments: Vec<Located<TypedIdentifier>>,
+    pub return_type: Option<Located<TypeExpression>>,
     pub path: Path,
 }
 

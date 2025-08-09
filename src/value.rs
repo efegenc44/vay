@@ -9,6 +9,7 @@ pub enum Value {
     Lambda(Rc<LambdaInstance>),
     InterfaceFunction(InternIdx),
     BuiltinMethod(Box<Value>, IntrinsicFunction),
+    ExternalFunction(IntrinsicFunction),
     Constructor(Rc<ConstructorInstance>),
     Instance(Rc<InstanceInstance>),
     StructConstructor(Rc<StructConstructorInstance>),
@@ -25,6 +26,7 @@ impl Value {
             Value::Lambda(..) => "<function>".into(),
             Value::InterfaceFunction(..) => "<function>".into(),
             Value::BuiltinMethod(..) => "<function>".into(),
+            Value::ExternalFunction(..) => "<function>".into(),
             Value::Constructor(..) => "<function>".into(),
             Value::StructConstructor(..) => "<function>".into(),
             Value::Instance(instance) => {

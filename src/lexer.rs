@@ -110,6 +110,7 @@ impl<'source, 'interner> Lexer<'source, 'interner> {
             "return" => Token::ReturnKeyword,
             "struct" => Token::StructKeyword,
             "builtin" => Token::BuiltInKeyword,
+            "external" => Token::ExternalKeyword,
             "" => unreachable!(),
             _ => Token::Identifier(self.interner.intern(lexeme)),
         };

@@ -77,3 +77,12 @@ pub const INTRINSIC_FUNCTIONS: &[(&str, IntrinsicFunction)] = intrinsics_functio
         Value::Instance(Rc::new(instance))
     }
 };
+
+pub const EXTERNAL_FUNCTIONS: &[(&str, IntrinsicFunction)] = &[
+    ("Core::println", |mut arguments, interner| {
+        let a = arguments.pop().unwrap();
+        println!("{}", a.as_string(interner));
+
+        Value::Unit
+    })
+];

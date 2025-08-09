@@ -40,6 +40,7 @@ pub enum Token {
     ReturnKeyword,
     StructKeyword,
     BuiltInKeyword,
+    ExternalKeyword,
 }
 
 impl Token {
@@ -87,6 +88,7 @@ impl Token {
             Token::ReturnKeyword => "keyword `return`",
             Token::StructKeyword => "keyword `struct`",
             Token::BuiltInKeyword => "keyword `builtin`",
+            Token::ExternalKeyword => "keyword `external`",
         }
     }
 }
