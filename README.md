@@ -37,7 +37,7 @@ fun main() : Nat =
 ---
 
 ### Goals to be useful :
-- [ ] Operators
+- [x] Operators
 - [ ] Primitives
 - [ ] Arrays
 - [ ] REPL

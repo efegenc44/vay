@@ -10,7 +10,12 @@ use crate::{
     token::Token,
 };
 
-const PUNCTUATION_CHARS: &[char] = &[';', ':', ',', '(', ')', '{', '}', '.', '='];
+const PUNCTUATION_CHARS: &[char] = &[
+    ';', ':', ',', '(', ')',
+    '{', '}', '.', '=', '-',
+    '+', '*', '/', '<', '>',
+    '|', '&',
+];
 
 macro_rules! locate {
     ($self:expr, $block:block) => {{
@@ -46,6 +51,10 @@ impl<'source, 'interner> Lexer<'source, 'interner> {
 
     pub fn source(&self) -> &str {
         &self.source
+    }
+
+    pub fn interner(&mut self) -> &mut Interner {
+        self.interner
     }
 
     fn peek_ch(&mut self) -> Option<&char> {
@@ -144,7 +153,39 @@ impl<'source, 'interner> Lexer<'source, 'interner> {
                 '{' => Token::LeftCurly,
                 '}' => Token::RightCurly,
                 '.' => Token::Dot,
-                '=' => Token::Equals,
+                '=' => {
+                    if self.optional('=') {
+                        Token::DoubleEquals
+                    } else {
+                        Token::Equals
+                    }
+                },
+                '-' => Token::Minus,
+                '+' => Token::Plus,
+                '*' => Token::Asterisk,
+                '/' => {
+                    if self.optional('=') {
+                        Token::SlashEquals
+                    } else {
+                        Token::Slash
+                    }
+                },
+                '<' => {
+                    if self.optional('=') {
+                        Token::LessEquals
+                    } else {
+                        Token::Less
+                    }
+                },
+                '>' => {
+                    if self.optional('=') {
+                        Token::GreaterEquals
+                    } else {
+                        Token::Greater
+                    }
+                },
+                '|' => Token::Bar,
+                '&' => Token::Ampersand,
                 _ => unreachable!(),
             };
         });

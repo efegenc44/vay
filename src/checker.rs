@@ -1,15 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    bound::{Bound, Path},
-    declaration::{self, BuiltInDeclaration, Declaration, FunctionDeclaration, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, StructDeclaration, TypedIdentifier, VariantDeclaration},
-    expression::{
+    bound::{Bound, Path}, declaration::{self, BuiltInDeclaration, Declaration, FunctionDeclaration, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, StructDeclaration, TypedIdentifier, VariantDeclaration}, expression::{
         ApplicationExpression, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
-    },
-    interner::{InternIdx, Interner},
-    location::{Located, SourceLocation},
-    reportable::{Reportable, ReportableResult},
-    typ::{BuiltInType, FunctionType, Interface, MethodType, MonoType, Type, TypeVar},
+    }, interner::{InternIdx, Interner}, location::{Located, SourceLocation}, reportable::{Reportable, ReportableResult}, runner, typ::{BuiltInType, FunctionType, Interface, MethodType, MonoType, Type, TypeVar}
 };
 
 macro_rules! scoped {
@@ -64,6 +58,10 @@ impl Checker {
             current_source: String::new(),
             unification_table: HashMap::new(),
         }
+    }
+
+    pub fn init_interactive_session(&mut self) {
+        self.current_source = runner::SESSION_SOURCE.into();
     }
 
     fn newvar(&mut self) -> TypeVar {

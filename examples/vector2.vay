@@ -1,13 +1,13 @@
 module Main
 
 import Numbers (Nat (Nat (Succ, Zero)))
-import Interfaces (Add)
+import Core (Addable)
 
 struct Vector2(T) {
     x : T
     y : T
 
-    fun:(T (Add)) add(this, that : Vector2(T)) : Vector2(T) = (
+    fun:(T (Addable)) add(this, that : Vector2(T)) : Vector2(T) = (
         Vector2(
             this.x.add(that.x),
             this.y.add(that.y)
@@ -16,6 +16,4 @@ struct Vector2(T) {
 }
 
 fun main() : Vector2(Nat) =
-    Vector2(Zero, Succ(Zero)).add(
-        Vector2(Succ(Succ(Zero)), Zero)
-    )
+    Vector2(Zero, Succ(Zero)) + Vector2(Succ(Succ(Zero)), Zero)

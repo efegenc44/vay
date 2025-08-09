@@ -1,10 +1,10 @@
 module Main
 
 import Intrinsics (U64)
-import Interfaces (Add)
+import Core
 
 fun main() : U64 =
     let x = 5 in match x {
-        let 100 : Add::add(x, 5)
-        let 5   : Add::add(x, 100)
+        let 100 : x + 5
+        let 5   : x + 100
     }

@@ -1,0 +1,79 @@
+module Core
+
+interface Addable t {
+    fun add(other : t) : t
+}
+
+interface Multiplicable t {
+    fun multiply(other : t) : t
+}
+
+interface Subtractable t {
+    fun subtract(other : t) : t
+}
+
+interface Number t (Addable, Multiplicable, Subtractable) { }
+
+interface Equatable t {
+    fun equals(other : t) : Bool
+}
+
+fun notEquals:(T (Equatable))(x : T, y : T) : Bool =
+    x.equals(y).not()
+
+variant Ordering {
+    Greater
+    Equal
+    Less
+
+    fun equals(this, that : Ordering) : Bool = match this, that {
+        let .Greater, .Greater : Bool::True
+        let .Equal  , .Equal   : Bool::True
+        let .Less   , .Less    : Bool::True
+        let this    , that     : Bool::False
+    }
+}
+
+interface Ordered t (Equatable) {
+    fun compare(other : t) : Ordering
+}
+
+fun lessThan:(T (Ordered))(x : T, y : T) : Bool =
+    x.compare(y).equals(Ordering::Less)
+
+fun lessThanOrEqual:(T (Ordered))(x : T, y : T) : Bool =
+    let c = x.compare(y) in
+        c.equals(Ordering::Less).or(c.equals(Ordering::Equal))
+
+fun greaterThan:(T (Ordered))(x : T, y : T) : Bool =
+    x.compare(y).equals(Ordering::Greater)
+
+fun greaterThanOrEqual:(T (Ordered))(x : T, y : T) : Bool =
+    let c = x.compare(y) in
+        c.equals(Ordering::Greater).or(c.equals(Ordering::Equal))
+
+interface Logical t {
+    fun and(other : t) : t
+    fun or(other : t) : t
+    fun not() : t
+}
+
+variant Bool {
+    True
+    False
+
+    fun not(this) : Bool = match this {
+        let .True  : Bool::False
+        let .False : Bool::True
+    }
+
+    fun or(this, that : Bool) : Bool = match this, that {
+        let .False, .False : Bool::False
+        let this  , that   : Bool::True
+    }
+
+    fun and(this, that : Bool) : Bool = match this, that {
+        let .True, .True : Bool::True
+        let this , that  : Bool::False
+    }
+}

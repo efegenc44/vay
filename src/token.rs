@@ -1,6 +1,6 @@
 use crate::interner::InternIdx;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Token {
     Identifier(InternIdx),
     U64(u64),
@@ -15,6 +15,18 @@ pub enum Token {
     RightCurly,
     Dot,
     Equals,
+    DoubleEquals,
+    Minus,
+    Plus,
+    Asterisk,
+    Slash,
+    SlashEquals,
+    Less,
+    LessEquals,
+    Greater,
+    GreaterEquals,
+    Bar,
+    Ampersand,
 
     ModuleKeyword,
     ImportKeyword,
@@ -50,6 +62,18 @@ impl Token {
             Token::RightCurly => "`}`",
             Token::Dot => "`.`",
             Token::Equals => "`=`",
+            Token::DoubleEquals => "`==`",
+            Token::Minus => "`-`",
+            Token::Plus => "`+`",
+            Token::Asterisk => "`*`",
+            Token::Slash => "`/`",
+            Token::SlashEquals => "`/=`",
+            Token::Less => "`<`",
+            Token::LessEquals => "`<=`",
+            Token::Greater => "`>`",
+            Token::GreaterEquals => "`>=`",
+            Token::Bar => "`|`",
+            Token::Ampersand => "`&`",
 
             Token::ModuleKeyword => "keyword `module`",
             Token::ImportKeyword => "keyword `import`",

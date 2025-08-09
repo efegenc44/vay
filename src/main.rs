@@ -15,6 +15,7 @@ mod value;
 mod commandline;
 mod runner;
 mod intrinsics;
+mod core;
 
 fn main() {
     commandline::execute()

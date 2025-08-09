@@ -2,7 +2,7 @@ use core::panic;
 use std::{collections::HashMap, fs, io::{stdin, stdout, Write}, process::exit};
 
 use crate::{
-    checker::Checker, declaration::Module, interner::Interner, interpreter::{ControlFlow, Interpreter}, intrinsics::INTRINSICS_FILE_PATH, lexer::Lexer, parser::Parser, reportable::ReportableResult, resolver::Resolver
+    checker::Checker, core::CORE_FILE_PATH, declaration::Module, interner::Interner, interpreter::{ControlFlow, Interpreter}, intrinsics::INTRINSICS_FILE_PATH, lexer::Lexer, parser::Parser, reportable::ReportableResult, resolver::Resolver
 };
 
 pub const SESSION_SOURCE: &str = "Interactive session";
@@ -66,6 +66,7 @@ impl Runner {
 
     pub fn parse_all(&mut self, mut sources: Vec<String>) -> Result<Vec<Module>, ()> {
         sources.push(INTRINSICS_FILE_PATH.into());
+        sources.push(CORE_FILE_PATH.into());
 
         let mut modules = vec![];
         for source in sources {
@@ -107,6 +108,7 @@ impl Runner {
         }
 
         self.resolver.init_interactive_module();
+        self.checker.init_interactive_session();
 
         let stdin = stdin();
         let mut stdout = stdout();

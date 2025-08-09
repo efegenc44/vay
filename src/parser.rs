@@ -1,4 +1,4 @@
-use std::iter::Peekable;
+use std::{collections::HashMap, iter::Peekable};
 
 use crate::{
     bound::{Bound, Path},
@@ -49,24 +49,82 @@ const PATTERN_TOKEN_STARTS: &[Token] = &[
     Token::LeftParenthesis,
 ];
 
+const OPERATOR_PATHS: &[(Token, &str)] = &[
+    (Token::Asterisk, "Core::Multiplicable::multiply"),
+    (Token::Plus, "Core::Addable::add"),
+    (Token::Minus, "Core::Subtractable::subtract"),
+    (Token::DoubleEquals, "Core::Equatable::equals"),
+    (Token::SlashEquals, "Core::notEquals"),
+    (Token::Less, "Core::lessThan"),
+    (Token::LessEquals, "Core::lessThanOrEqual"),
+    (Token::Greater, "Core::greaterThan"),
+    (Token::GreaterEquals, "Core::greaterThanOrEqual"),
+    (Token::Ampersand,  "Core::Logical::and"),
+    (Token::Bar,  "Core::Logical::or"),
+];
+
+const fn operators(token: &Token) -> Option<(Associativity, usize)> {
+    match token {
+        Token::Asterisk => Some((Associativity::Left, 4)),
+
+        Token::Plus => Some((Associativity::Left, 3)),
+        Token::Minus => Some((Associativity::Left, 3)),
+
+        Token::DoubleEquals => Some((Associativity::None, 2)),
+        Token::SlashEquals => Some((Associativity::None, 2)),
+        Token::Less => Some((Associativity::None, 2)),
+        Token::LessEquals => Some((Associativity::None, 2)),
+        Token::Greater => Some((Associativity::None, 2)),
+        Token::GreaterEquals => Some((Associativity::None, 2)),
+
+        Token::Ampersand => Some((Associativity::Right, 1)),
+        Token::Bar => Some((Associativity::Right, 0)),
+        _ => None
+    }
+}
+
+#[derive(PartialEq)]
+enum Associativity {
+    Right,
+    Left,
+    None
+}
+
 pub struct Parser<'source_content, 'interner> {
     tokens: Peekable<Lexer<'source_content, 'interner>>,
     source: String,
+    operator_parts: HashMap<Token, Vec<InternIdx>>
 }
 
 impl<'source, 'interner> Parser<'source, 'interner> {
-    pub fn new(lexer: Lexer<'source, 'interner>) -> Self {
+    pub fn new(mut lexer: Lexer<'source, 'interner>) -> Self {
+        let operator_parts = Self::prepare_operator_paths(lexer.interner());
         let source = lexer.source().to_string();
         Self {
             tokens: lexer.peekable(),
             source,
+            operator_parts
         }
+    }
+
+    fn prepare_operator_paths(interner: &mut Interner) -> HashMap<Token, Vec<InternIdx>> {
+        let mut table = HashMap::new();
+        for (token, path) in OPERATOR_PATHS {
+            let parts = path
+                .split("::")
+                .map(|part| interner.intern(part.into()))
+                .collect();
+
+            table.insert(*token, parts);
+        }
+        table
     }
 
     fn peek(&mut self) -> ReportableResult<Option<Located<Token>>> {
         match self.tokens.peek() {
             Some(Ok(token)) => Ok(Some(*token)),
             // TODO: fix here, hacky
+            // NOTE: This causes wrong error reporting
             Some(Err(_)) => self.advance(),
             None => Ok(None),
         }
@@ -189,7 +247,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     }
 
     fn assignment(&mut self) -> ReportableResult<Located<Expression>> {
-        let expression = self.application()?;
+        let expression = self.binary(0)?;
         if self.peek_is(Token::Equals) {
             self.advance()?;
 
@@ -204,6 +262,43 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         } else {
             Ok(expression)
         }
+    }
+
+    fn binary(&mut self, min_precedence: usize) -> ReportableResult<Located<Expression>> {
+        let mut expression = self.application()?;
+        while let Some(token) = self.peek()? {
+            let Some((associativity, precedence)) = operators(token.data()) else {
+                break;
+            };
+
+            if precedence < min_precedence {
+                break;
+            }
+
+            let operator_location = self.advance()?.unwrap().location();
+            let operator_path = PathExpression {
+                parts: self.operator_parts[token.data()].clone(),
+                bound: Bound::Undetermined
+            };
+            let operator = Box::new(Located::new(Expression::Path(operator_path), operator_location));
+
+            let next_precedence = precedence + (associativity != Associativity::Right) as usize;
+            let rhs = self.binary(next_precedence)?;
+            let location = expression.location().extend(&rhs.location());
+
+            let application = ApplicationExpression {
+                function: operator,
+                arguments: vec![expression, rhs],
+            };
+            let binary = Expression::Application(application);
+            expression = Located::new(binary, location);
+
+            if associativity == Associativity::None {
+                break;
+            }
+        }
+
+        Ok(expression)
     }
 
     fn application(&mut self) -> ReportableResult<Located<Expression>> {

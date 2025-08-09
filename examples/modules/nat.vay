@@ -1,7 +1,7 @@
 module Numbers::Nat
 
 import Numbers (Nat (Nat (Succ, Zero)))
-import Interfaces (Bool (True, False))
+import Core (Bool (True, False))
 
 variant Nat {
     Zero
@@ -9,17 +9,17 @@ variant Nat {
 
     fun add(this, that : Nat) : Nat = match that {
         let .Zero    : this
-        let .Succ(n) : Succ(this.add(n))
+        let .Succ(n) : Succ(this + n)
     }
 
-    fun mul(this, that : Nat) : Nat = match that {
+    fun multiply(this, that : Nat) : Nat = match that {
         let .Zero    : Zero
-        let .Succ(n) : this.add(this.mul(n))
+        let .Succ(n) : this + (this * n)
     }
 
-    fun eq(this, that : Nat) : Bool = match this, that {
+    fun equals(this, that : Nat) : Bool = match this, that {
         let .Zero   , .Zero    : True
-        let .Succ(n), .Succ(m) : n.eq(m)
+        let .Succ(n), .Succ(m) : n == m
         let this    , that     : False
     }
 }
