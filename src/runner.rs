@@ -159,7 +159,7 @@ impl Runner {
                 runner_interactive!(self, self.resolver.expression(&mut expression), "name resolution");
                 let t = runner_interactive!(self, self.checker.infer(&expression), "type checking");
 
-                let ControlFlow::Ok(result) = self.interpreter.expression(&expression) else {
+                let ControlFlow::Ok(result) = self.interpreter.expression(&expression, &self.interner) else {
                     unreachable!()
                 };
                 println!("{} : {}", result.as_string(&self.interner), t.display(&self.interner))

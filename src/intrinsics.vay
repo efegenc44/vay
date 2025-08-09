@@ -6,4 +6,6 @@ builtin U64 {
     fun add(this, that : U64) : U64
     fun subtract(this, that : U64) : U64
     fun multiply(this, that : U64) : U64
+    fun equals(this, that : U64) : Core::Bool
+    fun compare(this, that : U64) : Core::Ordering
 }

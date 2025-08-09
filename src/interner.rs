@@ -22,6 +22,13 @@ impl Interner {
     pub fn get(&self, intern_idx: &InternIdx) -> &str {
         &self.strings[intern_idx.0]
     }
+
+    pub fn intern_idx(&self, interned: &str) -> InternIdx {
+        self.strings
+            .iter().position(|string| string == interned)
+            .map(InternIdx)
+            .unwrap()
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
