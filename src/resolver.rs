@@ -671,19 +671,29 @@ impl Resolver {
     }
 
     fn method_signature(&mut self, signature: &mut MethodSignature) -> ReportableResult<()> {
-        let MethodSignature { constraints, arguments, return_type, .. } = signature;
+        let MethodSignature { constraints, type_vars, arguments, return_type, .. } = signature;
 
         for constraint in constraints.iter_mut() {
             self.constraint(constraint)?;
         }
 
-        for argument in arguments.iter_mut() {
-            self.type_expression(argument.data_mut().type_expression_mut())?;
+        for type_var in type_vars.iter_mut() {
+            self.type_var(type_var)?;
         }
 
-        if let Some(return_type) = return_type {
-            self.type_expression(return_type)?;
-        }
+        scoped!(self, {
+            for type_var in type_vars {
+                self.locals.push(*type_var.data().name.data());
+            }
+
+            for argument in arguments.iter_mut() {
+                self.type_expression(argument.data_mut().type_expression_mut())?;
+            }
+
+            if let Some(return_type) = return_type {
+                self.type_expression(return_type)?;
+            }
+        });
 
         Ok(())
     }

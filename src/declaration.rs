@@ -90,6 +90,7 @@ pub struct MethodSignature {
     pub name: Located<InternIdx>,
     pub constraints: Vec<Constraint>,
     #[allow(unused)]
+    pub type_vars: Vec<Located<TypeVar>>,
     pub instance: Located<InternIdx>,
     pub arguments: Vec<Located<TypedIdentifier>>,
     pub return_type: Option<Located<TypeExpression>>,

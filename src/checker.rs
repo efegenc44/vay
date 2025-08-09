@@ -512,7 +512,7 @@ impl Checker {
     }
 
     fn collect_method_signatures(&mut self, path: &Path, signature: &MethodSignature) -> ReportableResult<()> {
-        let MethodSignature { constraints, name, arguments, return_type, .. } = signature;
+        let MethodSignature { constraints, type_vars, name, arguments, return_type, .. } = signature;
 
         let constraints = Self::method_constraints(constraints);
 
@@ -521,8 +521,11 @@ impl Checker {
                 self.define_constrained_type_constants(type_vars, &constraints);
             }
 
+            let type_vars = self.type_vars(type_vars);
+            self.define_type_vars(type_vars.clone());
+
             let function_type = self.get_function_type(arguments, return_type)?;
-            let method_type = MethodType { function_type, constraints };
+            let method_type = MethodType { function_type, constraints, type_vars };
 
             let methods = self.methods.get_mut(path).unwrap();
             if methods.insert(*name.data(), method_type).is_some() {
@@ -647,7 +650,12 @@ impl Checker {
             let MethodDeclaration { signature, body } = method;
 
             let method_type = &self.methods[path][signature.name.data()];
-            let FunctionType { arguments, return_type } = method_type.function_type.clone();
+            let FunctionType { arguments, return_type } = self.constantize(
+                Type::Forall(
+                    method_type.type_vars.clone(),
+                    MonoType::Function(method_type.function_type.clone())
+                )
+            ).into_function();
             let variant_type = self.method_instance_type(path, &method_type.constraints);
 
             scoped!(self, {
@@ -708,7 +716,12 @@ impl Checker {
             let MethodDeclaration { signature, body, .. } = method;
 
             let method_type = &self.methods[path][signature.name.data()];
-            let FunctionType { arguments, return_type } = method_type.function_type.clone();
+            let FunctionType { arguments, return_type } = self.constantize(
+                Type::Forall(
+                    method_type.type_vars.clone(),
+                    MonoType::Function(method_type.function_type.clone())
+                )
+            ).into_function();
             let struct_type = self.method_instance_type(path, &method_type.constraints);
 
             scoped!(self, {
@@ -923,15 +936,15 @@ impl Checker {
         None
     }
 
-    fn does_satisfy_constraint(&self, m: &MonoType, interfaces: &HashSet<Path>) -> bool {
+    fn does_satisfy_constraint(&mut self, m: &MonoType, interfaces: &HashSet<Path>) -> bool {
         match m {
             MonoType::Variant(path, arguments) |
             MonoType::Struct(path, arguments) |
             MonoType::BuiltIn(path, _, arguments) => {
                 for interface_path in interfaces {
                     let interface = &self.interfaces[interface_path];
-                    for (name, interface_function) in &interface.methods {
-                        let Some(method_type) = self.methods[path].get(name) else {
+                    for (name, interface_function) in interface.methods.clone() {
+                        let Some(method_type) = self.methods[path].get(&name).cloned() else {
                             return false;
                         };
 
@@ -951,14 +964,14 @@ impl Checker {
                             path,
                             arguments.clone(),
                             function
-                        ).into_function();
+                        );
 
                         let interface_function = Self::replace_interface_constants(
                             interface_function.clone().into_mono(),
                             m.clone()
-                        ).into_function();
+                        );
 
-                        if function != interface_function {
+                        if !self.unify(function, interface_function) {
                             return false;
                         }
                     }
@@ -1115,7 +1128,7 @@ impl Checker {
             MonoType::Variant(path, arguments) |
             MonoType::Struct(path, arguments) |
             MonoType::BuiltIn(path, _, arguments) => {
-                let Some(method_type) = self.methods[path].get(name.data()) else {
+                let Some(method_type) = self.methods[path].get(name.data()).cloned() else {
                     return self.error(
                         TypeCheckError::NotProjectable {
                             ty: m,
@@ -1147,6 +1160,9 @@ impl Checker {
                     arguments.clone(),
                     method_type.function_type.clone().into_mono()
                 );
+
+                let t = Type::Forall(method_type.type_vars.clone(), MonoType::Function(m.into_function()));
+                let m = self.instantiate(t);
 
                 Ok((m, false))
             },

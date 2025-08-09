@@ -32,9 +32,11 @@ impl FunctionType {
     }
 }
 
+#[derive(Clone)]
 pub struct MethodType {
     pub function_type: FunctionType,
-    pub constraints: HashMap<usize, HashSet<Path>>
+    pub constraints: HashMap<usize, HashSet<Path>>,
+    pub type_vars: Vec<TypeVar>
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

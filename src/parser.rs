@@ -745,6 +745,19 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         };
 
         let name = self.expect_identifier()?;
+
+        let type_vars = if self.peek_is(Token::Colon) {
+            self.advance()?;
+            self.expect(Token::LeftParenthesis)?;
+            self.until(
+                Token::RightParenthesis,
+                Self::type_var,
+                Some(Token::Comma)
+            )?.0
+        } else {
+            vec![]
+        };
+
         self.expect(Token::LeftParenthesis)?;
 
         // TODO: Better error message
@@ -765,7 +778,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             None
         };
 
-        Ok(MethodSignature { name, constraints, instance, arguments, return_type })
+        Ok(MethodSignature { name, constraints, type_vars, instance, arguments, return_type })
     }
 
     fn interface(&mut self) -> ReportableResult<Declaration> {

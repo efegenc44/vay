@@ -42,4 +42,4 @@ fun main() : Nat =
 - [ ] Arrays
 - [ ] REPL
 - [ ] More imperative constructs
-- [ ] Polymorphic methods
+- [x] Polymorphic methods
