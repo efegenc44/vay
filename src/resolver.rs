@@ -378,7 +378,8 @@ impl Resolver {
     pub fn expression(&mut self, expression: &mut Located<Expression>) -> ReportableResult<()> {
         let location = expression.location();
         match expression.data_mut() {
-            Expression::U64(_) => Ok(()),
+            Expression::U64(_) |
+            Expression::String(_) => Ok(()),
             Expression::Path(path) => self.path(path, location),
             Expression::Application(application) => self.application(application),
             Expression::Projection(projection) => self.projection(projection),
@@ -560,7 +561,8 @@ impl Resolver {
             Pattern::Any(identifier) => {
                 self.locals.push(*identifier);
             }
-            Pattern::U64(_) => (),
+            Pattern::U64(_) |
+            Pattern::String(_) => (),
             Pattern::VariantCase(variant_case) => {
                 let VariantCasePattern { fields, .. } = variant_case;
 

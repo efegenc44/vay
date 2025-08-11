@@ -15,6 +15,7 @@ pub enum Value {
     StructConstructor(Rc<StructConstructorInstance>),
     StructInstance(Rc<StructInstanceInstance>),
     U64(u64),
+    String(InternIdx),
     Unit
 }
 
@@ -67,6 +68,7 @@ impl Value {
                 string
             },
             Value::U64(u64) => u64.to_string(),
+            Value::String(string_idx) => format!("\"{}\"", interner.get(string_idx)),
             Value::Unit => "()".into(),
         }
     }
@@ -75,6 +77,7 @@ impl Value {
         match (self, pattern) {
             (_, Pattern::Any(_)) => true,
             (Value::U64(u64_1), Pattern::U64(u64_2)) => u64_1 == u64_2,
+            (Value::String(s1), Pattern::String(s2)) => s1 == s2,
             (Value::Instance(instance), Pattern::VariantCase(variant_case)) => {
                 let VariantCasePattern { name, fields } = variant_case;
                 let InstanceInstance { constructor, values } = instance.as_ref();
@@ -101,6 +104,14 @@ impl Value {
 
     pub fn into_u64(self) -> u64 {
         let Self::U64(v) = self else {
+            panic!();
+        };
+
+        v
+    }
+
+    pub fn into_string(self) -> InternIdx {
+        let Self::String(v) = self else {
             panic!();
         };
 

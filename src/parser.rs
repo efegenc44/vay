@@ -18,6 +18,7 @@ use crate::{
 const PRIMARY_TOKEN_STARTS: &[Token] = &[
     Token::dummy_identifier(),
     Token::U64(0),
+    Token::String(InternIdx::dummy_idx()),
     Token::LetKeyword,
     Token::LeftParenthesis,
     Token::FunKeyword,
@@ -46,6 +47,7 @@ const DECLARATION_KEYWORDS: &[Token] = &[
 const PATTERN_TOKEN_STARTS: &[Token] = &[
     Token::dummy_identifier(),
     Token::U64(0),
+    Token::String(InternIdx::dummy_idx()),
     Token::Dot,
     Token::LeftParenthesis,
 ];
@@ -156,6 +158,8 @@ impl<'source, 'interner> Parser<'source, 'interner> {
                     matches!(token.data(), Token::Identifier(_))
                 } else if matches!(expected, Token::U64(_)) {
                     matches!(token.data(), Token::U64(_))
+                } else if matches!(expected, Token::String(_)) {
+                    matches!(token.data(), Token::String(_))
                 } else {
                     expected == &token.data()
                 }
@@ -345,6 +349,11 @@ impl<'source, 'interner> Parser<'source, 'interner> {
                 self.advance()?;
                 Ok(Located::new(Expression::U64(*u64), token.location()))
             },
+            Token::String(string_idx) => {
+                // TODO: Factor this out like the other ones
+                self.advance()?;
+                Ok(Located::new(Expression::String(*string_idx), token.location()))
+            },
             Token::Identifier(_) => self.path(),
             Token::LetKeyword => self.lett(),
             Token::LeftParenthesis => self.sequence(),
@@ -476,6 +485,11 @@ impl<'source, 'interner> Parser<'source, 'interner> {
                 // TODO: Factor this out like the other ones
                 self.advance()?;
                 Ok(Located::new(Pattern::U64(*u64), token.location()))
+            }
+            Token::String(string_idx) => {
+                // TODO: Factor this out like the other ones
+                self.advance()?;
+                Ok(Located::new(Pattern::String(*string_idx), token.location()))
             }
             Token::Identifier(_) => self.any_pattern(),
             Token::Dot => self.varint_case_pattern(),

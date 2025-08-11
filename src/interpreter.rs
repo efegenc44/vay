@@ -32,7 +32,7 @@ impl Interpreter {
         }
     }
 
-    pub fn evaluate_main(&mut self, modules: &[Module], interner: &Interner) {
+    pub fn evaluate_main(&mut self, modules: &[Module], interner: &mut Interner) {
         for module in modules {
             self.collect_names(module, interner);
         }
@@ -77,7 +77,7 @@ impl Interpreter {
         println!("\nResult = {}", value.as_string(interner));
     }
 
-    pub fn collect_names(&mut self, module: &Module, interner: &Interner) {
+    pub fn collect_names(&mut self, module: &Module, interner: &mut Interner) {
         for declaration in module.declarations() {
             match declaration {
                 Declaration::Module(..) => (),
@@ -163,11 +163,12 @@ impl Interpreter {
         }
     }
 
-    fn collect_builtin_name(&mut self, builtin: &BuiltInDeclaration, interner: &Interner) {
+    fn collect_builtin_name(&mut self, builtin: &BuiltInDeclaration, interner: &mut Interner) {
         let BuiltInDeclaration { name, methods, path, ..  } = builtin;
 
         let t = match interner.get(name.data()) {
             "U64" => BuiltInType::U64,
+            "String" => BuiltInType::String,
             _ => unreachable!()
         };
 
@@ -186,7 +187,7 @@ impl Interpreter {
         }
     }
 
-    fn collect_external_name(&mut self, external: &ExternalDeclaration, interner: &Interner) {
+    fn collect_external_name(&mut self, external: &ExternalDeclaration, interner: &mut Interner) {
         let ExternalDeclaration { path, .. } = external;
 
         // TODO: Better error reporting here
@@ -199,7 +200,7 @@ impl Interpreter {
         self.names.insert(path.clone(), function);
     }
 
-    fn matc(&mut self, matc: &MatchExpression, interner: &Interner) -> ControlFlow {
+    fn matc(&mut self, matc: &MatchExpression, interner: &mut Interner) -> ControlFlow {
         let MatchExpression { expressions, branches } = matc;
 
         let mut values = vec![];
@@ -228,7 +229,8 @@ impl Interpreter {
             (value, Pattern::Any(_)) => {
                 self.locals.push(value.clone());
             }
-            (Value::U64(_), Pattern::U64(_)) => (),
+            (Value::U64(_), Pattern::U64(_)) |
+            (Value::String(_), Pattern::String(_)) => (),
             (Value::Instance(instance), Pattern::VariantCase(variant_case)) => {
                 let InstanceInstance { values, .. } = instance.as_ref();
                 let VariantCasePattern { fields, .. } = variant_case;
@@ -245,16 +247,17 @@ impl Interpreter {
         }
     }
 
-    fn retrn(&mut self, retrn: &ReturnExpression, interner: &Interner) -> ControlFlow {
+    fn retrn(&mut self, retrn: &ReturnExpression, interner: &mut Interner) -> ControlFlow {
         let ReturnExpression { expression } = retrn;
 
         let value = self.expression(expression, interner)?;
         Err(value)
     }
 
-    pub fn expression(&mut self, expression: &Located<Expression>, interner: &Interner) -> ControlFlow {
+    pub fn expression(&mut self, expression: &Located<Expression>, interner: &mut Interner) -> ControlFlow {
         match expression.data() {
             Expression::U64(u64) => Ok(Value::U64(*u64)),
+            Expression::String(string_idx) => Ok(Value::String(*string_idx)),
             Expression::Path(path) => self.path(path),
             Expression::Application(application) => self.application(application, interner),
             Expression::Projection(projection) => self.projection(projection, interner),
@@ -281,7 +284,7 @@ impl Interpreter {
     }
 
     // TODO: Abstract application on Value and use it here
-    fn application(&mut self, application: &ApplicationExpression, interner: &Interner) -> ControlFlow {
+    fn application(&mut self, application: &ApplicationExpression, interner: &mut Interner) -> ControlFlow {
         let ApplicationExpression { function, arguments } = application;
 
         match self.expression(function, interner)? {
@@ -378,6 +381,16 @@ impl Interpreter {
 
                         return Ok(f(argument_values, interner));
                     },
+                    Value::String(string_idx) => {
+                        let f = self.builtin_methods[&BuiltInType::String][&name];
+
+                        let mut argument_values = vec![Value::String(*string_idx)];
+                        for argument in arguments {
+                            argument_values.push(self.expression(argument, interner)?);
+                        }
+
+                        return Ok(f(argument_values, interner));
+                    },
                     _ => { unreachable!(); }
                 };
 
@@ -434,7 +447,7 @@ impl Interpreter {
         }
     }
 
-    fn projection(&mut self, projection: &ProjectionExpression, interner: &Interner) -> ControlFlow {
+    fn projection(&mut self, projection: &ProjectionExpression, interner: &mut Interner) -> ControlFlow {
         let ProjectionExpression { expression, name } = projection;
 
         let instance = self.expression(expression, interner)?;
@@ -463,11 +476,15 @@ impl Interpreter {
                 let function = self.builtin_methods[&BuiltInType::U64][name.data()];
                 Ok(Value::BuiltinMethod(Box::new(Value::U64(*i64)), function))
             }
+            Value::String(string_idx) => {
+                let function = self.builtin_methods[&BuiltInType::String][name.data()];
+                Ok(Value::BuiltinMethod(Box::new(Value::String(*string_idx)), function))
+            }
             _ => unreachable!(),
         }
     }
 
-    fn lett(&mut self, lett: &LetExpression, interner: &Interner) -> ControlFlow {
+    fn lett(&mut self, lett: &LetExpression, interner: &mut Interner) -> ControlFlow {
         let LetExpression { value_expression, body_expression, .. } = lett;
 
         let value = self.expression(value_expression, interner)?;
@@ -481,7 +498,7 @@ impl Interpreter {
         Ok(return_value)
     }
 
-    fn sequence(&mut self, sequence: &SequenceExpression, interner: &Interner) -> ControlFlow {
+    fn sequence(&mut self, sequence: &SequenceExpression, interner: &mut Interner) -> ControlFlow {
         let SequenceExpression { expressions } = sequence;
 
         match &expressions[..] {
@@ -506,7 +523,7 @@ impl Interpreter {
         Ok(Value::Lambda(Rc::new(lambda)))
     }
 
-    fn assignment(&mut self, assignment: &AssignmentExpression, interner: &Interner) -> ControlFlow {
+    fn assignment(&mut self, assignment: &AssignmentExpression, interner: &mut Interner) -> ControlFlow {
         let AssignmentExpression { assignable, expression } = assignment;
 
         let value = self.expression(expression, interner)?;

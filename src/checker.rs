@@ -466,6 +466,7 @@ impl Checker {
 
         let builtin_type = match interner.get(name.data()) {
             "U64" => BuiltInType::U64,
+            "String" => BuiltInType::String,
             _ => panic!("Unknown builtin")
         };
 
@@ -849,7 +850,8 @@ impl Checker {
                 self.locals.push(Type::Mono(t));
                 Ok(true)
             },
-            (MonoType::BuiltIn(_, BuiltInType::U64, _), Pattern::U64(_)) => Ok(true),
+            (MonoType::BuiltIn(_, BuiltInType::U64, _), Pattern::U64(_)) |
+            (MonoType::BuiltIn(_, BuiltInType::String, _), Pattern::String(_)) => Ok(true),
             (MonoType::Variant(path, arguments), Pattern::VariantCase(variant_case)) => {
                 let VariantCasePattern { name, fields } = variant_case;
 
@@ -1017,6 +1019,7 @@ impl Checker {
     pub fn infer(&mut self, expression: &Located<Expression>) -> ReportableResult<MonoType> {
         match expression.data() {
             Expression::U64(_) => self.u64(),
+            Expression::String(_) => self.string(),
             Expression::Path(path) => self.path(path).map(|p| p.0),
             Expression::Application(application) => self.application(application),
             Expression::Projection(projection) => self.projection(projection).map(|p| p.0),
@@ -1033,6 +1036,16 @@ impl Checker {
         let m = MonoType::BuiltIn(
             self.builtin_paths[&BuiltInType::U64].clone(),
             BuiltInType::U64,
+            vec![]
+        );
+
+        Ok(m)
+    }
+
+    fn string(&self) -> ReportableResult<MonoType> {
+        let m = MonoType::BuiltIn(
+            self.builtin_paths[&BuiltInType::String].clone(),
+            BuiltInType::String,
             vec![]
         );
 

@@ -118,6 +118,64 @@ impl<'source, 'interner> Lexer<'source, 'interner> {
         Located::new(token, location)
     }
 
+    fn string(&mut self) -> ReportableResult<Located<Token>> {
+        let mut string = String::new();
+        let location = locate!(self, {
+            self.advance().unwrap(); // NOTE: Advance the first `"`
+            while let Some(ch) = self.peek_ch() {
+                if *ch != '"' {
+                    if *ch == '\\' {
+                        string.push(self.string_escape()?);
+                    } else {
+                        string.push(self.advance().unwrap());
+                    }
+                } else {
+                    break;
+                }
+            }
+        });
+
+        if self.peek_ch().is_none() {
+            return self.error(LexError::UnterminatedStringLiteral, location);
+        }
+        self.advance().unwrap();
+
+        // NOTE: Add the position of last `"`
+        let mut end = location.end();
+        end.advance();
+        let location = SourceLocation::new(location.start(), end);
+
+        let string = Token::String(self.interner.intern(string));
+        Ok(Located::new(string, location))
+    }
+
+    fn string_escape(&mut self) -> ReportableResult<char> {
+        let escape;
+        let location = locate!(self, {
+            self.advance().unwrap(); // NOTE: Advance `\`
+
+            escape = if let Some(ch) = self.advance() {
+                match ch {
+                    '\\' => Ok('\\'),
+                    'n'  => Ok('\n'),
+                    'r'  => Ok('\r'),
+                    't'  => Ok('\t'),
+                    '0'  => Ok('\0'),
+                    '"'  => Ok('\"'),
+                    unknown => Err(Some(unknown))
+                }
+            } else {
+                Err(None)
+            };
+        });
+
+        match escape {
+            Ok(ch) => Ok(ch),
+            Err(Some(unknown)) => self.error(LexError::UnknownEscapeSequence(unknown), location),
+            Err(None) => self.error(LexError::UnterminatedEscapeSequence, location),
+        }
+    }
+
     fn number(&mut self) -> Located<Token> {
         let mut lexeme = String::new();
         let location = locate!(self, {
@@ -212,6 +270,8 @@ impl Iterator for Lexer<'_, '_> {
 
         let result = if ch.is_alphabetic() {
             Ok(self.identifier_or_keyword())
+        } else if ch == '"' {
+            self.string()
         } else if ch.is_ascii_digit() {
             Ok(self.number())
         } else if PUNCTUATION_CHARS.contains(&ch) {
@@ -231,6 +291,9 @@ impl Iterator for Lexer<'_, '_> {
 #[derive(Clone)]
 pub enum LexError {
     UnknownStartOfAToken(char),
+    UnterminatedStringLiteral,
+    UnterminatedEscapeSequence,
+    UnknownEscapeSequence(char),
 }
 
 impl Reportable for (Located<LexError>, String) {
@@ -246,6 +309,15 @@ impl Reportable for (Located<LexError>, String) {
         match self.0.data() {
             LexError::UnknownStartOfAToken(ch) => {
                 format!("Encountered an unknown start of a token: `{ch}`.")
+            }
+            LexError::UnterminatedStringLiteral => {
+                "String literal is not terminated.".into()
+            }
+            LexError::UnterminatedEscapeSequence => {
+                "Espace sequence is not terminated.".into()
+            }
+            LexError::UnknownEscapeSequence(ch) => {
+                format!("Encountered an unknown escape sequence: `{ch}`.")
             }
         }
     }

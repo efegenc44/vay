@@ -1,6 +1,6 @@
 module Main
 
-import Numbers (Nat (Nat (Succ, Zero)))
+import Intrinsics (String)
 import Core (Addable)
 
 struct Vector2(T) {
@@ -9,11 +9,11 @@ struct Vector2(T) {
 
     fun:(T (Addable)) add(this, that : Vector2(T)) : Vector2(T) = (
         Vector2(
-            this.x.add(that.x),
-            this.y.add(that.y)
+            this.x + that.x,
+            this.y + that.y
         )
     )
 }
 
-fun main() : Vector2(Nat) =
-    Vector2(Zero, Succ(Zero)) + Vector2(Succ(Succ(Zero)), Zero)
+fun main() : Vector2(String) =
+    Vector2("a", "b") + Vector2("c", "d")

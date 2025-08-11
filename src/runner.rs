@@ -96,7 +96,7 @@ impl Runner {
     pub fn interpret(&mut self, modules: &[Module]) {
         let mut interpreter = Interpreter::new();
         println!("{:>20}", "Interpreting");
-        interpreter.evaluate_main(modules, &self.interner);
+        interpreter.evaluate_main(modules, &mut self.interner);
     }
 
     pub fn interactive(&mut self, session_start_module_paths: Vec<String>) {
@@ -104,7 +104,7 @@ impl Runner {
         let modules = self.check(modules).unwrap();
 
         for module in modules {
-            self.interpreter.collect_names(&module, &self.interner);
+            self.interpreter.collect_names(&module, &mut self.interner);
         }
 
         self.resolver.init_interactive_module();
@@ -123,8 +123,9 @@ impl Runner {
             let mut input = String::new();
             // TODO: Error handling
             stdin.read_line(&mut input).unwrap();
+            input = input.trim_end().to_string();
 
-            if input.trim_end().is_empty() {
+            if input.is_empty() {
                 continue;
             }
 
@@ -136,7 +137,7 @@ impl Runner {
 
                     (&command[1..], input)
                 } else {
-                    (input[1..].trim_end(), "")
+                    (&input[1..], "")
                 };
 
                 let Some(command) = COMMANDS.iter().find(|cmd| cmd.name == command) else {
@@ -159,7 +160,7 @@ impl Runner {
                 runner_interactive!(self, self.resolver.expression(&mut expression), "name resolution");
                 let t = runner_interactive!(self, self.checker.infer(&expression), "type checking");
 
-                let ControlFlow::Ok(result) = self.interpreter.expression(&expression, &self.interner) else {
+                let ControlFlow::Ok(result) = self.interpreter.expression(&expression, &mut self.interner) else {
                     unreachable!()
                 };
                 println!("{} : {}", result.as_string(&self.interner), t.display(&self.interner))

@@ -9,3 +9,8 @@ builtin U64 {
     fun equals(this, that : U64) : Core::Bool
     fun compare(this, that : U64) : Core::Ordering
 }
+
+builtin String {
+    fun add(this, that : String) : String
+    fun equals(this, that : String) : Core::Bool
+}

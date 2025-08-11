@@ -5,7 +5,7 @@ use crate::{interner::Interner, value::{Value, ConstructorInstance, InstanceInst
 pub const INTRINSICS_MODULE_NAME: &str = "Intrinsics";
 pub const INTRINSICS_FILE_PATH: &str = "./src/intrinsics.vay";
 
-pub type IntrinsicFunction = fn(Vec<Value>, &Interner) -> Value;
+pub type IntrinsicFunction = fn(Vec<Value>, &mut Interner) -> Value;
 
 macro_rules! intrinsics_functions {
     ($($path:literal = $func:expr);*) => {
@@ -68,6 +68,41 @@ pub const INTRINSIC_FUNCTIONS: &[(&str, IntrinsicFunction)] = intrinsics_functio
         let ordering_type_path = "Core::Ordering";
 
         ordering_type_path
+            .split("::")
+            .map(|part| type_path.push(interner.intern_idx(part)))
+            .for_each(drop);
+
+        let constructor = Rc::new(ConstructorInstance { type_path, case });
+        let instance = InstanceInstance { constructor, values: vec![] };
+        Value::Instance(Rc::new(instance))
+    };
+    "String::add" = |mut arguments, interner| {
+        let b = arguments.pop().unwrap().into_string();
+        let a = arguments.pop().unwrap().into_string();
+
+        let a = interner.get(&a);
+        let b = interner.get(&b);
+
+        let mut ab = String::from(a);
+        ab.push_str(b);
+
+        let index = interner.intern(ab);
+        Value::String(index)
+    };
+    "String::equals" = |mut arguments, interner| {
+        let b = arguments.pop().unwrap().into_string();
+        let a = arguments.pop().unwrap().into_string();
+
+        let case = if a == b {
+            interner.intern_idx("True")
+        } else {
+            interner.intern_idx("False")
+        };
+
+        let mut type_path = Path::empty();
+        let bool_type_path = "Core::Bool";
+
+        bool_type_path
             .split("::")
             .map(|part| type_path.push(interner.intern_idx(part)))
             .for_each(drop);
