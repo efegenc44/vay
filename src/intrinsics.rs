@@ -172,6 +172,26 @@ pub const INTRINSIC_FUNCTIONS: &[(&str, IntrinsicFunction)] = intrinsics_functio
         let constructor = Rc::new(ConstructorInstance { type_path, case });
         let instance = InstanceInstance { constructor, values: vec![] };
         Value::Instance(Rc::new(instance))
+    };
+    "Array::length" = |mut arguments, _| {
+        let array = arguments.pop().unwrap().into_array();
+
+        let borrow = array.borrow();
+        Value::U64(borrow.len() as u64)
+    };
+    "Array::append" = |mut arguments, _| {
+        let value = arguments.pop().unwrap();
+        let array = arguments.pop().unwrap().into_array();
+
+        array.borrow_mut().push(value);
+
+        Value::Unit
+    };
+    "Array::pop" = |mut arguments, _| {
+        let array = arguments.pop().unwrap().into_array();
+
+        let mut borrow = array.borrow_mut();
+        borrow.pop().unwrap()
     }
 };
 

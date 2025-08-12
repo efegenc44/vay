@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     bound::{Bound, Path}, declaration::{self, BuiltInDeclaration, Declaration, ExternalDeclaration, FunctionDeclaration, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, StructDeclaration, TypedIdentifier, VariantDeclaration}, expression::{
-        ApplicationExpression, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
+        ApplicationExpression, ArrayExpression, ArrayPattern, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
     }, interner::{InternIdx, Interner}, location::{Located, SourceLocation}, reportable::{Reportable, ReportableResult}, runner, typ::{BuiltInType, FunctionType, Interface, MethodType, MonoType, Type, TypeVar}
 };
 
@@ -468,6 +468,7 @@ impl Checker {
             "U64" => BuiltInType::U64,
             "F32" => BuiltInType::F32,
             "String" => BuiltInType::String,
+            "Array" => BuiltInType::Array,
             _ => panic!("Unknown builtin")
         };
 
@@ -854,6 +855,25 @@ impl Checker {
             (MonoType::BuiltIn(_, BuiltInType::U64, _), Pattern::U64(_)) |
             (MonoType::BuiltIn(_, BuiltInType::F32, _), Pattern::F32(_)) |
             (MonoType::BuiltIn(_, BuiltInType::String, _), Pattern::String(_)) => Ok(true),
+            (MonoType::BuiltIn(path, BuiltInType::Array, arguments), Pattern::Array(array)) => {
+                let ArrayPattern { before, after, rest } = array;
+
+                let argument = arguments.last().unwrap().clone();
+
+                for pattern in before {
+                    self.type_pattern_match(argument.clone(), pattern)?;
+                }
+
+                if rest.is_some() {
+                    self.locals.push(Type::Mono(MonoType::BuiltIn(path, BuiltInType::Array, arguments)));
+                }
+
+                for pattern in after {
+                    self.type_pattern_match(argument.clone(), pattern)?;
+                }
+
+                Ok(true)
+            },
             (MonoType::Variant(path, arguments), Pattern::VariantCase(variant_case)) => {
                 let VariantCasePattern { name, fields } = variant_case;
 
@@ -1024,6 +1044,7 @@ impl Checker {
             Expression::F32(_) => self.f32(),
             Expression::String(_) => self.string(),
             Expression::Path(path) => self.path(path).map(|p| p.0),
+            Expression::Array(array) => self.array(array),
             Expression::Application(application) => self.application(application),
             Expression::Projection(projection) => self.projection(projection).map(|p| p.0),
             Expression::Let(lett) => self.lett(lett),
@@ -1089,6 +1110,25 @@ impl Checker {
             },
             Bound::Undetermined => unreachable!(),
         }
+    }
+
+    fn array(&mut self, array: &ArrayExpression) -> ReportableResult<MonoType> {
+        let ArrayExpression { expressions } = array;
+
+        let mut inner_type = MonoType::Var(self.newvar());
+
+        for expression in expressions {
+            self.check(expression, inner_type.clone())?;
+            inner_type = inner_type.substitute(&self.unification_table);
+        }
+
+        let m = MonoType::BuiltIn(
+            self.builtin_paths[&BuiltInType::Array].clone(),
+            BuiltInType::Array,
+            vec![inner_type]
+        );
+
+        Ok(m)
     }
 
     fn application(&mut self, application: &ApplicationExpression) -> ReportableResult<MonoType> {

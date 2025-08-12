@@ -6,6 +6,7 @@ pub enum Expression {
     F32(f32),
     String(InternIdx),
     Path(PathExpression),
+    Array(ArrayExpression),
     Application(ApplicationExpression),
     Projection(ProjectionExpression),
     Let(LetExpression),
@@ -20,6 +21,11 @@ pub enum Expression {
 pub struct PathExpression {
     pub parts: Vec<InternIdx>,
     pub bound: Bound
+}
+
+#[derive(Clone)]
+pub struct ArrayExpression {
+    pub expressions: Vec<Located<Expression>>
 }
 
 #[derive(Clone)]
@@ -100,6 +106,7 @@ pub enum Pattern {
     U64(u64),
     F32(f32),
     String(InternIdx),
+    Array(ArrayPattern),
     VariantCase(VariantCasePattern),
     Unit
 }
@@ -108,6 +115,13 @@ pub enum Pattern {
 pub struct VariantCasePattern {
     pub name: Located<InternIdx>,
     pub fields: Option<Vec<Located<Pattern>>>,
+}
+
+#[derive(Clone)]
+pub struct ArrayPattern {
+    pub before: Vec<Located<Pattern>>,
+    pub after: Vec<Located<Pattern>>,
+    pub rest: Option<InternIdx>,
 }
 
 #[derive(Clone)]

@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::{bound::Path, expression::{Expression, Pattern, VariantCasePattern}, interner::{InternIdx, Interner}, intrinsics::IntrinsicFunction, location::Located};
+use crate::{bound::Path, expression::{ArrayPattern, Expression, Pattern, VariantCasePattern}, interner::{InternIdx, Interner}, intrinsics::IntrinsicFunction, location::Located};
 
 #[derive(Clone)]
 pub enum Value {
@@ -17,6 +17,7 @@ pub enum Value {
     U64(u64),
     F32(f32),
     String(InternIdx),
+    Array(Rc<RefCell<Vec<Value>>>),
     Unit
 }
 
@@ -71,6 +72,20 @@ impl Value {
             Value::U64(u64) => u64.to_string(),
             Value::F32(f32) => f32.to_string(),
             Value::String(string_idx) => format!("\"{}\"", interner.get(string_idx)),
+            Value::Array(array) => {
+                let mut string = String::from("[");
+                let mut first = true;
+                for value in array.borrow().iter() {
+                    if first {
+                        first = false;
+                    } else {
+                        string.push_str(", ");
+                    }
+                    string.push_str(&value.as_string(interner));
+                }
+                string.push(']');
+                string
+            },
             Value::Unit => "()".into(),
         }
     }
@@ -100,6 +115,25 @@ impl Value {
 
                 true
             }
+            (Value::Array(array), Pattern::Array(pattern)) => {
+                let ArrayPattern { before, after, rest } = pattern;
+
+                let array = array.borrow();
+
+                // TODO: Better error reporting here or prefereably check for an
+                //   exhaustive pattern matching should prevent this
+                if rest.is_some() {
+                    assert!(before.len() + after.len() <= array.len());
+                } else {
+                    assert!(before.len() + after.len() == array.len());
+                }
+
+                array.iter().zip(before)
+                    .all(|(value, pattern)| value.matches(pattern.data())) &&
+                array.iter().rev().zip(after.iter().rev())
+                    .all(|(value, pattern)| value.matches(pattern.data()))
+
+            }
             (Value::Unit, Pattern::Unit) => true,
             _ => unreachable!(),
         }
@@ -123,6 +157,14 @@ impl Value {
 
     pub fn into_string(self) -> InternIdx {
         let Self::String(v) = self else {
+            panic!();
+        };
+
+        v
+    }
+
+    pub fn into_array(self) -> Rc<RefCell<Vec<Value>>> {
+        let Self::Array(v) = self else {
             panic!();
         };
 

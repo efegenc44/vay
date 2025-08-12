@@ -14,7 +14,7 @@ const PUNCTUATION_CHARS: &[char] = &[
     ';', ':', ',', '(', ')',
     '{', '}', '.', '=', '-',
     '+', '*', '/', '<', '>',
-    '|', '&',
+    '|', '&', '[', ']',
 ];
 
 macro_rules! locate {
@@ -224,9 +224,17 @@ impl<'source, 'interner> Lexer<'source, 'interner> {
                 ',' => Token::Comma,
                 '(' => Token::LeftParenthesis,
                 ')' => Token::RightParenthesis,
+                '[' => Token::LeftSquare,
+                ']' => Token::RightSquare,
                 '{' => Token::LeftCurly,
                 '}' => Token::RightCurly,
-                '.' => Token::Dot,
+                '.' => {
+                    if self.optional('.') {
+                        Token::DoubleDot
+                    } else {
+                        Token::Dot
+                    }
+                },
                 '=' => {
                     if self.optional('=') {
                         Token::DoubleEquals

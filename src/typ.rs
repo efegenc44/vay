@@ -55,6 +55,7 @@ pub enum BuiltInType {
     U64,
     F32,
     String,
+    Array
 }
 
 impl MonoType {
@@ -347,6 +348,7 @@ impl Display for BuiltInType {
             BuiltInType::U64 => write!(f, "U64"),
             BuiltInType::F32 => write!(f, "F32"),
             BuiltInType::String => write!(f, "String"),
+            BuiltInType::Array => write!(f, "Array"),
         }
     }
 }

@@ -22,3 +22,9 @@ builtin String {
     fun add(this, that : String) : String
     fun equals(this, that : String) : Core::Bool
 }
+
+builtin Array(T) {
+    fun length(this) : U64
+    fun append(this, value : T)
+    fun pop(this) : T
+}

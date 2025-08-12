@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::{bound::{Bound, Path}, declaration::{BuiltInDeclaration, Declaration, ExternalDeclaration, FunctionDeclaration, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, StructDeclaration, VariantDeclaration}, expression::{ApplicationExpression, AssignmentExpression, Expression, LambdaExpression, LetExpression, MatchExpression, PathExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, VariantCasePattern}, interner::{InternIdx, Interner}, intrinsics::{IntrinsicFunction, EXTERNAL_FUNCTIONS, INTRINSIC_FUNCTIONS}, location::Located, typ::BuiltInType, value::{ConstructorInstance, FunctionInstance, InstanceInstance, LambdaInstance, MethodInstance, StructConstructorInstance, StructInstanceInstance, Value}};
+use crate::{bound::{Bound, Path}, declaration::{BuiltInDeclaration, Declaration, ExternalDeclaration, FunctionDeclaration, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, StructDeclaration, VariantDeclaration}, expression::{ApplicationExpression, ArrayExpression, ArrayPattern, AssignmentExpression, Expression, LambdaExpression, LetExpression, MatchExpression, PathExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, VariantCasePattern}, interner::{InternIdx, Interner}, intrinsics::{IntrinsicFunction, EXTERNAL_FUNCTIONS, INTRINSIC_FUNCTIONS}, location::Located, typ::BuiltInType, value::{ConstructorInstance, FunctionInstance, InstanceInstance, LambdaInstance, MethodInstance, StructConstructorInstance, StructInstanceInstance, Value}};
 
 pub struct Interpreter {
     methods: HashMap<Path, HashMap<InternIdx, Rc<FunctionInstance>>>,
@@ -170,6 +170,7 @@ impl Interpreter {
             "U64" => BuiltInType::U64,
             "F32" => BuiltInType::F32,
             "String" => BuiltInType::String,
+            "Array" => BuiltInType::Array,
             _ => unreachable!()
         };
 
@@ -244,6 +245,25 @@ impl Interpreter {
                     self.value_pattern_match(value, field);
                 }
             }
+            (Value::Array(array), Pattern::Array(pattern)) => {
+                let ArrayPattern { before, after, rest } = pattern;
+
+                let array = array.borrow();
+
+                for (value, pattern) in array.iter().zip(before) {
+                    self.value_pattern_match(value, pattern);
+                }
+
+                if rest.is_some() {
+                    let rest = &array[before.len()..array.len() - after.len()];
+                    let rest_array = Value::Array(Rc::new(RefCell::new(rest.to_vec())));
+                    self.locals.push(rest_array);
+                }
+
+                for (value, pattern) in array.iter().rev().zip(after.iter().rev()) {
+                    self.value_pattern_match(value, pattern);
+                }
+            }
             (Value::Unit, Pattern::Unit) => (),
             _ => unreachable!(),
         }
@@ -262,6 +282,7 @@ impl Interpreter {
             Expression::F32(f32) => Ok(Value::F32(*f32)),
             Expression::String(string_idx) => Ok(Value::String(*string_idx)),
             Expression::Path(path) => self.path(path),
+            Expression::Array(array) => self.array(array, interner),
             Expression::Application(application) => self.application(application, interner),
             Expression::Projection(projection) => self.projection(projection, interner),
             Expression::Let(lett) => self.lett(lett, interner),
@@ -284,6 +305,17 @@ impl Interpreter {
             },
             Bound::Absolute(path) => Ok(self.names[path].clone()),
         }
+    }
+
+    fn array(&mut self, array: &ArrayExpression, interner: &mut Interner) -> ControlFlow {
+        let ArrayExpression { expressions } = array;
+
+        let mut values = vec![];
+        for expression in expressions {
+            values.push(self.expression(expression, interner)?);
+        }
+
+        Ok(Value::Array(Rc::new(RefCell::new(values))))
     }
 
     // TODO: Abstract application on Value and use it here
@@ -394,11 +426,20 @@ impl Interpreter {
 
                         return Ok(f(argument_values, interner));
                     },
-
                     Value::String(string_idx) => {
                         let f = self.builtin_methods[&BuiltInType::String][&name];
 
                         let mut argument_values = vec![Value::String(*string_idx)];
+                        for argument in arguments {
+                            argument_values.push(self.expression(argument, interner)?);
+                        }
+
+                        return Ok(f(argument_values, interner));
+                    },
+                    Value::Array(array) => {
+                        let f = self.builtin_methods[&BuiltInType::Array][&name];
+
+                        let mut argument_values = vec![Value::Array(array.clone())];
                         for argument in arguments {
                             argument_values.push(self.expression(argument, interner)?);
                         }
@@ -497,6 +538,10 @@ impl Interpreter {
             Value::String(string_idx) => {
                 let function = self.builtin_methods[&BuiltInType::String][name.data()];
                 Ok(Value::BuiltinMethod(Box::new(Value::String(*string_idx)), function))
+            }
+            Value::Array(array) => {
+                let function = self.builtin_methods[&BuiltInType::Array][name.data()];
+                Ok(Value::BuiltinMethod(Box::new(Value::Array(array.clone())), function))
             }
             _ => unreachable!(),
         }

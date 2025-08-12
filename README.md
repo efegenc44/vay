@@ -38,8 +38,8 @@ fun main() : Nat =
 
 ### Goals to be useful :
 - [x] Operators
-- [ ] Primitives
-- [ ] Arrays
+- [X] Primitives
+- [x] Arrays
 - [ ] REPL
 - [ ] More imperative constructs
 - [x] Polymorphic methods

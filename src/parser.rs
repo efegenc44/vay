@@ -6,7 +6,7 @@ use crate::{
         BuiltInDeclaration, Constraint, Declaration, ExternalDeclaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, StructDeclaration, TypeVar, TypedIdentifier, VariantCase, VariantDeclaration
     },
     expression::{
-        ApplicationExpression, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchBranch, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
+        ApplicationExpression, ArrayExpression, ArrayPattern, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchBranch, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
     },
     interner::{InternIdx, Interner},
     lexer::Lexer,
@@ -21,6 +21,7 @@ const PRIMARY_TOKEN_STARTS: &[Token] = &[
     Token::F32(0.),
     Token::String(InternIdx::dummy_idx()),
     Token::LetKeyword,
+    Token::LeftSquare,
     Token::LeftParenthesis,
     Token::FunKeyword,
     Token::MatchKeyword,
@@ -51,6 +52,7 @@ const PATTERN_TOKEN_STARTS: &[Token] = &[
     Token::F32(0.),
     Token::String(InternIdx::dummy_idx()),
     Token::Dot,
+    Token::LeftSquare,
     Token::LeftParenthesis,
 ];
 
@@ -379,6 +381,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
                 Ok(Located::new(Expression::String(*string_idx), token.location()))
             },
             Token::Identifier(_) => self.path(),
+            Token::LeftSquare => self.array(),
             Token::LetKeyword => self.lett(),
             Token::LeftParenthesis => self.sequence(),
             Token::FunKeyword => self.lambda(),
@@ -408,6 +411,20 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         let path = PathExpression { parts: parts.data().to_owned(), bound: Bound::Undetermined };
         let expression = Expression::Path(path);
         Ok(Located::new(expression, parts.location()))
+    }
+
+    fn array(&mut self) -> ReportableResult<Located<Expression>> {
+        let start = self.expect(Token::LeftSquare)?.location();
+
+        let (expressions, end) = self.until(
+            Token::RightSquare,
+            Self::expression,
+            Some(Token::Comma)
+        )?;
+
+        let array = ArrayExpression { expressions };
+        let expression = Expression::Array(array);
+        Ok(Located::new(expression, start.extend(&end)))
     }
 
     fn lett(&mut self) -> ReportableResult<Located<Expression>> {
@@ -522,6 +539,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
             }
             Token::Identifier(_) => self.any_pattern(),
             Token::Dot => self.varint_case_pattern(),
+            Token::LeftSquare => self.array_pattern(),
             Token::LeftParenthesis => self.pattern_grouping(),
             _ => unreachable!()
         }
@@ -532,6 +550,46 @@ impl<'source, 'interner> Parser<'source, 'interner> {
 
         let pattern = Pattern::Any(*identifier.data());
         Ok(Located::new(pattern, identifier.location()))
+    }
+
+    fn array_pattern(&mut self) -> ReportableResult<Located<Pattern>> {
+        let start = self.expect(Token::LeftSquare)?.location();
+
+        let mut before = vec![];
+        let mut after = vec![];
+
+        let mut is_after = false;
+        let mut is_first = true;
+        let mut rest = None;
+        let end = loop {
+            if let Some(token) = self.terminator(Token::RightSquare)? {
+                break token.location();
+            }
+
+            if is_first {
+                is_first = false;
+            } else {
+                self.expect(Token::Comma)?;
+            }
+
+            if self.peek_is(Token::DoubleDot) {
+                is_after = true;
+                self.advance()?;
+                if self.peek_is(Token::Identifier(InternIdx::dummy_idx())) {
+                    rest = Some(*self.expect_identifier()?.data());
+                }
+            } else {
+                if is_after {
+                    after.push(self.pattern()?);
+                } else {
+                    before.push(self.pattern()?);
+                }
+            }
+        };
+
+        let array = ArrayPattern { before, after, rest };
+        let pattern = Pattern::Array(array);
+        Ok(Located::new(pattern, start.extend(&end)))
     }
 
     fn varint_case_pattern(&mut self) -> ReportableResult<Located<Pattern>> {

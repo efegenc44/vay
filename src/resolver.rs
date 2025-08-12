@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    bound::{Bound, Path}, declaration::{BuiltInDeclaration, Constraint, Declaration, ExternalDeclaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, StructDeclaration, TypeVar, VariantDeclaration}, expression::{ApplicationExpression, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern}, interner::{InternIdx, Interner}, intrinsics::INTRINSICS_MODULE_NAME, location::{Located, SourceLocation}, reportable::{Reportable, ReportableResult}, runner::{self}
+    bound::{Bound, Path}, declaration::{BuiltInDeclaration, Constraint, Declaration, ExternalDeclaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, StructDeclaration, TypeVar, VariantDeclaration}, expression::{ApplicationExpression, ArrayExpression, ArrayPattern, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern}, interner::{InternIdx, Interner}, intrinsics::INTRINSICS_MODULE_NAME, location::{Located, SourceLocation}, reportable::{Reportable, ReportableResult}, runner::{self}
 };
 
 macro_rules! scoped {
@@ -382,6 +382,7 @@ impl Resolver {
             Expression::F32(_) |
             Expression::String(_) => Ok(()),
             Expression::Path(path) => self.path(path, location),
+            Expression::Array(expressions) => self.array(expressions),
             Expression::Application(application) => self.application(application),
             Expression::Projection(projection) => self.projection(projection),
             Expression::Let(lett) => self.lett(lett),
@@ -414,6 +415,16 @@ impl Resolver {
             }
             Bound::Undetermined => unreachable!(),
         };
+
+        Ok(())
+    }
+
+    fn array(&mut self, array: &mut ArrayExpression) -> ReportableResult<()> {
+        let ArrayExpression { expressions } = array;
+
+        for expression in expressions {
+            self.expression(expression)?;
+        }
 
         Ok(())
     }
@@ -574,6 +585,21 @@ impl Resolver {
                     }
                 }
             },
+            Pattern::Array(array) => {
+                let ArrayPattern { before, after, rest } = array;
+
+                for pattern in before {
+                    self.name_pattern_match(pattern);
+                }
+
+                if let Some(intern_idx) = rest {
+                    self.locals.push(*intern_idx);
+                }
+
+                for pattern in after {
+                    self.name_pattern_match(pattern);
+                }
+            }
             Pattern::Unit => ()
         }
     }
