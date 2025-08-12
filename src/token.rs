@@ -1,10 +1,11 @@
 use crate::interner::InternIdx;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum Token {
     Identifier(InternIdx),
     String(InternIdx),
     U64(u64),
+    F32(f32),
 
     Semicolon,
     Colon,
@@ -53,6 +54,7 @@ impl Token {
         match self {
             Token::Identifier(_) => "an identifier",
             Token::U64(_) => "a u64 number",
+            Token::F32(_) => "a f32 number",
             Token::String(_) => "a string",
 
             Token::Semicolon => "`;`",

@@ -53,6 +53,7 @@ pub struct TypeVar {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum BuiltInType {
     U64,
+    F32,
     String,
 }
 
@@ -344,6 +345,7 @@ impl Display for BuiltInType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             BuiltInType::U64 => write!(f, "U64"),
+            BuiltInType::F32 => write!(f, "F32"),
             BuiltInType::String => write!(f, "String"),
         }
     }

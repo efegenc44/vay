@@ -10,6 +10,14 @@ builtin U64 {
     fun compare(this, that : U64) : Core::Ordering
 }
 
+builtin F32 {
+    fun add(this, that : F32) : F32
+    fun subtract(this, that : F32) : F32
+    fun multiply(this, that : F32) : F32
+    fun equals(this, that : F32) : Core::Bool
+    fun compare(this, that : F32) : Core::Ordering
+}
+
 builtin String {
     fun add(this, that : String) : String
     fun equals(this, that : String) : Core::Bool

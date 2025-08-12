@@ -76,6 +76,68 @@ pub const INTRINSIC_FUNCTIONS: &[(&str, IntrinsicFunction)] = intrinsics_functio
         let instance = InstanceInstance { constructor, values: vec![] };
         Value::Instance(Rc::new(instance))
     };
+    "F32::add" = |mut arguments, _| {
+        let b = arguments.pop().unwrap().into_f32();
+        let a = arguments.pop().unwrap().into_f32();
+
+        Value::F32(a + b)
+    };
+    "F32::subtract" = |mut arguments, _| {
+        let b = arguments.pop().unwrap().into_f32();
+        let a = arguments.pop().unwrap().into_f32();
+
+        Value::F32(a - b)
+    };
+    "F32::multiply" = |mut arguments, _| {
+        let b = arguments.pop().unwrap().into_f32();
+        let a = arguments.pop().unwrap().into_f32();
+
+        Value::F32(a * b)
+    };
+    "F32::equals" = |mut arguments, interner| {
+        let b = arguments.pop().unwrap().into_f32();
+        let a = arguments.pop().unwrap().into_f32();
+
+        let case = if a == b {
+            interner.intern_idx("True")
+        } else {
+            interner.intern_idx("False")
+        };
+
+        let mut type_path = Path::empty();
+        let bool_type_path = "Core::Bool";
+
+        bool_type_path
+            .split("::")
+            .map(|part| type_path.push(interner.intern_idx(part)))
+            .for_each(drop);
+
+        let constructor = Rc::new(ConstructorInstance { type_path, case });
+        let instance = InstanceInstance { constructor, values: vec![] };
+        Value::Instance(Rc::new(instance))
+    };
+    "F32::compare" = |mut arguments, interner| {
+        let b = arguments.pop().unwrap().into_u64();
+        let a = arguments.pop().unwrap().into_u64();
+
+        let case = match a.cmp(&b) {
+            std::cmp::Ordering::Less => interner.intern_idx("Less"),
+            std::cmp::Ordering::Equal => interner.intern_idx("Equal"),
+            std::cmp::Ordering::Greater => interner.intern_idx("Greater"),
+        };
+
+        let mut type_path = Path::empty();
+        let ordering_type_path = "Core::Ordering";
+
+        ordering_type_path
+            .split("::")
+            .map(|part| type_path.push(interner.intern_idx(part)))
+            .for_each(drop);
+
+        let constructor = Rc::new(ConstructorInstance { type_path, case });
+        let instance = InstanceInstance { constructor, values: vec![] };
+        Value::Instance(Rc::new(instance))
+    };
     "String::add" = |mut arguments, interner| {
         let b = arguments.pop().unwrap().into_string();
         let a = arguments.pop().unwrap().into_string();

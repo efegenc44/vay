@@ -3,6 +3,7 @@ use crate::{bound::Bound, interner::InternIdx, location::Located};
 #[derive(Clone)]
 pub enum Expression {
     U64(u64),
+    F32(f32),
     String(InternIdx),
     Path(PathExpression),
     Application(ApplicationExpression),
@@ -97,6 +98,7 @@ pub struct AssignmentExpression {
 pub enum Pattern {
     Any(InternIdx),
     U64(u64),
+    F32(f32),
     String(InternIdx),
     VariantCase(VariantCasePattern),
     Unit

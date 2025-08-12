@@ -18,6 +18,7 @@ use crate::{
 const PRIMARY_TOKEN_STARTS: &[Token] = &[
     Token::dummy_identifier(),
     Token::U64(0),
+    Token::F32(0.),
     Token::String(InternIdx::dummy_idx()),
     Token::LetKeyword,
     Token::LeftParenthesis,
@@ -47,41 +48,57 @@ const DECLARATION_KEYWORDS: &[Token] = &[
 const PATTERN_TOKEN_STARTS: &[Token] = &[
     Token::dummy_identifier(),
     Token::U64(0),
+    Token::F32(0.),
     Token::String(InternIdx::dummy_idx()),
     Token::Dot,
     Token::LeftParenthesis,
 ];
 
-const OPERATOR_PATHS: &[(Token, &str)] = &[
-    (Token::Asterisk, "Core::Multiplicable::multiply"),
-    (Token::Plus, "Core::Addable::add"),
-    (Token::Minus, "Core::Subtractable::subtract"),
-    (Token::DoubleEquals, "Core::Equatable::equals"),
-    (Token::SlashEquals, "Core::notEquals"),
-    (Token::Less, "Core::lessThan"),
-    (Token::LessEquals, "Core::lessThanOrEqual"),
-    (Token::Greater, "Core::greaterThan"),
-    (Token::GreaterEquals, "Core::greaterThanOrEqual"),
-    (Token::Ampersand,  "Core::Logical::and"),
-    (Token::Bar,  "Core::Logical::or"),
+#[derive(Eq, PartialEq, Hash, Clone, Copy)]
+enum Operator {
+    Multiplication,
+    Addition,
+    Subtraction,
+    Equality,
+    NotEquality,
+    LessThan,
+    LessThanOrEqual,
+    GreaterThan,
+    GreaterThanOrEqual,
+    And,
+    Or
+}
+
+const OPERATOR_PATHS: &[(Operator, &str)] = &[
+    (Operator::Multiplication, "Core::Multiplicable::multiply"),
+    (Operator::Addition, "Core::Addable::add"),
+    (Operator::Subtraction, "Core::Subtractable::subtract"),
+    (Operator::Equality, "Core::Equatable::equals"),
+    (Operator::NotEquality, "Core::notEquals"),
+    (Operator::LessThan, "Core::lessThan"),
+    (Operator::LessThanOrEqual, "Core::lessThanOrEqual"),
+    (Operator::GreaterThan, "Core::greaterThan"),
+    (Operator::GreaterThanOrEqual, "Core::greaterThanOrEqual"),
+    (Operator::And,  "Core::Logical::and"),
+    (Operator::Or,  "Core::Logical::or"),
 ];
 
-const fn operators(token: &Token) -> Option<(Associativity, usize)> {
+const fn operators(token: &Token) -> Option<(Operator, Associativity, usize)> {
     match token {
-        Token::Asterisk => Some((Associativity::Left, 4)),
+        Token::Asterisk => Some((Operator::Multiplication, Associativity::Left, 4)),
 
-        Token::Plus => Some((Associativity::Left, 3)),
-        Token::Minus => Some((Associativity::Left, 3)),
+        Token::Plus => Some((Operator::Addition, Associativity::Left, 3)),
+        Token::Minus => Some((Operator::Subtraction, Associativity::Left, 3)),
 
-        Token::DoubleEquals => Some((Associativity::None, 2)),
-        Token::SlashEquals => Some((Associativity::None, 2)),
-        Token::Less => Some((Associativity::None, 2)),
-        Token::LessEquals => Some((Associativity::None, 2)),
-        Token::Greater => Some((Associativity::None, 2)),
-        Token::GreaterEquals => Some((Associativity::None, 2)),
+        Token::DoubleEquals => Some((Operator::Equality, Associativity::None, 2)),
+        Token::SlashEquals => Some((Operator::NotEquality, Associativity::None, 2)),
+        Token::Less => Some((Operator::LessThan, Associativity::None, 2)),
+        Token::LessEquals => Some((Operator::LessThanOrEqual, Associativity::None, 2)),
+        Token::Greater => Some((Operator::GreaterThan, Associativity::None, 2)),
+        Token::GreaterEquals => Some((Operator::GreaterThanOrEqual, Associativity::None, 2)),
 
-        Token::Ampersand => Some((Associativity::Right, 1)),
-        Token::Bar => Some((Associativity::Right, 0)),
+        Token::Ampersand => Some((Operator::And, Associativity::Right, 1)),
+        Token::Bar => Some((Operator::Or, Associativity::Right, 0)),
         _ => None
     }
 }
@@ -96,7 +113,7 @@ enum Associativity {
 pub struct Parser<'source_content, 'interner> {
     tokens: Peekable<Lexer<'source_content, 'interner>>,
     source: String,
-    operator_parts: HashMap<Token, Vec<InternIdx>>
+    operator_parts: HashMap<Operator, Vec<InternIdx>>
 }
 
 impl<'source, 'interner> Parser<'source, 'interner> {
@@ -110,15 +127,15 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         }
     }
 
-    fn prepare_operator_paths(interner: &mut Interner) -> HashMap<Token, Vec<InternIdx>> {
+    fn prepare_operator_paths(interner: &mut Interner) -> HashMap<Operator, Vec<InternIdx>> {
         let mut table = HashMap::new();
-        for (token, path) in OPERATOR_PATHS {
+        for (operator, path) in OPERATOR_PATHS {
             let parts = path
                 .split("::")
                 .map(|part| interner.intern(part.into()))
                 .collect();
 
-            table.insert(*token, parts);
+            table.insert(*operator, parts);
         }
         table
     }
@@ -158,6 +175,8 @@ impl<'source, 'interner> Parser<'source, 'interner> {
                     matches!(token.data(), Token::Identifier(_))
                 } else if matches!(expected, Token::U64(_)) {
                     matches!(token.data(), Token::U64(_))
+                } else if matches!(expected, Token::F32(_)) {
+                    matches!(token.data(), Token::F32(_))
                 } else if matches!(expected, Token::String(_)) {
                     matches!(token.data(), Token::String(_))
                 } else {
@@ -272,7 +291,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
     fn binary(&mut self, min_precedence: usize) -> ReportableResult<Located<Expression>> {
         let mut expression = self.application()?;
         while let Some(token) = self.peek()? {
-            let Some((associativity, precedence)) = operators(token.data()) else {
+            let Some((operator, associativity, precedence)) = operators(token.data()) else {
                 break;
             };
 
@@ -282,7 +301,7 @@ impl<'source, 'interner> Parser<'source, 'interner> {
 
             let operator_location = self.advance()?.unwrap().location();
             let operator_path = PathExpression {
-                parts: self.operator_parts[token.data()].clone(),
+                parts: self.operator_parts[&operator].clone(),
                 bound: Bound::Undetermined
             };
             let operator = Box::new(Located::new(Expression::Path(operator_path), operator_location));
@@ -348,6 +367,11 @@ impl<'source, 'interner> Parser<'source, 'interner> {
                 // TODO: Factor this out like the other ones
                 self.advance()?;
                 Ok(Located::new(Expression::U64(*u64), token.location()))
+            },
+            Token::F32(f32) => {
+                // TODO: Factor this out like the other ones
+                self.advance()?;
+                Ok(Located::new(Expression::F32(*f32), token.location()))
             },
             Token::String(string_idx) => {
                 // TODO: Factor this out like the other ones
@@ -485,6 +509,11 @@ impl<'source, 'interner> Parser<'source, 'interner> {
                 // TODO: Factor this out like the other ones
                 self.advance()?;
                 Ok(Located::new(Pattern::U64(*u64), token.location()))
+            }
+            Token::F32(f32) => {
+                // TODO: Factor this out like the other ones
+                self.advance()?;
+                Ok(Located::new(Pattern::F32(*f32), token.location()))
             }
             Token::String(string_idx) => {
                 // TODO: Factor this out like the other ones

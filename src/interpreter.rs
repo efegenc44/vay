@@ -168,6 +168,7 @@ impl Interpreter {
 
         let t = match interner.get(name.data()) {
             "U64" => BuiltInType::U64,
+            "F32" => BuiltInType::F32,
             "String" => BuiltInType::String,
             _ => unreachable!()
         };
@@ -230,6 +231,7 @@ impl Interpreter {
                 self.locals.push(value.clone());
             }
             (Value::U64(_), Pattern::U64(_)) |
+            (Value::F32(_), Pattern::F32(_)) |
             (Value::String(_), Pattern::String(_)) => (),
             (Value::Instance(instance), Pattern::VariantCase(variant_case)) => {
                 let InstanceInstance { values, .. } = instance.as_ref();
@@ -257,6 +259,7 @@ impl Interpreter {
     pub fn expression(&mut self, expression: &Located<Expression>, interner: &mut Interner) -> ControlFlow {
         match expression.data() {
             Expression::U64(u64) => Ok(Value::U64(*u64)),
+            Expression::F32(f32) => Ok(Value::F32(*f32)),
             Expression::String(string_idx) => Ok(Value::String(*string_idx)),
             Expression::Path(path) => self.path(path),
             Expression::Application(application) => self.application(application, interner),
@@ -381,6 +384,17 @@ impl Interpreter {
 
                         return Ok(f(argument_values, interner));
                     },
+                    Value::F32(f32) => {
+                        let f = self.builtin_methods[&BuiltInType::F32][&name];
+
+                        let mut argument_values = vec![Value::F32(*f32)];
+                        for argument in arguments {
+                            argument_values.push(self.expression(argument, interner)?);
+                        }
+
+                        return Ok(f(argument_values, interner));
+                    },
+
                     Value::String(string_idx) => {
                         let f = self.builtin_methods[&BuiltInType::String][&name];
 
@@ -475,6 +489,10 @@ impl Interpreter {
             Value::U64(i64) => {
                 let function = self.builtin_methods[&BuiltInType::U64][name.data()];
                 Ok(Value::BuiltinMethod(Box::new(Value::U64(*i64)), function))
+            }
+            Value::F32(f32) => {
+                let function = self.builtin_methods[&BuiltInType::F32][name.data()];
+                Ok(Value::BuiltinMethod(Box::new(Value::F32(*f32)), function))
             }
             Value::String(string_idx) => {
                 let function = self.builtin_methods[&BuiltInType::String][name.data()];

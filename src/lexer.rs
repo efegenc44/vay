@@ -178,6 +178,7 @@ impl<'source, 'interner> Lexer<'source, 'interner> {
 
     fn number(&mut self) -> Located<Token> {
         let mut lexeme = String::new();
+        let token;
         let location = locate!(self, {
             while let Some(ch) = self.peek_ch() {
                 if ch.is_ascii_digit() {
@@ -186,10 +187,24 @@ impl<'source, 'interner> Lexer<'source, 'interner> {
                     break;
                 }
             }
-        });
 
-        let number = lexeme.parse::<u64>().unwrap();
-        let token = Token::U64(number);
+            if self.optional('.') {
+                lexeme.push('.');
+                while let Some(ch) = self.peek_ch() {
+                    if ch.is_ascii_digit() {
+                        lexeme.push(self.advance().unwrap());
+                    } else {
+                        break;
+                    }
+                }
+
+                let number = lexeme.parse::<f32>().unwrap();
+                token = Token::F32(number);
+            } else {
+                let number = lexeme.parse::<u64>().unwrap();
+                token = Token::U64(number);
+            }
+        });
 
         Located::new(token, location)
     }
