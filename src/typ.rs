@@ -235,107 +235,84 @@ impl MonoType {
             MonoType::Bottom => false
         }
     }
+}
 
-    pub fn display(&self) -> String {
+impl Display for MonoType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MonoType::Variant(path, arguments) => {
-                let mut type_string = path.as_string();
-                match &arguments[..] {
-                    [] => (),
-                    [typ] => {
-                        type_string.push_str(&format!("({})", typ.display()));
-                    }
-                    [init @ .., last] => {
-                        type_string.push('(');
-                        for t in init {
-                            type_string.push_str(&format!("{}, ", t.display()));
-                        }
-                        type_string.push_str(&format!("{})", last.display()));
-                    }
-                };
-                type_string
-            },
+            MonoType::Variant(path, arguments) |
             MonoType::Struct(path, arguments) => {
-                let mut type_string = path.as_string();
+                path.fmt(f)?;
                 match &arguments[..] {
-                    [] => (),
-                    [typ] => {
-                        type_string.push_str(&format!("({})", typ.display()));
-                    }
+                    [] => Ok(()),
+                    [typ] => write!(f, "({})", typ),
                     [init @ .., last] => {
-                        type_string.push('(');
+                        write!(f, "(")?;
                         for t in init {
-                            type_string.push_str(&format!("{}, ", t.display()));
+                            write!(f, "{}, ", t)?;
                         }
-                        type_string.push_str(&format!("{})", last.display()));
+                        write!(f, "{})", last)
                     }
-                };
-                type_string
+                }
             },
             MonoType::BuiltIn(_, builtin, arguments) => {
-                let mut type_string = builtin.to_string();
+                write!(f, "{}", builtin)?;
                 match &arguments[..] {
-                    [] => (),
-                    [typ] => {
-                        type_string.push_str(&format!("({})", typ.display()));
-                    }
+                    [] => Ok(()),
+                    [typ] => write!(f, "({})", typ),
                     [init @ .., last] => {
-                        type_string.push('(');
+                        write!(f, "(")?;
                         for t in init {
-                            type_string.push_str(&format!("{}, ", t.display()));
+                            write!(f, "{}, ", t)?;
                         }
-                        type_string.push_str(&format!("{})", last.display()));
+                        write!(f, "{})", last)
                     }
-                };
-                type_string
+                }
             },
             MonoType::Function(function) => {
                 let FunctionType { arguments, return_type } = function;
 
-                let mut type_string = String::from("fun(");
+                write!(f, "fun(")?;
                 match &arguments[..] {
-                    [] => type_string.push(')'),
-                    [typ] => {
-                        type_string.push_str(&format!("{})", typ.display()));
-                    }
+                    [] => write!(f, ")")?,
+                    [typ] => write!(f, "{})", typ)?,
                     [init @ .., last] => {
                         for t in init {
-                            type_string.push_str(&format!("{}, ", t.display()));
+                            write!(f, "{}, ", t)?;
                         }
-                        type_string.push_str(&format!("{})", last.display()));
+                        write!(f, "{})", last)?;
                     }
                 };
-                type_string.push_str(&format!(" -> {}", return_type.display()));
-                type_string
+                write!(f, " : {}", return_type)
             }
-            MonoType::Var(type_var) => format!("a{} ({})", type_var.idx, type_var.interfaces
-                .iter().map(|path| path.as_string())
+            MonoType::Var(type_var) => write!(f, "a{} ({})", type_var.idx, type_var.interfaces
+                .iter().map(|path| path.to_string())
                 .collect::<Vec<_>>().join(",")
             ),
-            MonoType::Constant(type_var) => format!("c{} ({})", type_var.idx, type_var.interfaces
-                .iter().map(|path| path.as_string())
+            MonoType::Constant(type_var) => write!(f, "c{} ({})", type_var.idx, type_var.interfaces
+                .iter().map(|path| path.to_string())
                 .collect::<Vec<_>>().join(",")
             ),
-            MonoType::Unit => "()".into(),
-            MonoType::Bottom => "Bottom".into()
+            MonoType::Unit => write!(f, "()"),
+            MonoType::Bottom => write!(f, "Bottom")
         }
     }
 }
 
-impl Type {
-    pub fn display(&self) -> String {
+impl Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Type::Mono(t) => t.display(),
+            Type::Mono(t) => t.fmt(f),
             Type::Forall(vars, ty) => {
-                format!(
+                write!(f,
                     "forall {}; {}",
                     vars.iter().map(|var| format!("a{} ({})", var.idx,
                         var.interfaces
-                            .iter().map(|path| path.as_string())
+                            .iter().map(|path| path.to_string())
                             .collect::<Vec<_>>().join(","))
                         )
                         .collect::<Vec<_>>().join(","),
-                    ty.display(),
+                    ty,
                 )
             }
         }

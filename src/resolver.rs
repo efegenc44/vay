@@ -310,7 +310,7 @@ impl Resolver {
     fn collect_builtin_name(&mut self, builtin: &mut BuiltInDeclaration) -> ReportableResult<()> {
         let BuiltInDeclaration { name, path, .. } = builtin;
 
-        if self.current_path().as_string() != INTRINSICS_MODULE_NAME {
+        if self.current_path().to_string() != INTRINSICS_MODULE_NAME {
             panic!("Not allowed in builtin declarations outside of Intrinsics Module.")
         }
 
@@ -927,45 +927,39 @@ impl Reportable for (Located<ResolveError>, String) {
         match self.0.data() {
             ResolveError::ModuleIsNotDeclared => "No module declarations found.".into(),
             ResolveError::ImportPathDoesNotExist(path) => {
-                format!("Imported path `{}` does not exist.", path.as_string())
+                format!("Imported path `{}` does not exist.", path)
             }
             ResolveError::ModuleDoesNotExist(path) => {
-                format!("Module `{}` does not exist.", path.as_string())
+                format!("Module `{}` does not exist.", path)
             }
             ResolveError::CollidingModulePaths(path) => {
-                format!("Already imported a module `{}`.", path.as_string())
+                format!("Already imported a module `{}`.", path)
             }
             ResolveError::DuplicateModuleDeclaration => "Duplicate declaration of module.".into(),
             ResolveError::DuplicateFunctionDeclaration(path) => {
-                format!(
-                    "Duplicate declaration of function `{}`.",
-                    path.as_string()
-                )
+                format!("Duplicate declaration of function `{}`.", path)
             }
             ResolveError::DuplicateTypeDeclaration(path) => {
-                format!(
-                    "Duplicate declaration of type `{}`.",
-                    path.as_string()
-                )
+                format!("Duplicate declaration of type `{}`.", path)
             }
             ResolveError::DuplicateConstructorDeclaration {
                 constructor,
-                variant_path: variant,
+                variant_path,
             } => {
                 format!(
                     "Duplicate declaration of constructor `{}` in variant type `{}`.",
                     interner().get(constructor),
-                    variant.as_string()
+                    variant_path
                 )
             }
             ResolveError::UnboundValuePath(path) => {
-                format!("`{}` is not bound to a value.", path.as_string())
+                format!("`{}` is not bound to a value.", path)
             }
             ResolveError::UnboundTypePath(path) => {
-                format!("`{}` is not bound to a type.", path.as_string())
+                format!("`{}` is not bound to a type.", path)
             }
             ResolveError::UnboundInterfacePath(path) => {
-                format!("`{}` is not bound to an interface.", path.as_string())
+                format!("`{}` is not bound to an interface.", path)
             }
         }
     }

@@ -172,7 +172,7 @@ impl Runner {
                 let ControlFlow::Ok(result) = self.interpreter.expression(&expression) else {
                     unreachable!()
                 };
-                println!("{} : {}", result.as_string(), t.display())
+                println!("{} : {}", result, t)
             }
 
         }

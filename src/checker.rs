@@ -1508,8 +1508,8 @@ impl Reportable for (Located<TypeCheckError>, String) {
             } => {
                 format!(
                     "Expected type `{}` but encountered type `{}`.",
-                    expected.display(),
-                    encountered.display()
+                    expected,
+                    encountered
                 )
             }
             TypeCheckError::DuplicateMethodDeclaration {
@@ -1519,7 +1519,7 @@ impl Reportable for (Located<TypeCheckError>, String) {
                 format!(
                     "Duplicate declaration of method `{}` in variant type `{}`.",
                     interner().get(method_name),
-                    variant_path.as_string()
+                    variant_path
                 )
             }
             TypeCheckError::CaseNotExist {
@@ -1528,7 +1528,7 @@ impl Reportable for (Located<TypeCheckError>, String) {
             } => {
                 format!(
                     "Variant `{}` does not have a case named `{}`.",
-                    type_path.as_string(),
+                    type_path,
                     interner().get(case_name),
                 )
             }
@@ -1541,16 +1541,16 @@ impl Reportable for (Located<TypeCheckError>, String) {
                 format!(
                     "`{}` of variant `{}` takes `{}` values but supplied `{}` values.",
                     interner().get(case_name),
-                    type_path.as_string(),
+                    type_path,
                     expected,
                     encountered
                 )
             }
             TypeCheckError::NotAPatternOfType { expected } => {
-                format!("Pattern is not of type `{}`.", expected.display(),)
+                format!("Pattern is not of type `{}`.", expected)
             }
             TypeCheckError::ExpectedAFunction { encountered } => {
-                format!("A function is expected but encountered `{}`.", encountered.display(),)
+                format!("A function is expected but encountered `{}`.", encountered)
             }
             TypeCheckError::ArityMismatch { encountered, expected } => {
                 format!("Function is of arity {} but supplied {} arguments.",
@@ -1559,14 +1559,14 @@ impl Reportable for (Located<TypeCheckError>, String) {
             }
             TypeCheckError::NotProjectable { ty, name } => {
                 format!("`{}` has no method or field named `{}`.",
-                    ty.display(), interner().get(name)
+                    ty, interner().get(name)
                 )
             }
             TypeCheckError::ExpectedMonoType { encountered } => {
-                format!("Type is not mono : `{}`.", encountered.display())
+                format!("Type is not mono : `{}`.", encountered)
             }
             TypeCheckError::NotAPolyType { encountered } => {
-                format!("Type is not poly : `{}`.", encountered.display())
+                format!("Type is not poly : `{}`.", encountered)
             }
             TypeCheckError::TypeArityMismatch { encountered, expected } => {
                 format!("Type is of arity {} but supplied {} arguments.",
@@ -1575,7 +1575,7 @@ impl Reportable for (Located<TypeCheckError>, String) {
             }
             TypeCheckError::DontImplementInterfaces { t, interfaces } => {
                 format!("Type `{}` does not implement interfaces: {}.",
-                    t.display(), interfaces.iter().map(|path| path.as_string()).collect::<Vec<_>>().join(" ")
+                    t, interfaces.iter().map(|path| path.to_string()).collect::<Vec<_>>().join(" ")
                 )
             }
             TypeCheckError::NotAssignable => {

@@ -206,8 +206,7 @@ pub const INTRINSIC_FUNCTIONS: &[(&str, IntrinsicFunction)] = intrinsics_functio
 
 pub const EXTERNAL_FUNCTIONS: &[(&str, IntrinsicFunction)] = &[
     ("Core::println", |mut arguments| {
-        let a = arguments.pop().unwrap();
-        println!("{}", a.as_string());
+        println!("{}", arguments.pop().unwrap());
 
         Value::Unit
     })

@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::interner::{interner, InternIdx};
 
 #[derive(Clone)]
@@ -34,14 +36,18 @@ impl Path {
     pub fn pop(&mut self) -> Option<InternIdx> {
         self.0.pop()
     }
+}
 
-    pub fn as_string(&self) -> String {
+impl Display for Path {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let interner = interner();
 
-        self.0
+        let path = self.0
             .iter()
-            .map(|intern_idx| interner.get(intern_idx).to_string())
+            .map(|intern_idx| interner.get(intern_idx))
             .collect::<Vec<_>>()
-            .join("::")
+            .join("::");
+
+        write!(f, "{}", path)
     }
 }

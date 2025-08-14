@@ -1,7 +1,5 @@
 use std::{
-    cell::RefCell,
-    collections::HashMap,
-    rc::Rc
+    cell::RefCell, collections::HashMap, fmt::Display, rc::Rc
 };
 
 use crate::{
@@ -34,75 +32,6 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn as_string(&self) -> String {
-        match self {
-            Value::Function(..) => "<function>".into(),
-            Value::Method(..) => "<function>".into(),
-            Value::Lambda(..) => "<function>".into(),
-            Value::InterfaceFunction(..) => "<function>".into(),
-            Value::BuiltinMethod(..) => "<function>".into(),
-            Value::ExternalFunction(..) => "<function>".into(),
-            Value::Constructor(..) => "<function>".into(),
-            Value::StructConstructor(..) => "<function>".into(),
-            Value::Instance(instance) => {
-                let InstanceInstance { constructor, values, .. } = instance.as_ref();
-                let ConstructorInstance { case, .. } = constructor.as_ref();
-
-                if values.is_empty() {
-                    return interner().get(case).into();
-                }
-
-                let mut string = format!("{}(", interner().get(case));
-                let mut first = true;
-                for value in values.iter() {
-                    if first {
-                        first = false;
-                    } else {
-                        string.push_str(", ");
-                    }
-                    string.push_str(&value.as_string());
-                }
-                string.push(')');
-                string
-            },
-            Value::StructInstance(instance) => {
-                let StructInstanceInstance { type_path, fields } = instance.as_ref();
-
-                let mut string = format!("{}(", type_path.as_string());
-                let mut first = true;
-                for (name, value) in fields.borrow().iter() {
-                    if first {
-                        first = false;
-                    } else {
-                        string.push_str(", ");
-                    }
-
-                    string.push_str(&format!("{}={}", interner().get(name), value.as_string()));
-                }
-                string.push(')');
-                string
-            },
-            Value::U64(u64) => u64.to_string(),
-            Value::F32(f32) => f32.to_string(),
-            Value::String(string_idx) => format!("\"{}\"", interner().get(string_idx)),
-            Value::Array(array) => {
-                let mut string = String::from("[");
-                let mut first = true;
-                for value in array.borrow().iter() {
-                    if first {
-                        first = false;
-                    } else {
-                        string.push_str(", ");
-                    }
-                    string.push_str(&value.as_string());
-                }
-                string.push(']');
-                string
-            },
-            Value::Unit => "()".into(),
-        }
-    }
-
     pub fn matches(&self, pattern: &Pattern) -> bool {
         match (self, pattern) {
             (_, Pattern::Any(_)) => true,
@@ -182,6 +111,74 @@ impl Value {
         };
 
         v
+    }
+}
+
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::Function(..) |
+            Value::Method(..) |
+            Value::Lambda(..) |
+            Value::InterfaceFunction(..) |
+            Value::BuiltinMethod(..) |
+            Value::ExternalFunction(..) |
+            Value::Constructor(..) |
+            Value::StructConstructor(..) => write!(f, "<function>"),
+            Value::Instance(instance) => {
+                let InstanceInstance { constructor, values, .. } = instance.as_ref();
+                let ConstructorInstance { case, .. } = constructor.as_ref();
+
+                if values.is_empty() {
+                    return write!(f, "{}", interner().get(case));
+                }
+
+                write!(f,"{}(", interner().get(case))?;
+                let mut first = true;
+                for value in values.iter() {
+                    if first {
+                        first = false;
+                    } else {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", value)?;
+                }
+                write!(f, ")")
+            },
+            Value::StructInstance(instance) => {
+                let StructInstanceInstance { type_path, fields } = instance.as_ref();
+
+                write!(f, "{}(", type_path)?;
+                let mut first = true;
+                for (name, value) in fields.borrow().iter() {
+                    if first {
+                        first = false;
+                    } else {
+                        write!(f, ", ")?;
+                    }
+
+                    write!(f, "{}={}", interner().get(name), value)?;
+                }
+                write!(f, ")")
+            },
+            Value::U64(u64) => write!(f, "{}", u64),
+            Value::F32(f32) => write!(f, "{}", f32),
+            Value::String(string_idx) => write!(f, "\"{}\"", interner().get(string_idx)),
+            Value::Array(array) => {
+                write!(f, "[")?;
+                let mut first = true;
+                for value in array.borrow().iter() {
+                    if first {
+                        first = false;
+                    } else {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", value)?;
+                }
+                write!(f, "]")
+            },
+            Value::Unit => write!(f, "()"),
+        }
     }
 }
 

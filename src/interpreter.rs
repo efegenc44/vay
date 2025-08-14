@@ -61,7 +61,7 @@ impl Interpreter {
         let mut main_module = None;
 
         for module in modules {
-            if module.path().as_string() == "Main" {
+            if module.path().to_string() == "Main" {
                 main_module = Some(module);
                 break;
             }
@@ -96,7 +96,7 @@ impl Interpreter {
             Ok(value) | Err(value) => value,
         };
 
-        println!("\nResult = {}", value.as_string());
+        println!("\nResult = {}", value);
     }
 
     pub fn collect_names(&mut self, module: &Module) {
@@ -204,7 +204,7 @@ impl Interpreter {
 
             // TODO: Better error reporting here
             let f = INTRINSIC_FUNCTIONS
-                .iter().find(|(ppath, _)| ppath == &mpath.as_string())
+                .iter().find(|(ppath, _)| ppath == &mpath.to_string())
                 .unwrap().1;
 
             self.builtin_methods.get_mut(&t).unwrap().insert(*name.data(), f);
@@ -217,7 +217,7 @@ impl Interpreter {
         // TODO: Better error reporting here
         // TODO: External functions via dynamic loading?
         let f = EXTERNAL_FUNCTIONS
-            .iter().find(|(ppath, _)| ppath == &path.as_string())
+            .iter().find(|(ppath, _)| ppath == &path.to_string())
             .unwrap().1;
 
         let function = Value::ExternalFunction(f);
