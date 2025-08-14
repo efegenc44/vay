@@ -1,6 +1,18 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    rc::Rc
+};
 
-use crate::{bound::Path, expression::{ArrayPattern, Expression, Pattern, VariantCasePattern}, interner::{InternIdx, Interner}, intrinsics::IntrinsicFunction, location::Located};
+use crate::{
+    bound::Path,
+    expression::{
+        ArrayPattern, Expression, Pattern, VariantCasePattern
+    },
+    interner::{interner, InternIdx},
+    intrinsics::IntrinsicFunction,
+    location::Located,
+};
 
 #[derive(Clone)]
 pub enum Value {
@@ -22,7 +34,7 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn as_string(&self, interner: &Interner) -> String {
+    pub fn as_string(&self) -> String {
         match self {
             Value::Function(..) => "<function>".into(),
             Value::Method(..) => "<function>".into(),
@@ -37,10 +49,10 @@ impl Value {
                 let ConstructorInstance { case, .. } = constructor.as_ref();
 
                 if values.is_empty() {
-                    return interner.get(case).into();
+                    return interner().get(case).into();
                 }
 
-                let mut string = format!("{}(", interner.get(case));
+                let mut string = format!("{}(", interner().get(case));
                 let mut first = true;
                 for value in values.iter() {
                     if first {
@@ -48,7 +60,7 @@ impl Value {
                     } else {
                         string.push_str(", ");
                     }
-                    string.push_str(&value.as_string(interner));
+                    string.push_str(&value.as_string());
                 }
                 string.push(')');
                 string
@@ -56,7 +68,7 @@ impl Value {
             Value::StructInstance(instance) => {
                 let StructInstanceInstance { type_path, fields } = instance.as_ref();
 
-                let mut string = format!("{}(", type_path.as_string(interner));
+                let mut string = format!("{}(", type_path.as_string());
                 let mut first = true;
                 for (name, value) in fields.borrow().iter() {
                     if first {
@@ -64,14 +76,15 @@ impl Value {
                     } else {
                         string.push_str(", ");
                     }
-                    string.push_str(&format!("{}={}", interner.get(name), value.as_string(interner)));
+
+                    string.push_str(&format!("{}={}", interner().get(name), value.as_string()));
                 }
                 string.push(')');
                 string
             },
             Value::U64(u64) => u64.to_string(),
             Value::F32(f32) => f32.to_string(),
-            Value::String(string_idx) => format!("\"{}\"", interner.get(string_idx)),
+            Value::String(string_idx) => format!("\"{}\"", interner().get(string_idx)),
             Value::Array(array) => {
                 let mut string = String::from("[");
                 let mut first = true;
@@ -81,7 +94,7 @@ impl Value {
                     } else {
                         string.push_str(", ");
                     }
-                    string.push_str(&value.as_string(interner));
+                    string.push_str(&value.as_string());
                 }
                 string.push(']');
                 string

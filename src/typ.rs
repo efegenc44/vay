@@ -1,6 +1,6 @@
 use std::{collections::{HashMap, HashSet}, fmt::Display};
 
-use crate::{bound::Path, interner::{InternIdx, Interner}};
+use crate::{bound::Path, interner::InternIdx};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
@@ -236,38 +236,38 @@ impl MonoType {
         }
     }
 
-    pub fn display(&self, interner: &Interner) -> String {
+    pub fn display(&self) -> String {
         match self {
             MonoType::Variant(path, arguments) => {
-                let mut type_string = path.as_string(interner);
+                let mut type_string = path.as_string();
                 match &arguments[..] {
                     [] => (),
                     [typ] => {
-                        type_string.push_str(&format!("({})", typ.display(interner)));
+                        type_string.push_str(&format!("({})", typ.display()));
                     }
                     [init @ .., last] => {
                         type_string.push('(');
                         for t in init {
-                            type_string.push_str(&format!("{}, ", t.display(interner)));
+                            type_string.push_str(&format!("{}, ", t.display()));
                         }
-                        type_string.push_str(&format!("{})", last.display(interner)));
+                        type_string.push_str(&format!("{})", last.display()));
                     }
                 };
                 type_string
             },
             MonoType::Struct(path, arguments) => {
-                let mut type_string = path.as_string(interner);
+                let mut type_string = path.as_string();
                 match &arguments[..] {
                     [] => (),
                     [typ] => {
-                        type_string.push_str(&format!("({})", typ.display(interner)));
+                        type_string.push_str(&format!("({})", typ.display()));
                     }
                     [init @ .., last] => {
                         type_string.push('(');
                         for t in init {
-                            type_string.push_str(&format!("{}, ", t.display(interner)));
+                            type_string.push_str(&format!("{}, ", t.display()));
                         }
-                        type_string.push_str(&format!("{})", last.display(interner)));
+                        type_string.push_str(&format!("{})", last.display()));
                     }
                 };
                 type_string
@@ -277,14 +277,14 @@ impl MonoType {
                 match &arguments[..] {
                     [] => (),
                     [typ] => {
-                        type_string.push_str(&format!("({})", typ.display(interner)));
+                        type_string.push_str(&format!("({})", typ.display()));
                     }
                     [init @ .., last] => {
                         type_string.push('(');
                         for t in init {
-                            type_string.push_str(&format!("{}, ", t.display(interner)));
+                            type_string.push_str(&format!("{}, ", t.display()));
                         }
-                        type_string.push_str(&format!("{})", last.display(interner)));
+                        type_string.push_str(&format!("{})", last.display()));
                     }
                 };
                 type_string
@@ -296,24 +296,24 @@ impl MonoType {
                 match &arguments[..] {
                     [] => type_string.push(')'),
                     [typ] => {
-                        type_string.push_str(&format!("{})", typ.display(interner)));
+                        type_string.push_str(&format!("{})", typ.display()));
                     }
                     [init @ .., last] => {
                         for t in init {
-                            type_string.push_str(&format!("{}, ", t.display(interner)));
+                            type_string.push_str(&format!("{}, ", t.display()));
                         }
-                        type_string.push_str(&format!("{})", last.display(interner)));
+                        type_string.push_str(&format!("{})", last.display()));
                     }
                 };
-                type_string.push_str(&format!(" -> {}", return_type.display(interner)));
+                type_string.push_str(&format!(" -> {}", return_type.display()));
                 type_string
             }
             MonoType::Var(type_var) => format!("a{} ({})", type_var.idx, type_var.interfaces
-                .iter().map(|path| path.as_string(interner))
+                .iter().map(|path| path.as_string())
                 .collect::<Vec<_>>().join(",")
             ),
             MonoType::Constant(type_var) => format!("c{} ({})", type_var.idx, type_var.interfaces
-                .iter().map(|path| path.as_string(interner))
+                .iter().map(|path| path.as_string())
                 .collect::<Vec<_>>().join(",")
             ),
             MonoType::Unit => "()".into(),
@@ -323,19 +323,19 @@ impl MonoType {
 }
 
 impl Type {
-    pub fn display(&self, interner: &Interner) -> String {
+    pub fn display(&self) -> String {
         match self {
-            Type::Mono(t) => t.display(interner),
+            Type::Mono(t) => t.display(),
             Type::Forall(vars, ty) => {
                 format!(
                     "forall {}; {}",
                     vars.iter().map(|var| format!("a{} ({})", var.idx,
                         var.interfaces
-                            .iter().map(|path| path.as_string(interner))
+                            .iter().map(|path| path.as_string())
                             .collect::<Vec<_>>().join(","))
                         )
                         .collect::<Vec<_>>().join(","),
-                    ty.display(interner),
+                    ty.display(),
                 )
             }
         }

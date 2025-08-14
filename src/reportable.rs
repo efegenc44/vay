@@ -1,11 +1,11 @@
-use crate::{interner::Interner, location::SourceLocation};
+use crate::{location::SourceLocation};
 
 pub trait Reportable {
     fn location(&self) -> SourceLocation;
     fn source(&self) -> &str;
-    fn description(&self, interner: &Interner) -> String;
+    fn description(&self) -> String;
 
-    fn report(&self, source_content: &str, stage: &str, interner: &Interner) {
+    fn report(&self, source_content: &str, stage: &str) {
         let mut lines = source_content.lines();
         let location = self.location();
         let source = self.source();
@@ -14,7 +14,7 @@ pub trait Reportable {
             eprintln!();
             eprintln!("        | [{source}] (at {stage})");
             eprintln!("        |");
-            eprintln!("        | {}", self.description(interner));
+            eprintln!("        | {}", self.description());
             return;
         }
 
@@ -31,7 +31,7 @@ pub trait Reportable {
                 spaces = (1..location.start().column()).len(),
                 carrots = (location.start().column()..location.end().column()).len()
             );
-            eprintln!("        | {}", self.description(interner))
+            eprintln!("        | {}", self.description())
         } else {
             let first_line = lines.nth(first_line_number - 1).unwrap();
             eprintln!("  {first_line_number:>5} | {first_line}");
@@ -53,7 +53,7 @@ pub trait Reportable {
             eprintln!("        | {:^^carrots$}", "",
                 carrots = (1..location.end().column()).len()
             );
-            eprintln!("        | {}", self.description(interner))
+            eprintln!("        | {}", self.description())
         }
     }
 }

@@ -1,8 +1,21 @@
 use core::panic;
-use std::{collections::HashMap, fs, io::{stdin, stdout, Write}, process::exit};
+use std::{
+    collections::HashMap,
+    fs,
+    io::{stdin, stdout, Write},
+    process::exit,
+};
 
 use crate::{
-    checker::Checker, core::CORE_FILE_PATH, declaration::Module, interner::Interner, interpreter::{ControlFlow, Interpreter}, intrinsics::INTRINSICS_FILE_PATH, lexer::Lexer, parser::Parser, reportable::ReportableResult, resolver::Resolver
+    checker::Checker,
+    core::CORE_FILE_PATH,
+    declaration::Module,
+    interpreter::{ControlFlow, Interpreter},
+    intrinsics::INTRINSICS_FILE_PATH,
+    lexer::Lexer,
+    parser::Parser,
+    reportable::ReportableResult,
+    resolver::Resolver
 };
 
 pub const SESSION_SOURCE: &str = "Interactive session";
@@ -19,7 +32,6 @@ macro_rules! runner_handle {
                 error.report(
                     &$self.source_contents[error.source()],
                     $stage,
-                    &$self.interner
                 );
                 return Err(())
             }
@@ -37,7 +49,6 @@ macro_rules! runner_interactive {
                 error.report(
                     &$self.source_contents[error.source()],
                     $stage,
-                    &$self.interner
                 );
                 continue
             }
@@ -47,7 +58,6 @@ macro_rules! runner_interactive {
 
 pub struct Runner {
     source_contents: HashMap<String, String>,
-    interner: Interner,
     resolver: Resolver,
     checker: Checker,
     interpreter: Interpreter
@@ -57,7 +67,6 @@ impl Runner {
     pub fn new() -> Self {
         Self {
             source_contents: HashMap::new(),
-            interner: Interner::new(),
             resolver: Resolver::new(),
             checker: Checker::new(),
             interpreter: Interpreter::new(),
@@ -76,7 +85,7 @@ impl Runner {
             self.source_contents.insert(source.clone(), source_content);
             let source_content = &self.source_contents[&source];
             print!("{:>20}: {}", "Parsing", source);
-            let lexer = Lexer::new(source, source_content, &mut self.interner);
+            let lexer = Lexer::new(source, source_content);
             let mut parser = Parser::new(lexer);
             let module = runner_handle!(self, parser.module(), "parsing");
             modules.push(module);
@@ -87,16 +96,16 @@ impl Runner {
 
     pub fn check(&mut self, modules: Vec<Module>) -> Result<Vec<Module>, ()> {
         print!("{:>20}:", "Name Resolution");
-        let modules = runner_handle!(self, self.resolver.resolve(modules, &self.interner), "name resolution");
+        let modules = runner_handle!(self, self.resolver.resolve(modules), "name resolution");
         print!("{:>20}:", "Type Checking");
-        runner_handle!(self, self.checker.type_check(&modules, &self.interner), "type checking");
+        runner_handle!(self, self.checker.type_check(&modules), "type checking");
         Ok(modules)
     }
 
     pub fn interpret(&mut self, modules: &[Module]) {
         let mut interpreter = Interpreter::new();
         println!("{:>20}", "Interpreting");
-        interpreter.evaluate_main(modules, &mut self.interner);
+        interpreter.evaluate_main(modules);
     }
 
     pub fn interactive(&mut self, session_start_module_paths: Vec<String>) {
@@ -104,7 +113,7 @@ impl Runner {
         let modules = self.check(modules).unwrap();
 
         for module in modules {
-            self.interpreter.collect_names(&module, &mut self.interner);
+            self.interpreter.collect_names(&module);
         }
 
         self.resolver.init_interactive_module();
@@ -147,23 +156,23 @@ impl Runner {
 
                 match (command.action)(self, input.into()) {
                     Ok(()) => (),
-                    Err(error) => error.report(&self.source_contents[SESSION_SOURCE], "", &self.interner),
+                    Err(error) => error.report(&self.source_contents[SESSION_SOURCE], ""),
                 };
             } else {
                 *self.source_contents.get_mut(SESSION_SOURCE).unwrap() = input;
 
                 let input = &self.source_contents[SESSION_SOURCE];
-                let lexer = Lexer::new(SESSION_SOURCE.into(), input, &mut self.interner);
+                let lexer = Lexer::new(SESSION_SOURCE.into(), input);
                 let mut parser = Parser::new(lexer);
 
                 let mut expression = runner_interactive!(self, parser.session_expression(), "parsing");
                 runner_interactive!(self, self.resolver.expression(&mut expression), "name resolution");
                 let t = runner_interactive!(self, self.checker.infer(&expression), "type checking");
 
-                let ControlFlow::Ok(result) = self.interpreter.expression(&expression, &mut self.interner) else {
+                let ControlFlow::Ok(result) = self.interpreter.expression(&expression) else {
                     unreachable!()
                 };
-                println!("{} : {}", result.as_string(&self.interner), t.display(&self.interner))
+                println!("{} : {}", result.as_string(), t.display())
             }
 
         }

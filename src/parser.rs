@@ -3,16 +3,24 @@ use std::{collections::HashMap, iter::Peekable};
 use crate::{
     bound::{Bound, Path},
     declaration::{
-        BuiltInDeclaration, Constraint, Declaration, ExternalDeclaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, StructDeclaration, TypeVar, TypedIdentifier, VariantCase, VariantDeclaration
+        BuiltInDeclaration, Constraint, Declaration, ExternalDeclaration,
+        FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration,
+        InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module,
+        ModuleDeclaration, StructDeclaration, TypeVar, TypedIdentifier,
+        VariantCase, VariantDeclaration
     },
     expression::{
-        ApplicationExpression, ArrayExpression, ArrayPattern, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchBranch, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
+        ApplicationExpression, ArrayExpression, ArrayPattern, AssignmentExpression,
+        Expression, FunctionTypeExpression, LambdaExpression, LetExpression,
+        MatchBranch, MatchExpression, PathExpression, PathTypeExpression,
+        Pattern, ProjectionExpression, ReturnExpression, SequenceExpression,
+        TypeApplicationExpression, TypeExpression, VariantCasePattern
     },
-    interner::{InternIdx, Interner},
+    interner::{interner_mut, InternIdx},
     lexer::Lexer,
     location::{Located, SourceLocation},
     reportable::{Reportable, ReportableResult},
-    token::Token,
+    token::Token
 };
 
 const PRIMARY_TOKEN_STARTS: &[Token] = &[
@@ -112,15 +120,15 @@ enum Associativity {
     None
 }
 
-pub struct Parser<'source_content, 'interner> {
-    tokens: Peekable<Lexer<'source_content, 'interner>>,
+pub struct Parser<'source_content> {
+    tokens: Peekable<Lexer<'source_content>>,
     source: String,
     operator_parts: HashMap<Operator, Vec<InternIdx>>
 }
 
-impl<'source, 'interner> Parser<'source, 'interner> {
-    pub fn new(mut lexer: Lexer<'source, 'interner>) -> Self {
-        let operator_parts = Self::prepare_operator_paths(lexer.interner());
+impl<'source> Parser<'source> {
+    pub fn new(lexer: Lexer<'source>) -> Self {
+        let operator_parts = Self::prepare_operator_paths();
         let source = lexer.source().to_string();
         Self {
             tokens: lexer.peekable(),
@@ -129,12 +137,12 @@ impl<'source, 'interner> Parser<'source, 'interner> {
         }
     }
 
-    fn prepare_operator_paths(interner: &mut Interner) -> HashMap<Operator, Vec<InternIdx>> {
+    fn prepare_operator_paths() -> HashMap<Operator, Vec<InternIdx>> {
         let mut table = HashMap::new();
         for (operator, path) in OPERATOR_PATHS {
             let parts = path
                 .split("::")
-                .map(|part| interner.intern(part.into()))
+                .map(|part| interner_mut().intern(part.into()))
                 .collect();
 
             table.insert(*operator, parts);
@@ -1127,7 +1135,7 @@ impl Reportable for (Located<ParseError>, String) {
         &self.1
     }
 
-    fn description(&self, _intener: &Interner) -> String {
+    fn description(&self) -> String {
         match self.0.data() {
             ParseError::UnexpectedToken {
                 unexpected,

@@ -1,6 +1,27 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::{bound::{Bound, Path}, declaration::{BuiltInDeclaration, Declaration, ExternalDeclaration, FunctionDeclaration, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, StructDeclaration, VariantDeclaration}, expression::{ApplicationExpression, ArrayExpression, ArrayPattern, AssignmentExpression, Expression, LambdaExpression, LetExpression, MatchExpression, PathExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, VariantCasePattern}, interner::{InternIdx, Interner}, intrinsics::{IntrinsicFunction, EXTERNAL_FUNCTIONS, INTRINSIC_FUNCTIONS}, location::Located, typ::BuiltInType, value::{ConstructorInstance, FunctionInstance, InstanceInstance, LambdaInstance, MethodInstance, StructConstructorInstance, StructInstanceInstance, Value}};
+use crate::{
+    bound::{Bound, Path},
+    declaration::{
+        Declaration, BuiltInDeclaration, ExternalDeclaration, FunctionDeclaration,
+        InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature,
+        Module, StructDeclaration, VariantDeclaration
+    },
+    expression::{
+        ApplicationExpression, ArrayExpression, ArrayPattern, AssignmentExpression,
+        Expression, LambdaExpression, LetExpression, MatchExpression,
+        PathExpression, Pattern, ProjectionExpression, ReturnExpression,
+        SequenceExpression, VariantCasePattern
+    },
+    interner::{InternIdx, interner},
+    intrinsics::{IntrinsicFunction, EXTERNAL_FUNCTIONS, INTRINSIC_FUNCTIONS},
+    location::Located,
+    typ::BuiltInType,
+    value::{
+        ConstructorInstance, FunctionInstance, InstanceInstance, LambdaInstance,
+        MethodInstance, StructConstructorInstance, StructInstanceInstance, Value
+    }
+};
 
 pub struct Interpreter {
     methods: HashMap<Path, HashMap<InternIdx, Rc<FunctionInstance>>>,
@@ -32,14 +53,15 @@ impl Interpreter {
         }
     }
 
-    pub fn evaluate_main(&mut self, modules: &[Module], interner: &mut Interner) {
+    pub fn evaluate_main(&mut self, modules: &[Module]) {
         for module in modules {
-            self.collect_names(module, interner);
+            self.collect_names(module);
         }
 
         let mut main_module = None;
+
         for module in modules {
-            if module.path().as_string(interner) == "Main" {
+            if module.path().as_string() == "Main" {
                 main_module = Some(module);
                 break;
             }
@@ -51,7 +73,7 @@ impl Interpreter {
         let mut main_function = None;
         'outer: for declaration in main_module.declarations() {
             if let Declaration::Function(function) = declaration {
-                if interner.get(function.name.data()) == "main" {
+                if interner().get(function.name.data()) == "main" {
                     main_function = Some(declaration);
                     break 'outer;
                 }
@@ -69,15 +91,15 @@ impl Interpreter {
             todo!("main function is not supposed to take any arguments");
         }
 
-        let value = self.expression(&function.body, interner);
+        let value = self.expression(&function.body);
         let value = match value {
             Ok(value) | Err(value) => value,
         };
 
-        println!("\nResult = {}", value.as_string(interner));
+        println!("\nResult = {}", value.as_string());
     }
 
-    pub fn collect_names(&mut self, module: &Module, interner: &mut Interner) {
+    pub fn collect_names(&mut self, module: &Module) {
         for declaration in module.declarations() {
             match declaration {
                 Declaration::Module(..) => (),
@@ -86,8 +108,8 @@ impl Interpreter {
                 Declaration::Function(function) => self.collect_function_name(function),
                 Declaration::Variant(variant) => self.collect_variant_name(variant),
                 Declaration::Struct(strct) => self.collect_struct_name(strct),
-                Declaration::BuiltIn(builtin) => self.collect_builtin_name(builtin, interner),
-                Declaration::External(external) => self.collect_external_name(external, interner),
+                Declaration::BuiltIn(builtin) => self.collect_builtin_name(builtin),
+                Declaration::External(external) => self.collect_external_name(external),
             }
         }
     }
@@ -163,10 +185,10 @@ impl Interpreter {
         }
     }
 
-    fn collect_builtin_name(&mut self, builtin: &BuiltInDeclaration, interner: &mut Interner) {
+    fn collect_builtin_name(&mut self, builtin: &BuiltInDeclaration) {
         let BuiltInDeclaration { name, methods, path, ..  } = builtin;
 
-        let t = match interner.get(name.data()) {
+        let t = match interner().get(name.data()) {
             "U64" => BuiltInType::U64,
             "F32" => BuiltInType::F32,
             "String" => BuiltInType::String,
@@ -182,32 +204,32 @@ impl Interpreter {
 
             // TODO: Better error reporting here
             let f = INTRINSIC_FUNCTIONS
-                .iter().find(|(ppath, _)| ppath == &mpath.as_string(interner))
+                .iter().find(|(ppath, _)| ppath == &mpath.as_string())
                 .unwrap().1;
 
             self.builtin_methods.get_mut(&t).unwrap().insert(*name.data(), f);
         }
     }
 
-    fn collect_external_name(&mut self, external: &ExternalDeclaration, interner: &mut Interner) {
+    fn collect_external_name(&mut self, external: &ExternalDeclaration) {
         let ExternalDeclaration { path, .. } = external;
 
         // TODO: Better error reporting here
         // TODO: External functions via dynamic loading?
         let f = EXTERNAL_FUNCTIONS
-            .iter().find(|(ppath, _)| ppath == &path.as_string(interner))
+            .iter().find(|(ppath, _)| ppath == &path.as_string())
             .unwrap().1;
 
         let function = Value::ExternalFunction(f);
         self.names.insert(path.clone(), function);
     }
 
-    fn matc(&mut self, matc: &MatchExpression, interner: &mut Interner) -> ControlFlow {
+    fn matc(&mut self, matc: &MatchExpression) -> ControlFlow {
         let MatchExpression { expressions, branches } = matc;
 
         let mut values = vec![];
         for expression in expressions {
-            values.push(self.expression(expression, interner)?)
+            values.push(self.expression(expression)?)
         }
 
         for branch in branches {
@@ -217,7 +239,7 @@ impl Interpreter {
                     for (value, pattern) in values.iter().zip(branch.data().patterns()) {
                         self.value_pattern_match(&value, pattern);
                     }
-                    return_value = self.expression(branch.data().expression(), interner);
+                    return_value = self.expression(branch.data().expression());
                 });
                 return return_value;
             }
@@ -269,28 +291,28 @@ impl Interpreter {
         }
     }
 
-    fn retrn(&mut self, retrn: &ReturnExpression, interner: &mut Interner) -> ControlFlow {
+    fn retrn(&mut self, retrn: &ReturnExpression) -> ControlFlow {
         let ReturnExpression { expression } = retrn;
 
-        let value = self.expression(expression, interner)?;
+        let value = self.expression(expression)?;
         Err(value)
     }
 
-    pub fn expression(&mut self, expression: &Located<Expression>, interner: &mut Interner) -> ControlFlow {
+    pub fn expression(&mut self, expression: &Located<Expression>) -> ControlFlow {
         match expression.data() {
             Expression::U64(u64) => Ok(Value::U64(*u64)),
             Expression::F32(f32) => Ok(Value::F32(*f32)),
             Expression::String(string_idx) => Ok(Value::String(*string_idx)),
             Expression::Path(path) => self.path(path),
-            Expression::Array(array) => self.array(array, interner),
-            Expression::Application(application) => self.application(application, interner),
-            Expression::Projection(projection) => self.projection(projection, interner),
-            Expression::Let(lett) => self.lett(lett, interner),
-            Expression::Sequence(sequence) => self.sequence(sequence, interner),
+            Expression::Array(array) => self.array(array),
+            Expression::Application(application) => self.application(application),
+            Expression::Projection(projection) => self.projection(projection),
+            Expression::Let(lett) => self.lett(lett),
+            Expression::Sequence(sequence) => self.sequence(sequence),
             Expression::Lambda(lambda) => self.lambda(lambda),
-            Expression::Match(matc) => self.matc(matc, interner),
-            Expression::Return(retrn) => self.retrn(retrn, interner),
-            Expression::Assignment(assignment) => self.assignment(assignment, interner)
+            Expression::Match(matc) => self.matc(matc),
+            Expression::Return(retrn) => self.retrn(retrn),
+            Expression::Assignment(assignment) => self.assignment(assignment)
         }
     }
 
@@ -307,22 +329,22 @@ impl Interpreter {
         }
     }
 
-    fn array(&mut self, array: &ArrayExpression, interner: &mut Interner) -> ControlFlow {
+    fn array(&mut self, array: &ArrayExpression) -> ControlFlow {
         let ArrayExpression { expressions } = array;
 
         let mut values = vec![];
         for expression in expressions {
-            values.push(self.expression(expression, interner)?);
+            values.push(self.expression(expression)?);
         }
 
         Ok(Value::Array(Rc::new(RefCell::new(values))))
     }
 
     // TODO: Abstract application on Value and use it here
-    fn application(&mut self, application: &ApplicationExpression, interner: &mut Interner) -> ControlFlow {
+    fn application(&mut self, application: &ApplicationExpression) -> ControlFlow {
         let ApplicationExpression { function, arguments } = application;
 
-        match self.expression(function, interner)? {
+        match self.expression(function)? {
             Value::Function(function) => {
                 let FunctionInstance { body } = function.as_ref();
 
@@ -330,12 +352,12 @@ impl Interpreter {
                 scoped!(self, {
                     let mut argument_values = vec![];
                     for argument in arguments {
-                        let argument = self.expression(argument, interner)?;
+                        let argument = self.expression(argument)?;
                         argument_values.push(argument);
                     }
                     self.locals.extend(argument_values);
 
-                    return_value = self.expression(body, interner);
+                    return_value = self.expression(body);
                 });
 
                 match return_value {
@@ -350,12 +372,12 @@ impl Interpreter {
                 scoped!(self, {
                     let mut argument_values = vec![];
                     for argument in arguments {
-                        argument_values.push(self.expression(argument, interner)?);
+                        argument_values.push(self.expression(argument)?);
                     }
                     self.locals.push(instance.clone());
                     self.locals.extend(argument_values);
 
-                    return_value = self.expression(body, interner);
+                    return_value = self.expression(body);
                 });
 
                 match return_value {
@@ -365,7 +387,7 @@ impl Interpreter {
             Value::Constructor(constructor) => {
                 let mut values = vec![];
                 for argument in arguments {
-                    values.push(self.expression(argument, interner)?);
+                    values.push(self.expression(argument)?);
                 }
 
                 let instance = InstanceInstance { constructor, values };
@@ -378,13 +400,13 @@ impl Interpreter {
                 scoped!(self, {
                     let mut argument_values = vec![];
                     for argument in arguments {
-                        argument_values.push(self.expression(argument, interner)?);
+                        argument_values.push(self.expression(argument)?);
                     }
 
                     self.locals.extend(capture.clone());
                     self.locals.extend(argument_values);
 
-                    return_value = self.expression(body, interner);
+                    return_value = self.expression(body);
                 });
 
                 match return_value {
@@ -392,7 +414,7 @@ impl Interpreter {
                 }
             }
             Value::InterfaceFunction(name) => {
-                let instance = self.expression(&arguments[0], interner)?.clone();
+                let instance = self.expression(&arguments[0])?.clone();
                 // TODO: Abstract projection on Value and use it here
                 let method = match &instance {
                     Value::Instance(value) => {
@@ -411,40 +433,40 @@ impl Interpreter {
 
                         let mut argument_values = vec![Value::U64(*u64)];
                         for argument in arguments {
-                            argument_values.push(self.expression(argument, interner)?);
+                            argument_values.push(self.expression(argument)?);
                         }
 
-                        return Ok(f(argument_values, interner));
+                        return Ok(f(argument_values));
                     },
                     Value::F32(f32) => {
                         let f = self.builtin_methods[&BuiltInType::F32][&name];
 
                         let mut argument_values = vec![Value::F32(*f32)];
                         for argument in arguments {
-                            argument_values.push(self.expression(argument, interner)?);
+                            argument_values.push(self.expression(argument)?);
                         }
 
-                        return Ok(f(argument_values, interner));
+                        return Ok(f(argument_values));
                     },
                     Value::String(string_idx) => {
                         let f = self.builtin_methods[&BuiltInType::String][&name];
 
                         let mut argument_values = vec![Value::String(*string_idx)];
                         for argument in arguments {
-                            argument_values.push(self.expression(argument, interner)?);
+                            argument_values.push(self.expression(argument)?);
                         }
 
-                        return Ok(f(argument_values, interner));
+                        return Ok(f(argument_values));
                     },
                     Value::Array(array) => {
                         let f = self.builtin_methods[&BuiltInType::Array][&name];
 
                         let mut argument_values = vec![Value::Array(array.clone())];
                         for argument in arguments {
-                            argument_values.push(self.expression(argument, interner)?);
+                            argument_values.push(self.expression(argument)?);
                         }
 
-                        return Ok(f(argument_values, interner));
+                        return Ok(f(argument_values));
                     },
                     _ => { unreachable!(); }
                 };
@@ -455,12 +477,12 @@ impl Interpreter {
                 scoped!(self, {
                     let mut argument_values = vec![];
                     for argument in arguments {
-                        argument_values.push(self.expression(argument, interner)?);
+                        argument_values.push(self.expression(argument)?);
                     }
                     self.locals.push(instance.clone());
                     self.locals.extend(argument_values);
 
-                    return_value = self.expression(body, interner);
+                    return_value = self.expression(body);
                 });
 
                 match return_value {
@@ -472,7 +494,7 @@ impl Interpreter {
 
                 let mut values = HashMap::new();
                 for (argument, field_name) in arguments.iter().zip(fields.iter()) {
-                    values.insert(*field_name, self.expression(argument, interner)?);
+                    values.insert(*field_name, self.expression(argument)?);
                 }
 
                 let instance = StructInstanceInstance {
@@ -484,28 +506,28 @@ impl Interpreter {
             Value::BuiltinMethod(v, f) => {
                 let mut argument_values = vec![*v];
                 for argument in arguments {
-                    argument_values.push(self.expression(argument, interner)?);
+                    argument_values.push(self.expression(argument)?);
                 }
 
-                Ok(f(argument_values, interner))
+                Ok(f(argument_values))
             }
             Value::ExternalFunction(f) => {
                 let mut argument_values = vec![];
                 for argument in arguments {
-                    argument_values.push(self.expression(argument, interner)?);
+                    argument_values.push(self.expression(argument)?);
                 }
 
-                Ok(f(argument_values, interner))
+                Ok(f(argument_values))
             }
 
             _ => unreachable!()
         }
     }
 
-    fn projection(&mut self, projection: &ProjectionExpression, interner: &mut Interner) -> ControlFlow {
+    fn projection(&mut self, projection: &ProjectionExpression) -> ControlFlow {
         let ProjectionExpression { expression, name } = projection;
 
-        let instance = self.expression(expression, interner)?;
+        let instance = self.expression(expression)?;
 
         match &instance {
             Value::Instance(instanceinstance) => {
@@ -547,31 +569,31 @@ impl Interpreter {
         }
     }
 
-    fn lett(&mut self, lett: &LetExpression, interner: &mut Interner) -> ControlFlow {
+    fn lett(&mut self, lett: &LetExpression) -> ControlFlow {
         let LetExpression { value_expression, body_expression, .. } = lett;
 
-        let value = self.expression(value_expression, interner)?;
+        let value = self.expression(value_expression)?;
 
         let return_value;
         scoped!(self, {
             self.locals.push(value);
-            return_value = self.expression(body_expression, interner)?;
+            return_value = self.expression(body_expression)?;
         });
 
         Ok(return_value)
     }
 
-    fn sequence(&mut self, sequence: &SequenceExpression, interner: &mut Interner) -> ControlFlow {
+    fn sequence(&mut self, sequence: &SequenceExpression) -> ControlFlow {
         let SequenceExpression { expressions } = sequence;
 
         match &expressions[..] {
             [] => Ok(Value::Unit),
             [init@.., last] => {
                 for expression in init {
-                    self.expression(expression, interner)?;
+                    self.expression(expression)?;
                 }
 
-                self.expression(last, interner)
+                self.expression(last)
             }
         }
     }
@@ -586,10 +608,10 @@ impl Interpreter {
         Ok(Value::Lambda(Rc::new(lambda)))
     }
 
-    fn assignment(&mut self, assignment: &AssignmentExpression, interner: &mut Interner) -> ControlFlow {
+    fn assignment(&mut self, assignment: &AssignmentExpression) -> ControlFlow {
         let AssignmentExpression { assignable, expression } = assignment;
 
-        let value = self.expression(expression, interner)?;
+        let value = self.expression(expression)?;
         match assignable.data() {
             Expression::Path(path) => {
                 let PathExpression { bound, .. } = path;
@@ -605,7 +627,7 @@ impl Interpreter {
             },
             Expression::Projection(projection) => {
                 let ProjectionExpression { expression, name } = projection;
-                let Value::StructInstance(instance) = self.expression(expression, interner)? else {
+                let Value::StructInstance(instance) = self.expression(expression)? else {
                     unreachable!()
                 };
 

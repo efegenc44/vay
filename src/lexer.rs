@@ -4,10 +4,10 @@ use core::{
 };
 
 use crate::{
-    interner::Interner,
     location::{Located, Position, SourceLocation},
     reportable::{Reportable, ReportableResult},
-    token::Token,
+    interner::interner_mut,
+    token::Token
 };
 
 const PUNCTUATION_CHARS: &[char] = &[
@@ -26,35 +26,25 @@ macro_rules! locate {
     }};
 }
 
-pub struct Lexer<'source_content, 'interner> {
+pub struct Lexer<'source_content> {
     chars: Peekable<Chars<'source_content>>,
     index: usize,
     position: Position,
-    interner: &'interner mut Interner,
     source: String,
 }
 
-impl<'source, 'interner> Lexer<'source, 'interner> {
-    pub fn new(
-        source: String,
-        source_content: &'source str,
-        interner: &'interner mut Interner,
-    ) -> Self {
+impl<'source> Lexer<'source> {
+    pub fn new(source: String, source_content: &'source str) -> Self {
         Self {
             chars: source_content.chars().peekable(),
             index: 0,
             position: Position::new(1, 1),
-            interner,
             source,
         }
     }
 
     pub fn source(&self) -> &str {
         &self.source
-    }
-
-    pub fn interner(&mut self) -> &mut Interner {
-        self.interner
     }
 
     fn peek_ch(&mut self) -> Option<&char> {
@@ -112,7 +102,7 @@ impl<'source, 'interner> Lexer<'source, 'interner> {
             "builtin" => Token::BuiltInKeyword,
             "external" => Token::ExternalKeyword,
             "" => unreachable!(),
-            _ => Token::Identifier(self.interner.intern(lexeme)),
+            _ => Token::Identifier(interner_mut().intern(lexeme)),
         };
 
         Located::new(token, location)
@@ -145,7 +135,7 @@ impl<'source, 'interner> Lexer<'source, 'interner> {
         end.advance();
         let location = SourceLocation::new(location.start(), end);
 
-        let string = Token::String(self.interner.intern(string));
+        let string = Token::String(interner_mut().intern(string));
         Ok(Located::new(string, location))
     }
 
@@ -281,7 +271,7 @@ impl<'source, 'interner> Lexer<'source, 'interner> {
     }
 }
 
-impl Iterator for Lexer<'_, '_> {
+impl Iterator for Lexer<'_> {
     type Item = ReportableResult<Located<Token>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -328,7 +318,7 @@ impl Reportable for (Located<LexError>, String) {
         &self.1
     }
 
-    fn description(&self, _interner: &Interner) -> String {
+    fn description(&self) -> String {
         match self.0.data() {
             LexError::UnknownStartOfAToken(ch) => {
                 format!("Encountered an unknown start of a token: `{ch}`.")

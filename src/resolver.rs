@@ -1,7 +1,25 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    bound::{Bound, Path}, declaration::{BuiltInDeclaration, Constraint, Declaration, ExternalDeclaration, FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, ModuleDeclaration, StructDeclaration, TypeVar, VariantDeclaration}, expression::{ApplicationExpression, ArrayExpression, ArrayPattern, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern}, interner::{InternIdx, Interner}, intrinsics::INTRINSICS_MODULE_NAME, location::{Located, SourceLocation}, reportable::{Reportable, ReportableResult}, runner::{self}
+    bound::{Bound, Path},
+    declaration::{
+        BuiltInDeclaration, Constraint, Declaration, ExternalDeclaration,
+        FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration,
+        InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module,
+        ModuleDeclaration, StructDeclaration, TypeVar, VariantDeclaration
+    },
+    expression::{
+        ApplicationExpression, ArrayExpression, ArrayPattern, AssignmentExpression,
+        Expression, FunctionTypeExpression, LambdaExpression, LetExpression,
+        MatchExpression, PathExpression, PathTypeExpression, Pattern,
+        ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression,
+        TypeExpression, VariantCasePattern
+    },
+    interner::{interner, InternIdx},
+    intrinsics::INTRINSICS_MODULE_NAME,
+    location::{Located, SourceLocation},
+    reportable::{Reportable, ReportableResult},
+    runner
 };
 
 macro_rules! scoped {
@@ -79,7 +97,7 @@ impl Resolver {
         &mut self.current_module_path
     }
 
-    pub fn resolve(&mut self, mut modules: Vec<Module>, interner: &Interner) -> ReportableResult<Vec<Module>> {
+    pub fn resolve(&mut self, mut modules: Vec<Module>) -> ReportableResult<Vec<Module>> {
         for module in &mut modules {
             self.current_source = module.source().to_string();
             self.collect_module(module)?;
@@ -93,7 +111,7 @@ impl Resolver {
         for module in &mut modules {
             self.current_source = module.source().to_string();
             self.current_module_path = module.path().clone();
-            self.collect_names(module, interner)?;
+            self.collect_names(module)?;
         }
 
         for module in &mut modules {
@@ -176,7 +194,7 @@ impl Resolver {
         f(import_name, Path::empty(), module_information);
     }
 
-    fn collect_names(&mut self, module: &mut Module, interner: &Interner) -> ReportableResult<()> {
+    fn collect_names(&mut self, module: &mut Module) -> ReportableResult<()> {
         for declaration in module.declarations_mut() {
             match declaration {
                 Declaration::Module(..) => {}
@@ -185,7 +203,7 @@ impl Resolver {
                 Declaration::Variant(variant) => self.collect_variant_name(variant)?,
                 Declaration::Interface(interface) => self.collect_interface_name(interface)?,
                 Declaration::Struct(strct) => self.collect_struct_name(strct)?,
-                Declaration::BuiltIn(builtin) => self.collect_builtin_name(builtin, interner)?,
+                Declaration::BuiltIn(builtin) => self.collect_builtin_name(builtin)?,
                 Declaration::External(external) => self.collect_external_name(external)?,
             }
         }
@@ -289,10 +307,10 @@ impl Resolver {
         Ok(())
     }
 
-    fn collect_builtin_name(&mut self, builtin: &mut BuiltInDeclaration, interner: &Interner) -> ReportableResult<()> {
+    fn collect_builtin_name(&mut self, builtin: &mut BuiltInDeclaration) -> ReportableResult<()> {
         let BuiltInDeclaration { name, path, .. } = builtin;
 
-        if self.current_path().as_string(interner) != INTRINSICS_MODULE_NAME {
+        if self.current_path().as_string() != INTRINSICS_MODULE_NAME {
             panic!("Not allowed in builtin declarations outside of Intrinsics Module.")
         }
 
@@ -905,29 +923,29 @@ impl Reportable for (Located<ResolveError>, String) {
         &self.1
     }
 
-    fn description(&self, interner: &Interner) -> String {
+    fn description(&self) -> String {
         match self.0.data() {
             ResolveError::ModuleIsNotDeclared => "No module declarations found.".into(),
             ResolveError::ImportPathDoesNotExist(path) => {
-                format!("Imported path `{}` does not exist.", path.as_string(interner))
+                format!("Imported path `{}` does not exist.", path.as_string())
             }
             ResolveError::ModuleDoesNotExist(path) => {
-                format!("Module `{}` does not exist.", path.as_string(interner))
+                format!("Module `{}` does not exist.", path.as_string())
             }
             ResolveError::CollidingModulePaths(path) => {
-                format!("Already imported a module `{}`.", path.as_string(interner))
+                format!("Already imported a module `{}`.", path.as_string())
             }
             ResolveError::DuplicateModuleDeclaration => "Duplicate declaration of module.".into(),
             ResolveError::DuplicateFunctionDeclaration(path) => {
                 format!(
                     "Duplicate declaration of function `{}`.",
-                    path.as_string(interner)
+                    path.as_string()
                 )
             }
             ResolveError::DuplicateTypeDeclaration(path) => {
                 format!(
                     "Duplicate declaration of type `{}`.",
-                    path.as_string(interner)
+                    path.as_string()
                 )
             }
             ResolveError::DuplicateConstructorDeclaration {
@@ -936,18 +954,18 @@ impl Reportable for (Located<ResolveError>, String) {
             } => {
                 format!(
                     "Duplicate declaration of constructor `{}` in variant type `{}`.",
-                    interner.get(constructor),
-                    variant.as_string(interner)
+                    interner().get(constructor),
+                    variant.as_string()
                 )
             }
             ResolveError::UnboundValuePath(path) => {
-                format!("`{}` is not bound to a value.", path.as_string(interner))
+                format!("`{}` is not bound to a value.", path.as_string())
             }
             ResolveError::UnboundTypePath(path) => {
-                format!("`{}` is not bound to a type.", path.as_string(interner))
+                format!("`{}` is not bound to a type.", path.as_string())
             }
             ResolveError::UnboundInterfacePath(path) => {
-                format!("`{}` is not bound to an interface.", path.as_string(interner))
+                format!("`{}` is not bound to an interface.", path.as_string())
             }
         }
     }

@@ -1,4 +1,4 @@
-use crate::interner::{InternIdx, Interner};
+use crate::interner::{interner, InternIdx};
 
 #[derive(Clone)]
 pub enum Bound {
@@ -35,10 +35,12 @@ impl Path {
         self.0.pop()
     }
 
-    pub fn as_string(&self, interner: &Interner) -> String {
+    pub fn as_string(&self) -> String {
+        let interner = interner();
+
         self.0
             .iter()
-            .map(|intern_idx| interner.get(intern_idx))
+            .map(|intern_idx| interner.get(intern_idx).to_string())
             .collect::<Vec<_>>()
             .join("::")
     }

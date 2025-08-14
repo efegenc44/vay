@@ -1,9 +1,27 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    bound::{Bound, Path}, declaration::{self, BuiltInDeclaration, Declaration, ExternalDeclaration, FunctionDeclaration, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, StructDeclaration, TypedIdentifier, VariantDeclaration}, expression::{
-        ApplicationExpression, ArrayExpression, ArrayPattern, AssignmentExpression, Expression, FunctionTypeExpression, LambdaExpression, LetExpression, MatchExpression, PathExpression, PathTypeExpression, Pattern, ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression, TypeExpression, VariantCasePattern
-    }, interner::{InternIdx, Interner}, location::{Located, SourceLocation}, reportable::{Reportable, ReportableResult}, runner, typ::{BuiltInType, FunctionType, Interface, MethodType, MonoType, Type, TypeVar}
+    bound::{Bound, Path},
+    declaration::{
+        self, BuiltInDeclaration, Declaration, ExternalDeclaration,
+        FunctionDeclaration, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration,
+        MethodSignature, Module, StructDeclaration, TypedIdentifier,
+        VariantDeclaration
+    }, expression::{
+        ApplicationExpression, ArrayExpression, ArrayPattern, AssignmentExpression,
+        Expression, FunctionTypeExpression, LambdaExpression, LetExpression,
+        MatchExpression, PathExpression, PathTypeExpression, Pattern,
+        ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression,
+        TypeExpression, VariantCasePattern
+    },
+    interner::{interner, InternIdx},
+    location::{Located, SourceLocation},
+    reportable::{Reportable, ReportableResult},
+    runner,
+    typ::{
+        BuiltInType, FunctionType, Interface, MethodType,
+        MonoType, Type, TypeVar
+    }
 };
 
 macro_rules! scoped {
@@ -337,10 +355,10 @@ impl Checker {
         Ok(Type::Mono(m))
     }
 
-    pub fn type_check(&mut self, modules: &[Module], interner: &Interner) -> ReportableResult<()> {
+    pub fn type_check(&mut self, modules: &[Module]) -> ReportableResult<()> {
         for module in modules {
             self.current_source = module.source().to_string();
-            self.collect_types(module, interner)?;
+            self.collect_types(module)?;
         }
 
         for module in modules {
@@ -364,13 +382,13 @@ impl Checker {
         Ok(())
     }
 
-    fn collect_types(&mut self, module: &Module, interner: &Interner) -> ReportableResult<()> {
+    fn collect_types(&mut self, module: &Module) -> ReportableResult<()> {
         for declaration in module.declarations() {
             match declaration {
                 Declaration::Interface(interface) => self.collect_interface_type(interface)?,
                 Declaration::Variant(variant) => self.collect_variant_type(variant)?,
                 Declaration::Struct(strct) => self.collect_struct_type(strct)?,
-                Declaration::BuiltIn(builtin) => self.collect_builtin_type(builtin, interner)?,
+                Declaration::BuiltIn(builtin) => self.collect_builtin_type(builtin)?,
                 _ => ()
             }
         }
@@ -461,10 +479,10 @@ impl Checker {
         Ok(())
     }
 
-    fn collect_builtin_type(&mut self, builtin: &BuiltInDeclaration, interner: &Interner) -> ReportableResult<()> {
+    fn collect_builtin_type(&mut self, builtin: &BuiltInDeclaration) -> ReportableResult<()> {
         let BuiltInDeclaration { type_vars, path, name, .. } = builtin;
 
-        let builtin_type = match interner.get(name.data()) {
+        let builtin_type = match interner().get(name.data()) {
             "U64" => BuiltInType::U64,
             "F32" => BuiltInType::F32,
             "String" => BuiltInType::String,
@@ -1482,7 +1500,7 @@ impl Reportable for (Located<TypeCheckError>, String) {
         &self.1
     }
 
-    fn description(&self, interner: &Interner) -> String {
+    fn description(&self) -> String {
         match self.0.data() {
             TypeCheckError::MismatchedTypes {
                 encountered,
@@ -1490,8 +1508,8 @@ impl Reportable for (Located<TypeCheckError>, String) {
             } => {
                 format!(
                     "Expected type `{}` but encountered type `{}`.",
-                    expected.display(interner),
-                    encountered.display(interner)
+                    expected.display(),
+                    encountered.display()
                 )
             }
             TypeCheckError::DuplicateMethodDeclaration {
@@ -1500,8 +1518,8 @@ impl Reportable for (Located<TypeCheckError>, String) {
             } => {
                 format!(
                     "Duplicate declaration of method `{}` in variant type `{}`.",
-                    interner.get(method_name),
-                    variant_path.as_string(interner)
+                    interner().get(method_name),
+                    variant_path.as_string()
                 )
             }
             TypeCheckError::CaseNotExist {
@@ -1510,8 +1528,8 @@ impl Reportable for (Located<TypeCheckError>, String) {
             } => {
                 format!(
                     "Variant `{}` does not have a case named `{}`.",
-                    type_path.as_string(interner),
-                    interner.get(case_name),
+                    type_path.as_string(),
+                    interner().get(case_name),
                 )
             }
             TypeCheckError::WrongCaseArity {
@@ -1522,17 +1540,17 @@ impl Reportable for (Located<TypeCheckError>, String) {
             } => {
                 format!(
                     "`{}` of variant `{}` takes `{}` values but supplied `{}` values.",
-                    interner.get(case_name),
-                    type_path.as_string(interner),
+                    interner().get(case_name),
+                    type_path.as_string(),
                     expected,
                     encountered
                 )
             }
             TypeCheckError::NotAPatternOfType { expected } => {
-                format!("Pattern is not of type `{}`.", expected.display(interner),)
+                format!("Pattern is not of type `{}`.", expected.display(),)
             }
             TypeCheckError::ExpectedAFunction { encountered } => {
-                format!("A function is expected but encountered `{}`.", encountered.display(interner),)
+                format!("A function is expected but encountered `{}`.", encountered.display(),)
             }
             TypeCheckError::ArityMismatch { encountered, expected } => {
                 format!("Function is of arity {} but supplied {} arguments.",
@@ -1541,14 +1559,14 @@ impl Reportable for (Located<TypeCheckError>, String) {
             }
             TypeCheckError::NotProjectable { ty, name } => {
                 format!("`{}` has no method or field named `{}`.",
-                    ty.display(interner), interner.get(name)
+                    ty.display(), interner().get(name)
                 )
             }
             TypeCheckError::ExpectedMonoType { encountered } => {
-                format!("Type is not mono : `{}`.", encountered.display(interner))
+                format!("Type is not mono : `{}`.", encountered.display())
             }
             TypeCheckError::NotAPolyType { encountered } => {
-                format!("Type is not poly : `{}`.", encountered.display(interner))
+                format!("Type is not poly : `{}`.", encountered.display())
             }
             TypeCheckError::TypeArityMismatch { encountered, expected } => {
                 format!("Type is of arity {} but supplied {} arguments.",
@@ -1557,7 +1575,7 @@ impl Reportable for (Located<TypeCheckError>, String) {
             }
             TypeCheckError::DontImplementInterfaces { t, interfaces } => {
                 format!("Type `{}` does not implement interfaces: {}.",
-                    t.display(interner), interfaces.iter().map(|path| path.as_string(interner)).collect::<Vec<_>>().join(" ")
+                    t.display(), interfaces.iter().map(|path| path.as_string()).collect::<Vec<_>>().join(" ")
                 )
             }
             TypeCheckError::NotAssignable => {
