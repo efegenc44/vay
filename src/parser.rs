@@ -14,7 +14,8 @@ use crate::{
         Expression, FunctionTypeExpression, LambdaExpression, LetExpression,
         MatchBranch, MatchExpression, PathExpression, PathTypeExpression,
         Pattern, ProjectionExpression, ReturnExpression, SequenceExpression,
-        TypeApplicationExpression, TypeExpression, VariantCasePattern, WhileExpression
+        TypeApplicationExpression, TypeExpression, VariantCasePattern, WhileExpression,
+        BlockExpression
     },
     interner::{interner_mut, InternIdx},
     lexer::Lexer,
@@ -31,6 +32,7 @@ const PRIMARY_TOKEN_STARTS: &[Token] = &[
     Token::LetKeyword,
     Token::LeftSquare,
     Token::LeftParenthesis,
+    Token::LeftCurly,
     Token::FunKeyword,
     Token::MatchKeyword,
     Token::ReturnKeyword,
@@ -395,6 +397,7 @@ impl<'source> Parser<'source> {
             Token::LeftSquare => self.array(),
             Token::LetKeyword => self.lett(),
             Token::LeftParenthesis => self.sequence(),
+            Token::LeftCurly => self.block(),
             Token::FunKeyword => self.lambda(),
             Token::MatchKeyword => self.matc(),
             Token::ReturnKeyword => self.retrn(),
@@ -465,6 +468,19 @@ impl<'source> Parser<'source> {
 
         let sequence = SequenceExpression { expressions };
         let expression = Expression::Sequence(sequence);
+        Ok(Located::new(expression, start.extend(&end)))
+    }
+
+    fn block(&mut self) -> ReportableResult<Located<Expression>> {
+        let start = self.expect(Token::LeftCurly)?.location();
+        let (expressions, end) = self.until(
+            Token::RightCurly,
+            Self::expression,
+            None
+        )?;
+
+        let block = BlockExpression { expressions };
+        let expression = Expression::Block(block);
         Ok(Located::new(expression, start.extend(&end)))
     }
 

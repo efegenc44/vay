@@ -11,6 +11,7 @@ pub enum Expression {
     Projection(ProjectionExpression),
     Let(LetExpression),
     Sequence(SequenceExpression),
+    Block(BlockExpression),
     Lambda(LambdaExpression),
     Match(MatchExpression),
     Return(ReturnExpression),
@@ -52,6 +53,11 @@ pub struct LetExpression {
 
 #[derive(Clone)]
 pub struct SequenceExpression {
+    pub expressions: Vec<Located<Expression>>,
+}
+
+#[derive(Clone)]
+pub struct BlockExpression {
     pub expressions: Vec<Located<Expression>>,
 }
 

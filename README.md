@@ -41,5 +41,5 @@ fun main() : Nat =
 - [X] Primitives
 - [x] Arrays
 - [ ] REPL
-- [ ] More imperative constructs
+- [x] More imperative constructs
 - [x] Polymorphic methods

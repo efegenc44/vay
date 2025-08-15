@@ -12,7 +12,7 @@ use crate::{
         Expression, FunctionTypeExpression, LambdaExpression, LetExpression,
         MatchExpression, PathExpression, PathTypeExpression, Pattern,
         ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression,
-        TypeExpression, VariantCasePattern, WhileExpression
+        TypeExpression, VariantCasePattern, WhileExpression, BlockExpression
     },
     interner::{interner, InternIdx},
     location::{Located, SourceLocation},
@@ -1067,6 +1067,7 @@ impl Checker {
             Expression::Projection(projection) => self.projection(projection).map(|p| p.0),
             Expression::Let(lett) => self.lett(lett),
             Expression::Sequence(sequence) => self.sequence(sequence),
+            Expression::Block(block) => self.block(block),
             Expression::Lambda(lambda) => self.lambda(lambda),
             Expression::Match(matc) => self.matc(matc),
             Expression::Return(retrn) => self.retrn(retrn),
@@ -1310,6 +1311,16 @@ impl Checker {
                 self.infer(last)
             }
         }
+    }
+
+    fn block(&mut self, block: &BlockExpression) -> ReportableResult<MonoType> {
+        let BlockExpression { expressions } = block;
+
+        expressions
+            .iter().map(|expression| self.infer(expression))
+            .collect::<ReportableResult<Vec<_>>>()?;
+
+        Ok(MonoType::Unit)
     }
 
     fn lambda(&mut self, lambda: &LambdaExpression) -> ReportableResult<MonoType> {

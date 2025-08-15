@@ -1,12 +1,13 @@
 module Main
 
+import Core
 import Intrinsics (Array, U64)
 
-fun main() : Array(U64) = (
+fun main() = {
     match [1, 2, 3, 4, 5, 6] {
         let [1, 2, ..rest, 6] : (
             rest.append(9)
-            rest
+            Core::println(rest)
         )
     }
-)
+}

@@ -13,7 +13,7 @@ use crate::{
         Expression, FunctionTypeExpression, LambdaExpression, LetExpression,
         MatchExpression, PathExpression, PathTypeExpression, Pattern,
         ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression,
-        TypeExpression, VariantCasePattern, WhileExpression
+        TypeExpression, VariantCasePattern, WhileExpression, BlockExpression
     },
     interner::{interner, InternIdx},
     intrinsics::INTRINSICS_MODULE_NAME,
@@ -405,6 +405,7 @@ impl Resolver {
             Expression::Projection(projection) => self.projection(projection),
             Expression::Let(lett) => self.lett(lett),
             Expression::Sequence(sequence) => self.sequence(sequence),
+            Expression::Block(block) => self.block(block),
             Expression::Lambda(lambda) => self.lambda(lambda),
             Expression::Match(matc) => self.matc(matc),
             Expression::Return(retrn) => self.retrn(retrn),
@@ -482,6 +483,15 @@ impl Resolver {
 
     fn sequence(&mut self, sequence: &mut SequenceExpression) -> ReportableResult<()> {
         let SequenceExpression { expressions } = sequence;
+
+        expressions
+            .iter_mut().map(|expression| self.expression(expression))
+            .collect::<ReportableResult<Vec<_>>>()
+            .map(|_| ())
+    }
+
+    fn block(&mut self, block: &mut BlockExpression) -> ReportableResult<()> {
+        let BlockExpression { expressions } = block;
 
         expressions
             .iter_mut().map(|expression| self.expression(expression))

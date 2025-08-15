@@ -3,13 +3,15 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use crate::{
     bound::{Bound, Path},
     declaration::{
-        BuiltInDeclaration, Declaration, ExternalDeclaration, FunctionDeclaration, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, StructDeclaration, VariantDeclaration
+        BuiltInDeclaration, Declaration, ExternalDeclaration, FunctionDeclaration,
+        InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration,
+        MethodSignature, Module, StructDeclaration, VariantDeclaration
     },
     expression::{
         ApplicationExpression, ArrayExpression, ArrayPattern, AssignmentExpression,
         Expression, LambdaExpression, LetExpression, MatchExpression,
         PathExpression, Pattern, ProjectionExpression, ReturnExpression,
-        SequenceExpression, VariantCasePattern, WhileExpression
+        SequenceExpression, VariantCasePattern, WhileExpression, BlockExpression
     },
     interner::{interner, InternIdx},
     intrinsics::{IntrinsicFunction, EXTERNAL_FUNCTIONS, INTRINSIC_FUNCTIONS},
@@ -313,6 +315,7 @@ impl Interpreter {
             Expression::Projection(projection) => self.projection(projection),
             Expression::Let(lett) => self.lett(lett),
             Expression::Sequence(sequence) => self.sequence(sequence),
+            Expression::Block(block) => self.block(block),
             Expression::Lambda(lambda) => self.lambda(lambda),
             Expression::Match(matc) => self.matc(matc),
             Expression::Return(retrn) => self.retrn(retrn),
@@ -607,6 +610,16 @@ impl Interpreter {
                 self.expression(last)
             }
         }
+    }
+
+    fn block(&mut self, block: &BlockExpression) -> ControlFlow {
+        let BlockExpression { expressions } = block;
+
+        for expression in expressions {
+            self.expression(expression)?;
+        }
+
+        Ok(Value::Unit)
     }
 
     fn lambda(&mut self, lambda: &LambdaExpression) -> ControlFlow {
