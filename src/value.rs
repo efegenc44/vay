@@ -89,8 +89,10 @@ impl Value {
         let case = instance.constructor.case;
         if interner().get(&case) == "True" {
             true
-        } else {
+        } else if interner().get(&case) == "False" {
             false
+        } else {
+            unreachable!()
         }
     }
 

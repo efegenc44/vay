@@ -641,6 +641,7 @@ impl<'source> Parser<'source> {
                     rest = Some(*self.expect_identifier()?.data());
                 }
             } else {
+                #[allow(clippy::collapsible_else_if)]
                 if is_after {
                     after.push(self.pattern()?);
                 } else {

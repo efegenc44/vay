@@ -243,7 +243,7 @@ impl Interpreter {
                 let return_value;
                 scoped!(self, {
                     for (value, pattern) in values.iter().zip(branch.data().patterns()) {
-                        self.value_pattern_match(&value, pattern);
+                        self.value_pattern_match(value, pattern);
                     }
                     return_value = self.expression(branch.data().expression());
                 });

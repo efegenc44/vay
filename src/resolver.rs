@@ -399,7 +399,7 @@ impl Resolver {
             return Some(Bound::Absolute(path))
         }
 
-        for (path, _) in self.current_import_ins() {
+        for path in self.current_import_ins().keys() {
             let path = path.append(*intern_idx);
             if self.value_names.contains(&path) || self.type_names.contains(&path) {
                 return Some(Bound::Absolute(path));
@@ -421,7 +421,7 @@ impl Resolver {
             return Some(Bound::Absolute(path))
         }
 
-        for (path, _) in self.current_import_ins() {
+        for path in self.current_import_ins().keys() {
             let path = path.append(*intern_idx);
             if self.type_names.contains(&path) {
                 return Some(Bound::Absolute(path));
@@ -436,7 +436,7 @@ impl Resolver {
             path
         } else {
             let mut interface_path = None;
-            for (path, _) in self.current_import_ins() {
+            for path in self.current_import_ins().keys() {
                 let path = path.append(parts[0]);
                 if self.type_names.contains(&path) {
                     interface_path = Some(path);

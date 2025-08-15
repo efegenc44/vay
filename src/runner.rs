@@ -138,15 +138,15 @@ impl Runner {
                 continue;
             }
 
-            if input.starts_with(":") {
+            if let Some(input) = input.strip_prefix(":") {
                 let (command, input) = if input.contains(" ") {
                     let Some((command, input)) = input.split_once(" ") else {
                         panic!("No command provided.");
                     };
 
-                    (&command[1..], input)
+                    (command, input)
                 } else {
-                    (&input[1..], "")
+                    (input, "")
                 };
 
                 let Some(command) = COMMANDS.iter().find(|cmd| cmd.name == command) else {
