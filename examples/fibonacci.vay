@@ -1,7 +1,6 @@
 module Main
 
-import Numbers (Nat (Nat (Succ, Zero)))
-import Core (Addable, Bool)
+import Numbers (Nat (in Nat))
 
 fun main() : Bool =
     let three = Succ(Succ(Succ(Zero))) in

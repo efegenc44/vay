@@ -747,6 +747,13 @@ impl<'source> Parser<'source> {
     }
 
     fn import_name(&mut self) -> ReportableResult<ImportName> {
+        let import_in = if self.peek_is(Token::InKeyword) {
+            self.advance()?;
+            true
+        } else {
+            false
+        };
+
         let name = self.expect_identifier()?;
         let as_name = if self.peek_is(Token::AsKeyword) {
             self.advance()?;
@@ -767,7 +774,7 @@ impl<'source> Parser<'source> {
             None
         };
 
-        Ok(ImportName { name, subnames, as_name })
+        Ok(ImportName { import_in, name, subnames, as_name })
     }
 
     fn function(&mut self) -> ReportableResult<Declaration> {

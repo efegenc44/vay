@@ -1,7 +1,7 @@
 module Main
 
-import Numbers (Nat as MNat (Nat (Succ, Zero)))
-import List (List (Cons, Nil))
+import Numbers (Nat as MNat (in Nat))
+import List (in List)
 
 struct Cell(T) {
     inner : T

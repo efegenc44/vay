@@ -27,6 +27,7 @@ pub struct ImportDeclaration {
 }
 
 pub struct ImportName {
+    pub import_in: bool,
     pub name: Located<InternIdx>,
     pub subnames: Option<Vec<ImportName>>,
     pub as_name: Option<Located<InternIdx>>

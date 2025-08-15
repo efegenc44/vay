@@ -1,8 +1,5 @@
 module Main
 
-import Intrinsics (String)
-import Core (Addable)
-
 struct Vector2(T) {
     x : T
     y : T

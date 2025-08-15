@@ -1,7 +1,6 @@
 module Numbers::Nat
 
-import Numbers (Nat (Nat (Succ, Zero)))
-import Core (Bool (True, False))
+import Numbers (Nat (in Nat))
 
 variant Nat {
     Zero

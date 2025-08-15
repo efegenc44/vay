@@ -19,6 +19,7 @@ use crate::{
     intrinsics::INTRINSICS_MODULE_NAME,
     location::{Located, SourceLocation},
     reportable::{Reportable, ReportableResult},
+    core::CORE_MODULE_NAME,
     runner
 };
 
@@ -34,13 +35,40 @@ macro_rules! scoped {
 
 struct ModuleInformation {
     imports: HashMap<InternIdx, (Path, SourceLocation)>,
+    import_ins: HashMap<Path, SourceLocation>,
     path_location: SourceLocation,
 }
 
 impl ModuleInformation {
     fn with_path_location(path_location: SourceLocation) -> Self {
+        // NOTE : Automatically import Core and Intrinsics for all modules
+        //   locations are dummy but they supposed to be present at this point
+        //   so no error.
+        let instrinsics = interner().intern_idx(INTRINSICS_MODULE_NAME);
+        let intrinsics_path = Path::empty().append(instrinsics);
+
+        let core = interner().intern_idx(CORE_MODULE_NAME);
+        let core_path = Path::empty().append(core);
+
+        let boole = interner().intern_idx("Bool");
+        let boole_path = core_path.append(boole);
+
+        let dummyloc = SourceLocation::dummy();
+
+        let imports = HashMap::from([
+            (instrinsics, (intrinsics_path.clone(), dummyloc)),
+            (core, (core_path.clone(), dummyloc))
+        ]);
+
+        let import_ins = HashMap::from([
+            (intrinsics_path.clone(), dummyloc),
+            (core_path.clone(), dummyloc),
+            (boole_path.clone(), dummyloc)
+        ]);
+
         Self {
-            imports: HashMap::new(),
+            imports,
+            import_ins,
             path_location,
         }
     }
@@ -87,6 +115,10 @@ impl Resolver {
 
     fn current_imports(&self) -> &HashMap<InternIdx, (Path, SourceLocation)> {
         &self.modules[&self.current_module_path].imports
+    }
+
+    fn current_import_ins(&self) -> &HashMap<Path, SourceLocation> {
+        &self.modules[&self.current_module_path].import_ins
     }
 
     fn current_path(&self) -> &Path {
@@ -175,15 +207,25 @@ impl Resolver {
     fn module_imports(import_name: &ImportName, module_information: &mut ModuleInformation) {
         fn f(import_name: &ImportName, path: Path, module_information: &mut ModuleInformation) {
             let import_path = path.append(*import_name.name.data());
+
             let name = if let Some(as_name) = import_name.as_name {
                 as_name
             } else {
                 import_name.name
             };
+
+            if import_name.import_in {
+                module_information.import_ins.insert(
+                    import_path.clone(),
+                    name.location()
+                );
+            }
+
             module_information.imports.insert(
                 *name.data(),
                 (import_path.clone(), name.location())
             );
+
             if let Some(subnames) = &import_name.subnames {
                 for import_name in subnames {
                     f(import_name, import_path.clone(), module_information);
@@ -354,10 +396,17 @@ impl Resolver {
         }
 
         if let Some((path, _)) = self.current_imports().get(intern_idx).cloned() {
-            Some(Bound::Absolute(path))
-        } else {
-            None
+            return Some(Bound::Absolute(path))
         }
+
+        for (path, _) in self.current_import_ins() {
+            let path = path.append(*intern_idx);
+            if self.value_names.contains(&path) || self.type_names.contains(&path) {
+                return Some(Bound::Absolute(path));
+            }
+        }
+
+        None
     }
 
     fn find_type_name(&self, intern_idx: &InternIdx) -> Option<Bound> {
@@ -369,17 +418,36 @@ impl Resolver {
         }
 
         if let Some((path, _)) = self.current_imports().get(intern_idx).cloned() {
-            Some(Bound::Absolute(path))
-        } else {
-            None
+            return Some(Bound::Absolute(path))
         }
+
+        for (path, _) in self.current_import_ins() {
+            let path = path.append(*intern_idx);
+            if self.type_names.contains(&path) {
+                return Some(Bound::Absolute(path));
+            }
+        }
+
+        None
     }
 
     fn find_interface_path(&self, parts: &[InternIdx], location: SourceLocation) -> ReportableResult<Path> {
         let base = if let Some((path, _)) = self.current_imports().get(&parts[0]).cloned() {
             path
         } else {
-            self.current_path().append(parts[0])
+            let mut interface_path = None;
+            for (path, _) in self.current_import_ins() {
+                let path = path.append(parts[0]);
+                if self.type_names.contains(&path) {
+                    interface_path = Some(path);
+                }
+            }
+
+            if let Some(interface_path) = interface_path {
+                interface_path
+            } else {
+                self.current_path().append(parts[0])
+            }
         };
 
         let path = base.append_parts(&parts[1..]);
@@ -686,6 +754,16 @@ impl Resolver {
         for (path, location) in self.current_imports().values() {
             if !(self.value_names.contains(path) ||
                  self.type_names.contains(path)  ||
+                 self.modules.contains_key(path)) {
+                return self.error(
+                    ResolveError::ImportPathDoesNotExist(path.clone()),
+                    *location
+                )
+            }
+        }
+
+        for (path, location) in self.current_import_ins() {
+            if !(self.type_names.contains(path)  ||
                  self.modules.contains_key(path)) {
                 return self.error(
                     ResolveError::ImportPathDoesNotExist(path.clone()),

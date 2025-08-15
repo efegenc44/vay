@@ -1,8 +1,5 @@
 module Main
 
-import Intrinsics (U64)
-import Core
-
 fun main() : U64 =
     let x = 5 in match x {
         let 100 : x + 5

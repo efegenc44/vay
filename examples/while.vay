@@ -1,13 +1,11 @@
 module Main
 
-import Core
-
 fun main() = (
     let array = [0, 1, 2, 3, 4, 5, 6] in
     let i = 0 in while i < array.length(), i = i + 1 then
         match i {
             let 2 : continue
             let 5 : break
-            let i : Core::println(array.get(i))
+            let i : println(array.get(i))
         }
 )

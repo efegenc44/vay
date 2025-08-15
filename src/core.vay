@@ -1,7 +1,5 @@
 module Core
 
-import Intrinsics (U64)
-
 interface Addable t {
     fun add(other : t) : t
 }
@@ -29,10 +27,10 @@ variant Ordering {
     Less
 
     fun equals(this, that : Ordering) : Bool = match this, that {
-        let .Greater, .Greater : Bool::True
-        let .Equal  , .Equal   : Bool::True
-        let .Less   , .Less    : Bool::True
-        let this    , that     : Bool::False
+        let .Greater, .Greater : True
+        let .Equal  , .Equal   : True
+        let .Less   , .Less    : True
+        let this    , that     : False
     }
 }
 
@@ -65,18 +63,18 @@ variant Bool {
     False
 
     fun not(this) : Bool = match this {
-        let .True  : Bool::False
-        let .False : Bool::True
+        let .True  : False
+        let .False : True
     }
 
     fun or(this, that : Bool) : Bool = match this, that {
-        let .False, .False : Bool::False
-        let this  , that   : Bool::True
+        let .False, .False : False
+        let this  , that   : True
     }
 
     fun and(this, that : Bool) : Bool = match this, that {
-        let .True, .True : Bool::True
-        let this , that  : Bool::False
+        let .True, .True : True
+        let this , that  : False
     }
 }
 

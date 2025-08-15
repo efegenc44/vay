@@ -1,7 +1,6 @@
 module Main
 
-import Numbers (Nat (Nat (Succ, Zero)))
-import Core (Addable)
+import Numbers (Nat (in Nat))
 
 struct Test {}
 
