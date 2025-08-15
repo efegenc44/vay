@@ -677,12 +677,13 @@ impl Interpreter {
 
             match body_result {
                 Err(FlowException::Break) => break,
-                Err(FlowException::Continue) => continue,
+                Err(FlowException::Continue) => {
+                    result = self.expression(condition)?.into_core_bool();
+                    continue
+                },
                 Err(FlowException::Return(value)) => return Err(FlowException::Return(value)),
-                Ok(_) => ()
+                Ok(_) => result = self.expression(condition)?.into_core_bool()
             }
-
-            result = self.expression(condition)?.into_core_bool();
         }
 
         Ok(Value::Unit)
