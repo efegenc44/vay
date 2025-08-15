@@ -14,7 +14,7 @@ use crate::{
         Expression, FunctionTypeExpression, LambdaExpression, LetExpression,
         MatchBranch, MatchExpression, PathExpression, PathTypeExpression,
         Pattern, ProjectionExpression, ReturnExpression, SequenceExpression,
-        TypeApplicationExpression, TypeExpression, VariantCasePattern
+        TypeApplicationExpression, TypeExpression, VariantCasePattern, WhileExpression
     },
     interner::{interner_mut, InternIdx},
     lexer::Lexer,
@@ -34,6 +34,9 @@ const PRIMARY_TOKEN_STARTS: &[Token] = &[
     Token::FunKeyword,
     Token::MatchKeyword,
     Token::ReturnKeyword,
+    Token::WhileKeyword,
+    Token::ContinueKeyword,
+    Token::BreakKeyword,
 ];
 
 const PRIMARY_TYPE_TOKEN_STARTS: &[Token] = &[
@@ -395,6 +398,9 @@ impl<'source> Parser<'source> {
             Token::FunKeyword => self.lambda(),
             Token::MatchKeyword => self.matc(),
             Token::ReturnKeyword => self.retrn(),
+            Token::WhileKeyword => self.whilee(),
+            Token::ContinueKeyword => self.continuee(),
+            Token::BreakKeyword => self.breakk(),
             _ => unreachable!()
         }
     }
@@ -507,6 +513,38 @@ impl<'source> Parser<'source> {
 
         let retrn = ReturnExpression { expression };
         Ok(Located::new(Expression::Return(retrn), start.extend(&end)))
+    }
+
+    fn whilee(&mut self) -> ReportableResult<Located<Expression>> {
+        let start = self.expect(Token::WhileKeyword)?.location();
+
+        let condition = Box::new(self.expression()?);
+        let post = if self.peek_is(Token::Comma) {
+            self.advance()?;
+            Some(Box::new(self.expression()?))
+        } else {
+            None
+        };
+
+        self.expect(Token::ThenKeyword)?;
+
+        let body = Box::new(self.expression()?);
+
+        let location = start.extend(&body.location());
+        let whilee = WhileExpression { condition, post, body };
+        Ok(Located::new(Expression::While(whilee), location))
+    }
+
+    fn continuee(&mut self) -> ReportableResult<Located<Expression>> {
+        let location = self.expect(Token::ContinueKeyword)?.location();
+
+        Ok(Located::new(Expression::Continue, location))
+    }
+
+    fn breakk(&mut self) -> ReportableResult<Located<Expression>> {
+        let location = self.expect(Token::BreakKeyword)?.location();
+
+        Ok(Located::new(Expression::Break, location))
     }
 
     fn match_branch(&mut self) -> ReportableResult<Located<MatchBranch>> {

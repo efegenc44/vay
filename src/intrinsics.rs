@@ -201,6 +201,13 @@ pub const INTRINSIC_FUNCTIONS: &[(&str, IntrinsicFunction)] = intrinsics_functio
 
         let mut borrow = array.borrow_mut();
         borrow.pop().unwrap()
+    };
+    "Array::get" = |mut arguments| {
+        let index = arguments.pop().unwrap().into_u64();
+        let array = arguments.pop().unwrap().into_array();
+
+        let borrow = array.borrow();
+        borrow[index as usize].clone()
     }
 };
 

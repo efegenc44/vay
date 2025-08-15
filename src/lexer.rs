@@ -101,6 +101,10 @@ impl<'source> Lexer<'source> {
             "struct" => Token::StructKeyword,
             "builtin" => Token::BuiltInKeyword,
             "external" => Token::ExternalKeyword,
+            "while" => Token::WhileKeyword,
+            "then" => Token::ThenKeyword,
+            "continue" => Token::ContinueKeyword,
+            "break" => Token::BreakKeyword,
             "" => unreachable!(),
             _ => Token::Identifier(interner_mut().intern(lexeme)),
         };

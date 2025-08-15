@@ -81,6 +81,19 @@ impl Value {
         }
     }
 
+    pub fn into_core_bool(self) -> bool {
+        let Self::Instance(instance) = self else {
+            panic!();
+        };
+
+        let case = instance.constructor.case;
+        if interner().get(&case) == "True" {
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn into_u64(self) -> u64 {
         let Self::U64(v) = self else {
             panic!();

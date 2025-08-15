@@ -46,6 +46,10 @@ pub enum Token {
     StructKeyword,
     BuiltInKeyword,
     ExternalKeyword,
+    WhileKeyword,
+    ThenKeyword,
+    ContinueKeyword,
+    BreakKeyword,
 }
 
 impl Token {
@@ -99,6 +103,10 @@ impl Token {
             Token::StructKeyword => "keyword `struct`",
             Token::BuiltInKeyword => "keyword `builtin`",
             Token::ExternalKeyword => "keyword `external`",
+            Token::WhileKeyword => "keyword `while`",
+            Token::ThenKeyword => "keyword `then`",
+            Token::ContinueKeyword => "keyword `continue`",
+            Token::BreakKeyword => "keyword `break`",
         }
     }
 }

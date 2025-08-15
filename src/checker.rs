@@ -12,7 +12,7 @@ use crate::{
         Expression, FunctionTypeExpression, LambdaExpression, LetExpression,
         MatchExpression, PathExpression, PathTypeExpression, Pattern,
         ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression,
-        TypeExpression, VariantCasePattern
+        TypeExpression, VariantCasePattern, WhileExpression
     },
     interner::{interner, InternIdx},
     location::{Located, SourceLocation},
@@ -1071,6 +1071,9 @@ impl Checker {
             Expression::Match(matc) => self.matc(matc),
             Expression::Return(retrn) => self.retrn(retrn),
             Expression::Assignment(assignment) => self.assignment(assignment),
+            Expression::While(whilee) => self.whilee(whilee),
+            Expression::Continue |
+            Expression::Break => Ok(MonoType::Bottom)
         }
     }
 
@@ -1354,6 +1357,30 @@ impl Checker {
         }
 
         self.check(expression, assignable_type)?;
+
+        Ok(MonoType::Unit)
+    }
+
+    fn whilee(&mut self, whilee: &WhileExpression) -> ReportableResult<MonoType> {
+        let WhileExpression { condition, post, body } = whilee;
+
+        let mut type_path = Path::empty();
+        let bool_type_path = "Core::Bool";
+
+        bool_type_path
+            .split("::")
+            .map(|part| type_path.push(interner().intern_idx(part)))
+            .for_each(drop);
+
+        let boole = MonoType::Variant(type_path, vec![]);
+
+        self.check(condition, boole)?;
+
+        if let Some(post) = post {
+            self.infer(post)?;
+        }
+
+        self.infer(body)?;
 
         Ok(MonoType::Unit)
     }

@@ -27,4 +27,5 @@ builtin Array(T) {
     fun length(this) : U64
     fun append(this, value : T)
     fun pop(this) : T
+    fun get(this, index : U64) : T
 }

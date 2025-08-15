@@ -15,6 +15,9 @@ pub enum Expression {
     Match(MatchExpression),
     Return(ReturnExpression),
     Assignment(AssignmentExpression),
+    While(WhileExpression),
+    Continue,
+    Break,
 }
 
 #[derive(Clone)]
@@ -97,6 +100,13 @@ pub struct ReturnExpression {
 pub struct AssignmentExpression {
     pub assignable: Box<Located<Expression>>,
     pub expression: Box<Located<Expression>>,
+}
+
+#[derive(Clone)]
+pub struct WhileExpression {
+    pub condition: Box<Located<Expression>>,
+    pub post: Option<Box<Located<Expression>>>,
+    pub body: Box<Located<Expression>>
 }
 
 // TODO: default pattern

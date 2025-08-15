@@ -13,7 +13,7 @@ use crate::{
         Expression, FunctionTypeExpression, LambdaExpression, LetExpression,
         MatchExpression, PathExpression, PathTypeExpression, Pattern,
         ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression,
-        TypeExpression, VariantCasePattern
+        TypeExpression, VariantCasePattern, WhileExpression
     },
     interner::{interner, InternIdx},
     intrinsics::INTRINSICS_MODULE_NAME,
@@ -409,6 +409,9 @@ impl Resolver {
             Expression::Match(matc) => self.matc(matc),
             Expression::Return(retrn) => self.retrn(retrn),
             Expression::Assignment(assignment) => self.assignment(assignment),
+            Expression::While(whilee) => self.whilee(whilee),
+            Expression::Continue |
+            Expression::Break => Ok(())
         }
     }
 
@@ -504,6 +507,18 @@ impl Resolver {
 
         self.expression(assignable)?;
         self.expression(expression)
+    }
+
+    fn whilee(&mut self, whilee: &mut WhileExpression) -> ReportableResult<()> {
+        let WhileExpression { condition, post, body } = whilee;
+
+        self.expression(condition)?;
+
+        if let Some(post) = post {
+            self.expression(post)?;
+        }
+
+        self.expression(body)
     }
 
     fn type_expression(&mut self, type_expression: &mut Located<TypeExpression>) -> ReportableResult<()> {

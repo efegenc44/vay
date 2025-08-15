@@ -3,17 +3,15 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use crate::{
     bound::{Bound, Path},
     declaration::{
-        Declaration, BuiltInDeclaration, ExternalDeclaration, FunctionDeclaration,
-        InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature,
-        Module, StructDeclaration, VariantDeclaration
+        BuiltInDeclaration, Declaration, ExternalDeclaration, FunctionDeclaration, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module, StructDeclaration, VariantDeclaration
     },
     expression::{
         ApplicationExpression, ArrayExpression, ArrayPattern, AssignmentExpression,
         Expression, LambdaExpression, LetExpression, MatchExpression,
         PathExpression, Pattern, ProjectionExpression, ReturnExpression,
-        SequenceExpression, VariantCasePattern
+        SequenceExpression, VariantCasePattern, WhileExpression
     },
-    interner::{InternIdx, interner},
+    interner::{interner, InternIdx},
     intrinsics::{IntrinsicFunction, EXTERNAL_FUNCTIONS, INTRINSIC_FUNCTIONS},
     location::Located,
     typ::BuiltInType,
@@ -40,8 +38,13 @@ macro_rules! scoped {
     };
 }
 
-// NOTE: Err variant describes an exception
-pub type ControlFlow = Result<Value, Value>;
+pub enum FlowException {
+    Break,
+    Continue,
+    Return(Value),
+}
+
+pub type ControlFlow = Result<Value, FlowException>;
 
 impl Interpreter {
     pub fn new() -> Self {
@@ -93,7 +96,8 @@ impl Interpreter {
 
         let value = self.expression(&function.body);
         let value = match value {
-            Ok(value) | Err(value) => value,
+            Ok(value) | Err(FlowException::Return(value)) => value,
+            _ => unreachable!()
         };
 
         println!("\nResult = {}", value);
@@ -295,7 +299,7 @@ impl Interpreter {
         let ReturnExpression { expression } = retrn;
 
         let value = self.expression(expression)?;
-        Err(value)
+        Err(FlowException::Return(value))
     }
 
     pub fn expression(&mut self, expression: &Located<Expression>) -> ControlFlow {
@@ -312,7 +316,10 @@ impl Interpreter {
             Expression::Lambda(lambda) => self.lambda(lambda),
             Expression::Match(matc) => self.matc(matc),
             Expression::Return(retrn) => self.retrn(retrn),
-            Expression::Assignment(assignment) => self.assignment(assignment)
+            Expression::Assignment(assignment) => self.assignment(assignment),
+            Expression::While(whilee) => self.whilee(whilee),
+            Expression::Continue => self.continuee(),
+            Expression::Break => self.breakk(),
         }
     }
 
@@ -361,7 +368,8 @@ impl Interpreter {
                 });
 
                 match return_value {
-                    Ok(value) | Err(value) => Ok(value),
+                    Ok(value) | Err(FlowException::Return(value)) => Ok(value),
+                    _ => unreachable!()
                 }
             },
             Value::Method(method) => {
@@ -381,7 +389,8 @@ impl Interpreter {
                 });
 
                 match return_value {
-                    Ok(value) | Err(value) => Ok(value),
+                    Ok(value) | Err(FlowException::Return(value)) => Ok(value),
+                    _ => unreachable!()
                 }
             },
             Value::Constructor(constructor) => {
@@ -410,7 +419,8 @@ impl Interpreter {
                 });
 
                 match return_value {
-                    Ok(value) | Err(value) => Ok(value),
+                    Ok(value) | Err(FlowException::Return(value)) => Ok(value),
+                    _ => unreachable!()
                 }
             }
             Value::InterfaceFunction(name) => {
@@ -486,7 +496,8 @@ impl Interpreter {
                 });
 
                 match return_value {
-                    Ok(value) | Err(value) => Ok(value),
+                    Ok(value) | Err(FlowException::Return(value)) => Ok(value),
+                    _ => unreachable!()
                 }
             }
             Value::StructConstructor(constructor) => {
@@ -638,5 +649,37 @@ impl Interpreter {
         }
 
         Ok(Value::Unit)
+    }
+
+    fn whilee(&mut self, whilee: &WhileExpression) -> ControlFlow {
+        let WhileExpression { condition, post, body } = whilee;
+
+        let mut result = self.expression(condition)?.into_core_bool();
+        while result {
+            let body_result = self.expression(body);
+
+            if let Some(post) = post {
+                self.expression(post)?;
+            }
+
+            match body_result {
+                Err(FlowException::Break) => break,
+                Err(FlowException::Continue) => continue,
+                Err(FlowException::Return(value)) => return Err(FlowException::Return(value)),
+                Ok(_) => ()
+            }
+
+            result = self.expression(condition)?.into_core_bool();
+        }
+
+        Ok(Value::Unit)
+    }
+
+    fn continuee(&mut self) -> ControlFlow {
+        Err(FlowException::Continue)
+    }
+
+    fn breakk(&mut self) -> ControlFlow {
+        Err(FlowException::Break)
     }
 }
