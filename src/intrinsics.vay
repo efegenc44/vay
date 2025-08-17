@@ -6,12 +6,14 @@ builtin U64 {
     fun multiply(this, that : U64) : U64
     fun equals(this, that : U64) : Bool
     fun compare(this, that : U64) : Core::Ordering
+    fun toF32(this) : F32
 }
 
 builtin F32 {
     fun add(this, that : F32) : F32
     fun subtract(this, that : F32) : F32
     fun multiply(this, that : F32) : F32
+    fun divide(this, that : F32) : F32
     fun equals(this, that : F32) : Bool
     fun compare(this, that : F32) : Core::Ordering
 }

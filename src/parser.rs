@@ -72,6 +72,7 @@ const PATTERN_TOKEN_STARTS: &[Token] = &[
 #[derive(Eq, PartialEq, Hash, Clone, Copy)]
 enum Operator {
     Multiplication,
+    Division,
     Addition,
     Subtraction,
     Equality,
@@ -86,6 +87,7 @@ enum Operator {
 
 const OPERATOR_PATHS: &[(Operator, &str)] = &[
     (Operator::Multiplication, "Core::Multiplicable::multiply"),
+    (Operator::Division, "Core::Dividable::divide"),
     (Operator::Addition, "Core::Addable::add"),
     (Operator::Subtraction, "Core::Subtractable::subtract"),
     (Operator::Equality, "Core::Equatable::equals"),
@@ -101,6 +103,7 @@ const OPERATOR_PATHS: &[(Operator, &str)] = &[
 const fn operators(token: &Token) -> Option<(Operator, Associativity, usize)> {
     match token {
         Token::Asterisk => Some((Operator::Multiplication, Associativity::Left, 4)),
+        Token::Slash => Some((Operator::Division, Associativity::Left, 4)),
 
         Token::Plus => Some((Operator::Addition, Associativity::Left, 3)),
         Token::Minus => Some((Operator::Subtraction, Associativity::Left, 3)),

@@ -12,7 +12,13 @@ interface Subtractable t {
     fun subtract(other : t) : t
 }
 
+interface Dividable t {
+    fun divide(other : t) : t
+}
+
 interface Number t (Addable, Multiplicable, Subtractable) { }
+
+interface Fractional t (Number, Dividable) { }
 
 interface Equatable t {
     fun equals(other : t) : Bool

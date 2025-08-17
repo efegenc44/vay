@@ -80,6 +80,11 @@ pub const INTRINSIC_FUNCTIONS: &[(&str, IntrinsicFunction)] = intrinsics_functio
         let instance = InstanceInstance { constructor, values: vec![] };
         Value::Instance(Rc::new(instance))
     };
+    "U64::toF32" = |mut arguments| {
+        let a = arguments.pop().unwrap().into_u64();
+
+        Value::F32(a as f32)
+    };
     "F32::add" = |mut arguments| {
         let b = arguments.pop().unwrap().into_f32();
         let a = arguments.pop().unwrap().into_f32();
@@ -97,6 +102,12 @@ pub const INTRINSIC_FUNCTIONS: &[(&str, IntrinsicFunction)] = intrinsics_functio
         let a = arguments.pop().unwrap().into_f32();
 
         Value::F32(a * b)
+    };
+    "F32::divide" = |mut arguments| {
+        let b = arguments.pop().unwrap().into_f32();
+        let a = arguments.pop().unwrap().into_f32();
+
+        Value::F32(a / b)
     };
     "F32::equals" = |mut arguments| {
         let b = arguments.pop().unwrap().into_f32();
