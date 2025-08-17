@@ -1,4 +1,5 @@
 use core::panic;
+
 use std::{
     collections::HashMap,
     fs,
@@ -7,6 +8,7 @@ use std::{
 };
 
 use crate::{
+    stdlib,
     checker::Checker,
     core::CORE_FILE_PATH,
     declaration::Module,
@@ -76,6 +78,7 @@ impl Runner {
     pub fn parse_all(&mut self, mut sources: Vec<String>) -> Result<Vec<Module>, ()> {
         sources.push(INTRINSICS_FILE_PATH.into());
         sources.push(CORE_FILE_PATH.into());
+        sources.extend(stdlib::collect_std_file_paths());
 
         let mut modules = vec![];
         for source in sources {

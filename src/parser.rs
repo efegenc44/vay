@@ -7,7 +7,7 @@ use crate::{
         FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration,
         InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module,
         ModuleDeclaration, StructDeclaration, TypeVar, TypedIdentifier,
-        VariantCase, VariantDeclaration
+        VariantCase, VariantDeclaration, DefineDeclaration
     },
     expression::{
         ApplicationExpression, ArrayExpression, ArrayPattern, AssignmentExpression,
@@ -51,6 +51,7 @@ const PRIMARY_TYPE_TOKEN_STARTS: &[Token] = &[
 const DECLARATION_KEYWORDS: &[Token] = &[
     Token::ModuleKeyword,
     Token::FunKeyword,
+    Token::DefineKeyword,
     Token::VariantKeyword,
     Token::ImportKeyword,
     Token::InterfaceKeyword,
@@ -698,6 +699,7 @@ impl<'source> Parser<'source> {
             Token::ModuleKeyword => self.modul(),
             Token::ImportKeyword => self.import(),
             Token::FunKeyword => self.function(),
+            Token::DefineKeyword => self.define(),
             Token::VariantKeyword => self.variant(),
             Token::InterfaceKeyword => self.interface(),
             Token::StructKeyword => self.strct(),
@@ -824,6 +826,18 @@ impl<'source> Parser<'source> {
         };
 
         Ok(Declaration::Function(function))
+    }
+
+    fn define(&mut self) -> ReportableResult<Declaration> {
+        self.expect(Token::DefineKeyword)?;
+        let name = self.expect_identifier()?;
+        self.expect(Token::Colon)?;
+        let type_expression = self.type_expression()?;
+        self.expect(Token::Equals)?;
+        let expression = self.expression()?;
+
+        let define = DefineDeclaration { name, type_expression, expression, path: Path::empty() };
+        Ok(Declaration::Define(define))
     }
 
     fn method_declaration(&mut self) -> ReportableResult<MethodDeclaration> {

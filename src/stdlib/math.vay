@@ -1,0 +1,4 @@
+module std::math
+
+define pi : F32 = 3.141592653589793
+define e : F32 = 2.718281828459045

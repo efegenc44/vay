@@ -6,8 +6,9 @@ use crate::{
         self, BuiltInDeclaration, Declaration, ExternalDeclaration,
         FunctionDeclaration, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration,
         MethodSignature, Module, StructDeclaration, TypedIdentifier,
-        VariantDeclaration
-    }, expression::{
+        VariantDeclaration, DefineDeclaration
+    },
+    expression::{
         ApplicationExpression, ArrayExpression, ArrayPattern, AssignmentExpression,
         Expression, FunctionTypeExpression, LambdaExpression, LetExpression,
         MatchExpression, PathExpression, PathTypeExpression, Pattern,
@@ -425,6 +426,12 @@ impl Checker {
             }
         }
 
+        for declaration in module.declarations() {
+            if let Declaration::Define(define) = declaration {
+                self.collect_define_name(define)?
+            }
+        }
+
         Ok(())
     }
 
@@ -441,6 +448,15 @@ impl Checker {
 
             self.value_types.insert(path.clone(), t);
         });
+
+        Ok(())
+    }
+
+    fn collect_define_name(&mut self, define: &DefineDeclaration) -> ReportableResult<()> {
+        let DefineDeclaration { type_expression, path, .. } = define;
+
+        let t = self.eval_type_expression(type_expression)?;
+        self.value_types.insert(path.clone(), t);
 
         Ok(())
     }
@@ -658,6 +674,7 @@ impl Checker {
     fn declaration(&mut self, declaration: &Declaration) -> ReportableResult<()> {
         match declaration {
             Declaration::Variant(variant) => self.variant(variant),
+            Declaration::Define(define) => self.define(define),
             Declaration::Function(function) => self.function(function),
             Declaration::Struct(strct) => self.strct(strct),
             _ => Ok(())
@@ -712,6 +729,15 @@ impl Checker {
                 }
             },
         }
+    }
+
+    fn define(&mut self, define: &DefineDeclaration) -> ReportableResult<()> {
+        let DefineDeclaration { expression, path, .. } = define;
+
+        let Type::Mono(expected) = self.value_types[path].clone() else {
+            unreachable!();
+        };
+        self.check(expression, expected)
     }
 
     fn function(&mut self, function: &FunctionDeclaration) -> ReportableResult<()> {
@@ -1073,6 +1099,7 @@ impl Checker {
             Expression::Return(retrn) => self.retrn(retrn),
             Expression::Assignment(assignment) => self.assignment(assignment),
             Expression::While(whilee) => self.whilee(whilee),
+            // TODO: Disallow continue and break expression outside of while
             Expression::Continue |
             Expression::Break => Ok(MonoType::Bottom)
         }

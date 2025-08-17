@@ -50,6 +50,7 @@ pub enum Token {
     ThenKeyword,
     ContinueKeyword,
     BreakKeyword,
+    DefineKeyword,
 }
 
 impl Token {
@@ -107,6 +108,7 @@ impl Token {
             Token::ThenKeyword => "keyword `then`",
             Token::ContinueKeyword => "keyword `continue`",
             Token::BreakKeyword => "keyword `break`",
+            Token::DefineKeyword => "keyword `define`",
         }
     }
 }

@@ -4,6 +4,7 @@ use crate::{
 
 pub enum Declaration {
     Module(ModuleDeclaration),
+    Define(DefineDeclaration),
     Import(ImportDeclaration),
     Function(FunctionDeclaration),
     Variant(VariantDeclaration),
@@ -20,6 +21,13 @@ pub struct TypeVar {
 
 pub struct ModuleDeclaration {
     pub parts: Located<Vec<InternIdx>>,
+}
+
+pub struct DefineDeclaration {
+    pub name: Located<InternIdx>,
+    pub type_expression: Located<TypeExpression>,
+    pub expression: Located<Expression>,
+    pub path: Path
 }
 
 pub struct ImportDeclaration {

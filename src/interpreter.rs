@@ -5,7 +5,8 @@ use crate::{
     declaration::{
         BuiltInDeclaration, Declaration, ExternalDeclaration, FunctionDeclaration,
         InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration,
-        MethodSignature, Module, StructDeclaration, VariantDeclaration
+        MethodSignature, Module, StructDeclaration, VariantDeclaration,
+        DefineDeclaration
     },
     expression::{
         ApplicationExpression, ArrayExpression, ArrayPattern, AssignmentExpression,
@@ -110,12 +111,19 @@ impl Interpreter {
             match declaration {
                 Declaration::Module(..) => (),
                 Declaration::Import(..) => (),
+                Declaration::Define(..) => (),
                 Declaration::Interface(interface) => self.collect_interface_name(interface),
                 Declaration::Function(function) => self.collect_function_name(function),
                 Declaration::Variant(variant) => self.collect_variant_name(variant),
                 Declaration::Struct(strct) => self.collect_struct_name(strct),
                 Declaration::BuiltIn(builtin) => self.collect_builtin_name(builtin),
                 Declaration::External(external) => self.collect_external_name(external),
+            }
+        }
+
+        for declaration in module.declarations() {
+            if let Declaration::Define(define) = declaration {
+                self.collect_define_name(define);
             }
         }
     }
@@ -126,6 +134,16 @@ impl Interpreter {
         let function = FunctionInstance { body: body.clone() };
         let value = Value::Function(Rc::new(function));
 
+        self.names.insert(path.clone(), value);
+    }
+
+    // TODO: defines are order sensitive right now
+    fn collect_define_name(&mut self, define: &DefineDeclaration) {
+        let DefineDeclaration { expression, path, .. } = define;
+
+        let Ok(value) = self.expression(expression) else {
+            panic!();
+        };
         self.names.insert(path.clone(), value);
     }
 
@@ -335,7 +353,10 @@ impl Interpreter {
                 let index = self.locals.len() - 1 - bound_idx;
                 Ok(self.locals[index].clone())
             },
-            Bound::Absolute(path) => Ok(self.names[path].clone()),
+            Bound::Absolute(path) => {
+                println!("{path}");
+                Ok(self.names[path].clone())
+            },
         }
     }
 

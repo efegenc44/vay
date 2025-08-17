@@ -105,6 +105,7 @@ impl<'source> Lexer<'source> {
             "then" => Token::ThenKeyword,
             "continue" => Token::ContinueKeyword,
             "break" => Token::BreakKeyword,
+            "define" => Token::DefineKeyword,
             "" => unreachable!(),
             _ => Token::Identifier(interner_mut().intern(lexeme)),
         };

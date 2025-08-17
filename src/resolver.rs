@@ -6,7 +6,8 @@ use crate::{
         BuiltInDeclaration, Constraint, Declaration, ExternalDeclaration,
         FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration,
         InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module,
-        ModuleDeclaration, StructDeclaration, TypeVar, VariantDeclaration
+        ModuleDeclaration, StructDeclaration, TypeVar, VariantDeclaration,
+        DefineDeclaration
     },
     expression::{
         ApplicationExpression, ArrayExpression, ArrayPattern, AssignmentExpression,
@@ -81,6 +82,8 @@ pub struct Resolver {
     type_names: HashSet<Path>,
     value_names: HashSet<Path>,
 
+    defines: HashMap<Path, (Located<Expression>, bool)>,
+
     // TODO: Seperate type and value locals
     locals: Vec<InternIdx>,
 
@@ -95,6 +98,8 @@ impl Resolver {
 
             type_names: HashSet::new(),
             value_names: HashSet::new(),
+
+            defines: HashMap::new(),
 
             locals: vec![],
 
@@ -241,6 +246,7 @@ impl Resolver {
             match declaration {
                 Declaration::Module(..) => {}
                 Declaration::Import(..) => {}
+                Declaration::Define(define) => self.collect_define_name(define)?,
                 Declaration::Function(precodure) => self.collect_function_name(precodure)?,
                 Declaration::Variant(variant) => self.collect_variant_name(variant)?,
                 Declaration::Interface(interface) => self.collect_interface_name(interface)?,
@@ -248,6 +254,24 @@ impl Resolver {
                 Declaration::BuiltIn(builtin) => self.collect_builtin_name(builtin)?,
                 Declaration::External(external) => self.collect_external_name(external)?,
             }
+        }
+
+        Ok(())
+    }
+
+    fn collect_define_name(&mut self, define: &mut DefineDeclaration) -> ReportableResult<()> {
+        let DefineDeclaration { name, path, expression, .. } = define;
+
+        let define_path = self.current_path().append(*name.data());
+        if !self.value_names.contains(&define_path) {
+            self.defines.insert(define_path.clone(), (expression.clone(), false));
+            self.value_names.insert(define_path.clone());
+            *path = define_path;
+        } else {
+            return self.error(
+                ResolveError::DuplicateNameDeclaration(define_path),
+                name.location(),
+            );
         }
 
         Ok(())
@@ -262,7 +286,7 @@ impl Resolver {
             *path = function_path;
         } else {
             return self.error(
-                ResolveError::DuplicateFunctionDeclaration(function_path),
+                ResolveError::DuplicateNameDeclaration(function_path),
                 name.location(),
             );
         }
@@ -379,7 +403,7 @@ impl Resolver {
             *path = external;
         } else {
             return self.error(
-                ResolveError::DuplicateFunctionDeclaration(external),
+                ResolveError::DuplicateNameDeclaration(external),
                 name.location(),
             );
         }
@@ -728,6 +752,7 @@ impl Resolver {
         match declaration {
             Declaration::Module(..) => {}
             Declaration::Import(..) => {},
+            Declaration::Define(define) => self.define(define)?,
             Declaration::Function(function) => self.function(function)?,
             Declaration::Variant(variant) => self.variant(variant)?,
             Declaration::Interface(interface) => self.interface(interface)?,
@@ -786,6 +811,16 @@ impl Resolver {
                 module_information.path_location
             );
         }
+
+        Ok(())
+    }
+
+    // TODO: Detect cycles
+    fn define(&mut self, define: &mut DefineDeclaration) -> ReportableResult<()> {
+        let DefineDeclaration { type_expression, expression, .. } = define;
+
+        self.type_expression(type_expression)?;
+        self.expression(expression)?;
 
         Ok(())
     }
@@ -1006,7 +1041,7 @@ pub enum ResolveError {
     ModuleDoesNotExist(Path),
     CollidingModulePaths(Path),
     DuplicateModuleDeclaration,
-    DuplicateFunctionDeclaration(Path),
+    DuplicateNameDeclaration(Path),
     DuplicateTypeDeclaration(Path),
     DuplicateConstructorDeclaration {
         constructor: InternIdx,
@@ -1039,8 +1074,8 @@ impl Reportable for (Located<ResolveError>, String) {
                 format!("Already imported a module `{}`.", path)
             }
             ResolveError::DuplicateModuleDeclaration => "Duplicate declaration of module.".into(),
-            ResolveError::DuplicateFunctionDeclaration(path) => {
-                format!("Duplicate declaration of function `{}`.", path)
+            ResolveError::DuplicateNameDeclaration(path) => {
+                format!("Duplicate declaration of name `{}`.", path)
             }
             ResolveError::DuplicateTypeDeclaration(path) => {
                 format!("Duplicate declaration of type `{}`.", path)
