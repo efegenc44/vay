@@ -47,6 +47,8 @@ pub struct Checker {
 
     interfaces: HashMap<Path, Interface>,
 
+    defines: HashMap<Path, Located<Expression>>,
+
     builtin_paths: HashMap<BuiltInType, Path>,
 
     // TODO: Seperate type locals and value locals
@@ -69,6 +71,7 @@ impl Checker {
             cases: HashMap::new(),
             methods: HashMap::new(),
             interfaces: HashMap::new(),
+            defines: HashMap::new(),
             builtin_paths: HashMap::new(),
             locals: vec![],
             return_type: vec![],
@@ -453,10 +456,11 @@ impl Checker {
     }
 
     fn collect_define_name(&mut self, define: &DefineDeclaration) -> ReportableResult<()> {
-        let DefineDeclaration { type_expression, path, .. } = define;
+        let DefineDeclaration { type_expression, path, expression, .. } = define;
 
         let t = self.eval_type_expression(type_expression)?;
         self.value_types.insert(path.clone(), t);
+        self.defines.insert(path.clone(), expression.clone());
 
         Ok(())
     }
@@ -731,8 +735,88 @@ impl Checker {
         }
     }
 
+    fn cyclic_define(&self, expression: &Located<Expression>, current_define: &Path) -> bool {
+        match expression.data() {
+            Expression::U64(_) |
+            Expression::F32(_) |
+            Expression::String(_) |
+            Expression::Lambda(_) |
+            Expression::Continue |
+            Expression::Break => false,
+
+            Expression::Path(path) => {
+                let PathExpression { bound, .. } = path;
+
+                match bound {
+                    Bound::Local(_) => false,
+                    Bound::Absolute(path) => {
+                        if current_define == path {
+                            return true;
+                        }
+
+                        let Some(define) = self.defines.get(path) else {
+                            return true;
+                        };
+
+                        self.cyclic_define(define, current_define)
+                    },
+                    Bound::Undetermined => unreachable!(),
+                }
+            },
+
+            Expression::Array(array) => {
+                array.expressions
+                    .iter().any(|expression| self.cyclic_define(expression, current_define))
+            },
+            Expression::Application(application) => {
+                self.cyclic_define(&application.function, current_define) ||
+                application.arguments
+                    .iter().any(|expression| self.cyclic_define(expression, current_define))
+            },
+            Expression::Projection(projection) => {
+                self.cyclic_define(&projection.expression, current_define)
+            },
+            Expression::Let(lett) => {
+                self.cyclic_define(&lett.value_expression, current_define) ||
+                self.cyclic_define(&lett.body_expression, current_define)
+            },
+            Expression::Sequence(sequence) => {
+                sequence.expressions
+                    .iter().any(|expression| self.cyclic_define(expression, current_define))
+            }
+            Expression::Block(block) => {
+                block.expressions
+                    .iter().any(|expression| self.cyclic_define(expression, current_define))
+            },
+            Expression::Match(mtch) => {
+                mtch.expressions
+                    .iter().any(|expression| self.cyclic_define(expression, current_define)) ||
+                mtch.branches
+                    .iter().any(|branch| self.cyclic_define(branch.data().expression(), current_define))
+            },
+            Expression::Return(retrn) => {
+                self.cyclic_define(&retrn.expression, current_define)
+            },
+            Expression::Assignment(assignment) => {
+                self.cyclic_define(&assignment.expression, current_define)
+            },
+            Expression::While(whilee) => {
+                self.cyclic_define(&whilee.condition, current_define) ||
+                self.cyclic_define(&whilee.body, current_define) ||
+                whilee.post
+                    .as_ref()
+                    .map(|expression| self.cyclic_define(expression, current_define))
+                    .unwrap_or(false)
+            },
+        }
+    }
+
     fn define(&mut self, define: &DefineDeclaration) -> ReportableResult<()> {
         let DefineDeclaration { expression, path, .. } = define;
+
+        if self.cyclic_define(expression, path) {
+            panic!("Error: Cyclic define");
+        }
 
         let Type::Mono(expected) = self.value_types[path].clone() else {
             unreachable!();

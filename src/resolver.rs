@@ -82,8 +82,6 @@ pub struct Resolver {
     type_names: HashSet<Path>,
     value_names: HashSet<Path>,
 
-    defines: HashMap<Path, (Located<Expression>, bool)>,
-
     // TODO: Seperate type and value locals
     locals: Vec<InternIdx>,
 
@@ -98,8 +96,6 @@ impl Resolver {
 
             type_names: HashSet::new(),
             value_names: HashSet::new(),
-
-            defines: HashMap::new(),
 
             locals: vec![],
 
@@ -260,11 +256,10 @@ impl Resolver {
     }
 
     fn collect_define_name(&mut self, define: &mut DefineDeclaration) -> ReportableResult<()> {
-        let DefineDeclaration { name, path, expression, .. } = define;
+        let DefineDeclaration { name, path, .. } = define;
 
         let define_path = self.current_path().append(*name.data());
         if !self.value_names.contains(&define_path) {
-            self.defines.insert(define_path.clone(), (expression.clone(), false));
             self.value_names.insert(define_path.clone());
             *path = define_path;
         } else {
@@ -815,7 +810,6 @@ impl Resolver {
         Ok(())
     }
 
-    // TODO: Detect cycles
     fn define(&mut self, define: &mut DefineDeclaration) -> ReportableResult<()> {
         let DefineDeclaration { type_expression, expression, .. } = define;
 

@@ -29,6 +29,9 @@ pub struct Interpreter {
     builtin_methods: HashMap<BuiltInType, HashMap<InternIdx, IntrinsicFunction>>,
     names: HashMap<Path, Value>,
     locals: Vec<Value>,
+
+    defines: HashMap<Path, Located<Expression>>,
+    collecting_define: bool
 }
 
 macro_rules! scoped {
@@ -56,6 +59,9 @@ impl Interpreter {
             builtin_methods: HashMap::new(),
             names: HashMap::new(),
             locals: vec![],
+
+            defines: HashMap::new(),
+            collecting_define: false,
         }
     }
 
@@ -111,7 +117,9 @@ impl Interpreter {
             match declaration {
                 Declaration::Module(..) => (),
                 Declaration::Import(..) => (),
-                Declaration::Define(..) => (),
+                Declaration::Define(define) => {
+                    self.defines.insert(define.path.clone(), define.expression.clone());
+                },
                 Declaration::Interface(interface) => self.collect_interface_name(interface),
                 Declaration::Function(function) => self.collect_function_name(function),
                 Declaration::Variant(variant) => self.collect_variant_name(variant),
@@ -137,13 +145,15 @@ impl Interpreter {
         self.names.insert(path.clone(), value);
     }
 
-    // TODO: defines are order sensitive right now
     fn collect_define_name(&mut self, define: &DefineDeclaration) {
         let DefineDeclaration { expression, path, .. } = define;
 
+        self.collecting_define = true;
         let Ok(value) = self.expression(expression) else {
             panic!();
         };
+        self.collecting_define = false;
+
         self.names.insert(path.clone(), value);
     }
 
@@ -354,8 +364,18 @@ impl Interpreter {
                 Ok(self.locals[index].clone())
             },
             Bound::Absolute(path) => {
-                println!("{path}");
-                Ok(self.names[path].clone())
+                if self.collecting_define {
+                    if self.names.contains_key(path) {
+                        Ok(self.names[path].clone())
+                    } else {
+                        let define = &self.defines[path].clone();
+                        let value = self.expression(define)?;
+                        self.names.insert(path.clone(), value.clone());
+                        Ok(value)
+                    }
+                } else {
+                    Ok(self.names[path].clone())
+                }
             },
         }
     }
