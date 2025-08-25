@@ -4,6 +4,7 @@ use crate::interner::InternIdx;
 pub enum Token {
     Identifier(InternIdx),
     String(InternIdx),
+    Char(char),
     U64(u64),
     F32(f32),
 
@@ -64,6 +65,7 @@ impl Token {
             Token::U64(_) => "a u64 number",
             Token::F32(_) => "a f32 number",
             Token::String(_) => "a string",
+            Token::Char(_) => "a character literal",
 
             Token::Semicolon => "`;`",
             Token::Colon => "`:`",

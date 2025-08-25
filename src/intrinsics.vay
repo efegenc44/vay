@@ -18,10 +18,7 @@ builtin F32 {
     fun compare(this, that : F32) : Core::Ordering
 }
 
-builtin String {
-    fun add(this, that : String) : String
-    fun equals(this, that : String) : Bool
-}
+builtin Char { }
 
 builtin Array(T) {
     fun length(this) : U64

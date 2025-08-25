@@ -54,7 +54,7 @@ pub struct TypeVar {
 pub enum BuiltInType {
     U64,
     F32,
-    String,
+    Char,
     Array
 }
 
@@ -324,7 +324,7 @@ impl Display for BuiltInType {
         match self {
             BuiltInType::U64 => write!(f, "U64"),
             BuiltInType::F32 => write!(f, "F32"),
-            BuiltInType::String => write!(f, "String"),
+            BuiltInType::Char => write!(f, "Char"),
             BuiltInType::Array => write!(f, "Array"),
         }
     }

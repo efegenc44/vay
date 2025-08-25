@@ -225,7 +225,7 @@ impl Interpreter {
         let t = match interner().get(name.data()) {
             "U64" => BuiltInType::U64,
             "F32" => BuiltInType::F32,
-            "String" => BuiltInType::String,
+            "Char" => BuiltInType::Char,
             "Array" => BuiltInType::Array,
             _ => unreachable!()
         };
@@ -289,7 +289,8 @@ impl Interpreter {
             }
             (Value::U64(_), Pattern::U64(_)) |
             (Value::F32(_), Pattern::F32(_)) |
-            (Value::String(_), Pattern::String(_)) => (),
+            (Value::Array(_), Pattern::String(_)) |
+            (Value::Char(_), Pattern::Char(_)) => (),
             (Value::Instance(instance), Pattern::VariantCase(variant_case)) => {
                 let InstanceInstance { values, .. } = instance.as_ref();
                 let VariantCasePattern { fields, .. } = variant_case;
@@ -336,7 +337,10 @@ impl Interpreter {
         match expression.data() {
             Expression::U64(u64) => Ok(Value::U64(*u64)),
             Expression::F32(f32) => Ok(Value::F32(*f32)),
-            Expression::String(string_idx) => Ok(Value::String(*string_idx)),
+            Expression::String(string_idx) => Ok(Value::Array(
+                Rc::new(RefCell::new(interner().get(string_idx).chars().map(|ch| Value::Char(ch)).collect::<Vec<_>>()))
+            )),
+            Expression::Char(ch) => Ok(Value::Char(*ch)),
             Expression::Path(path) => self.path(path),
             Expression::Array(array) => self.array(array),
             Expression::Application(application) => self.application(application),
@@ -502,10 +506,10 @@ impl Interpreter {
 
                         return Ok(f(argument_values));
                     },
-                    Value::String(string_idx) => {
-                        let f = self.builtin_methods[&BuiltInType::String][&name];
+                    Value::Char(ch) => {
+                        let f = self.builtin_methods[&BuiltInType::Char][&name];
 
-                        let mut argument_values = vec![Value::String(*string_idx)];
+                        let mut argument_values = vec![Value::Char(*ch)];
                         for argument in arguments {
                             argument_values.push(self.expression(argument)?);
                         }
@@ -612,9 +616,9 @@ impl Interpreter {
                 let function = self.builtin_methods[&BuiltInType::F32][name.data()];
                 Ok(Value::BuiltinMethod(Box::new(Value::F32(*f32)), function))
             }
-            Value::String(string_idx) => {
-                let function = self.builtin_methods[&BuiltInType::String][name.data()];
-                Ok(Value::BuiltinMethod(Box::new(Value::String(*string_idx)), function))
+            Value::Char(ch) => {
+                let function = self.builtin_methods[&BuiltInType::Char][name.data()];
+                Ok(Value::BuiltinMethod(Box::new(Value::Char(*ch)), function))
             }
             Value::Array(array) => {
                 let function = self.builtin_methods[&BuiltInType::Array][name.data()];

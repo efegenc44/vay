@@ -26,7 +26,7 @@ pub enum Value {
     StructInstance(Rc<StructInstanceInstance>),
     U64(u64),
     F32(f32),
-    String(InternIdx),
+    Char(char),
     Array(Rc<RefCell<Vec<Value>>>),
     Unit
 }
@@ -37,7 +37,16 @@ impl Value {
             (_, Pattern::Any(_)) => true,
             (Value::U64(u64_1), Pattern::U64(u64_2)) => u64_1 == u64_2,
             (Value::F32(f32_1), Pattern::F32(f32_2)) => f32_1 == f32_2,
-            (Value::String(s1), Pattern::String(s2)) => s1 == s2,
+            (Value::Array(array), Pattern::String(s2)) => {
+                let string = array
+                    .borrow()
+                    .iter()
+                    .map(|v| v.clone().into_char())
+                    .collect::<String>();
+
+                interner().intern_idx(&string) == *s2
+            },
+            (Value::Char(c1), Pattern::Char(c2)) => c1 == c2,
             (Value::Instance(instance), Pattern::VariantCase(variant_case)) => {
                 let VariantCasePattern { name, fields } = variant_case;
                 let InstanceInstance { constructor, values } = instance.as_ref();
@@ -112,16 +121,16 @@ impl Value {
         v
     }
 
-    pub fn into_string(self) -> InternIdx {
-        let Self::String(v) = self else {
+    pub fn into_array(self) -> Rc<RefCell<Vec<Value>>> {
+        let Self::Array(v) = self else {
             panic!();
         };
 
         v
     }
 
-    pub fn into_array(self) -> Rc<RefCell<Vec<Value>>> {
-        let Self::Array(v) = self else {
+    pub fn into_char(self) -> char {
+        let Self::Char(v) = self else {
             panic!();
         };
 
@@ -178,8 +187,18 @@ impl Display for Value {
             },
             Value::U64(u64) => write!(f, "{}", u64),
             Value::F32(f32) => write!(f, "{}", f32),
-            Value::String(string_idx) => write!(f, "\"{}\"", interner().get(string_idx)),
+            Value::Char(ch) => write!(f, "\'{ch}\'"),
             Value::Array(array) => {
+                if let Some(Value::Char(_)) = array.borrow().first() {
+                    write!(f, "\"")?;
+                    for value in array.borrow().iter() {
+                        write!(f, "{}", value.clone().into_char())?;
+                    }
+                    write!(f, "\"")?;
+
+                    return Ok(())
+                }
+
                 write!(f, "[")?;
                 let mut first = true;
                 for value in array.borrow().iter() {

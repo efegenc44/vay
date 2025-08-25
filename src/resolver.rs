@@ -485,7 +485,8 @@ impl Resolver {
         match expression.data_mut() {
             Expression::U64(_) |
             Expression::F32(_) |
-            Expression::String(_) => Ok(()),
+            Expression::String(_) |
+            Expression::Char(_) => Ok(()),
             Expression::Path(path) => self.path(path, location),
             Expression::Array(expressions) => self.array(expressions),
             Expression::Application(application) => self.application(application),
@@ -705,7 +706,8 @@ impl Resolver {
             }
             Pattern::U64(_) |
             Pattern::F32(_) |
-            Pattern::String(_) => (),
+            Pattern::String(_) |
+            Pattern::Char(_) => (),
             Pattern::VariantCase(variant_case) => {
                 let VariantCasePattern { fields, .. } = variant_case;
 

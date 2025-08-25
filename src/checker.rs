@@ -505,7 +505,7 @@ impl Checker {
         let builtin_type = match interner().get(name.data()) {
             "U64" => BuiltInType::U64,
             "F32" => BuiltInType::F32,
-            "String" => BuiltInType::String,
+            "Char" => BuiltInType::Char,
             "Array" => BuiltInType::Array,
             _ => panic!("Unknown builtin")
         };
@@ -740,6 +740,7 @@ impl Checker {
             Expression::U64(_) |
             Expression::F32(_) |
             Expression::String(_) |
+            Expression::Char(_) |
             Expression::Lambda(_) |
             Expression::Continue |
             Expression::Break => false,
@@ -982,7 +983,18 @@ impl Checker {
             },
             (MonoType::BuiltIn(_, BuiltInType::U64, _), Pattern::U64(_)) |
             (MonoType::BuiltIn(_, BuiltInType::F32, _), Pattern::F32(_)) |
-            (MonoType::BuiltIn(_, BuiltInType::String, _), Pattern::String(_)) => Ok(true),
+            (MonoType::BuiltIn(_, BuiltInType::Char, _), Pattern::Char(_)) => Ok(true),
+            (MonoType::BuiltIn(_, BuiltInType::Array, arg), Pattern::String(_)) => {
+                if arg.len() != 1 {
+                    return Ok(false);
+                }
+
+                let Some(MonoType::BuiltIn(_, BuiltInType::Char, _)) = arg.first() else {
+                    return Ok(false);
+                };
+
+                Ok(true)
+            }
             (MonoType::BuiltIn(path, BuiltInType::Array, arguments), Pattern::Array(array)) => {
                 let ArrayPattern { before, after, rest } = array;
 
@@ -1171,6 +1183,7 @@ impl Checker {
             Expression::U64(_) => self.u64(),
             Expression::F32(_) => self.f32(),
             Expression::String(_) => self.string(),
+            Expression::Char(_) => self.char(),
             Expression::Path(path) => self.path(path).map(|p| p.0),
             Expression::Array(array) => self.array(array),
             Expression::Application(application) => self.application(application),
@@ -1210,9 +1223,25 @@ impl Checker {
     }
 
     fn string(&self) -> ReportableResult<MonoType> {
+        let character_m = MonoType::BuiltIn(
+            self.builtin_paths[&BuiltInType::Char].clone(),
+            BuiltInType::Char,
+            vec![]
+        );
+
         let m = MonoType::BuiltIn(
-            self.builtin_paths[&BuiltInType::String].clone(),
-            BuiltInType::String,
+            self.builtin_paths[&BuiltInType::Array].clone(),
+            BuiltInType::Array,
+            vec![character_m]
+        );
+
+        Ok(m)
+    }
+
+    fn char(&self) -> ReportableResult<MonoType> {
+        let m = MonoType::BuiltIn(
+            self.builtin_paths[&BuiltInType::Char].clone(),
+            BuiltInType::Char,
             vec![]
         );
 

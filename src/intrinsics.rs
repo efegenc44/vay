@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use crate::{
     bound::Path,
-    interner::{interner, interner_mut},
+    interner::interner,
     value::{ConstructorInstance, InstanceInstance, Value}
 };
 
@@ -145,46 +145,6 @@ pub const INTRINSIC_FUNCTIONS: &[(&str, IntrinsicFunction)] = intrinsics_functio
         let ordering_type_path = "Core::Ordering";
 
         ordering_type_path
-            .split("::")
-            .map(|part| type_path.push(interner().intern_idx(part)))
-            .for_each(drop);
-
-        let constructor = Rc::new(ConstructorInstance { type_path, case });
-        let instance = InstanceInstance { constructor, values: vec![] };
-        Value::Instance(Rc::new(instance))
-    };
-    "String::add" = |mut arguments| {
-        let b = arguments.pop().unwrap().into_string();
-        let a = arguments.pop().unwrap().into_string();
-
-        let ab = {
-            let interner = interner();
-
-            let a = interner.get(&a);
-            let b = interner.get(&b);
-
-            let mut ab = String::from(a);
-            ab.push_str(b);
-            ab
-        };
-
-        let index = interner_mut().intern(ab);
-        Value::String(index)
-    };
-    "String::equals" = |mut arguments| {
-        let b = arguments.pop().unwrap().into_string();
-        let a = arguments.pop().unwrap().into_string();
-
-        let case = if a == b {
-            interner().intern_idx("True")
-        } else {
-            interner().intern_idx("False")
-        };
-
-        let mut type_path = Path::empty();
-        let bool_type_path = "Core::Bool";
-
-        bool_type_path
             .split("::")
             .map(|part| type_path.push(interner().intern_idx(part)))
             .for_each(drop);

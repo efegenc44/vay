@@ -29,6 +29,7 @@ const PRIMARY_TOKEN_STARTS: &[Token] = &[
     Token::U64(0),
     Token::F32(0.),
     Token::String(InternIdx::dummy_idx()),
+    Token::Char(' '),
     Token::LetKeyword,
     Token::LeftSquare,
     Token::LeftParenthesis,
@@ -65,6 +66,7 @@ const PATTERN_TOKEN_STARTS: &[Token] = &[
     Token::U64(0),
     Token::F32(0.),
     Token::String(InternIdx::dummy_idx()),
+    Token::Char(' '),
     Token::Dot,
     Token::LeftSquare,
     Token::LeftParenthesis,
@@ -198,6 +200,8 @@ impl<'source> Parser<'source> {
                     matches!(token.data(), Token::F32(_))
                 } else if matches!(expected, Token::String(_)) {
                     matches!(token.data(), Token::String(_))
+                } else if matches!(expected, Token::Char(_)) {
+                    matches!(token.data(), Token::Char(_))
                 } else {
                     expected == &token.data()
                 }
@@ -396,6 +400,11 @@ impl<'source> Parser<'source> {
                 // TODO: Factor this out like the other ones
                 self.advance()?;
                 Ok(Located::new(Expression::String(*string_idx), token.location()))
+            },
+            Token::Char(ch) => {
+                // TODO: Factor this out like the other ones
+                self.advance()?;
+                Ok(Located::new(Expression::Char(*ch), token.location()))
             },
             Token::Identifier(_) => self.path(),
             Token::LeftSquare => self.array(),
@@ -602,6 +611,11 @@ impl<'source> Parser<'source> {
                 // TODO: Factor this out like the other ones
                 self.advance()?;
                 Ok(Located::new(Pattern::String(*string_idx), token.location()))
+            }
+            Token::Char(ch) => {
+                // TODO: Factor this out like the other ones
+                self.advance()?;
+                Ok(Located::new(Pattern::Char(*ch), token.location()))
             }
             Token::Identifier(_) => self.any_pattern(),
             Token::Dot => self.varint_case_pattern(),

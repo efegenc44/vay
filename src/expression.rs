@@ -5,6 +5,7 @@ pub enum Expression {
     U64(u64),
     F32(f32),
     String(InternIdx),
+    Char(char),
     Path(PathExpression),
     Array(ArrayExpression),
     Application(ApplicationExpression),
@@ -122,6 +123,7 @@ pub enum Pattern {
     U64(u64),
     F32(f32),
     String(InternIdx),
+    Char(char),
     Array(ArrayPattern),
     VariantCase(VariantCasePattern),
     Unit
