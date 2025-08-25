@@ -153,6 +153,28 @@ pub const INTRINSIC_FUNCTIONS: &[(&str, IntrinsicFunction)] = intrinsics_functio
         let instance = InstanceInstance { constructor, values: vec![] };
         Value::Instance(Rc::new(instance))
     };
+    "Char::equals" = |mut arguments| {
+        let b = arguments.pop().unwrap().into_char();
+        let a = arguments.pop().unwrap().into_char();
+
+        let case = if a == b {
+            interner().intern_idx("True")
+        } else {
+            interner().intern_idx("False")
+        };
+
+        let mut type_path = Path::empty();
+        let bool_type_path = "Core::Bool";
+
+        bool_type_path
+            .split("::")
+            .map(|part| type_path.push(interner().intern_idx(part)))
+            .for_each(drop);
+
+        let constructor = Rc::new(ConstructorInstance { type_path, case });
+        let instance = InstanceInstance { constructor, values: vec![] };
+        Value::Instance(Rc::new(instance))
+    };
     "Array::length" = |mut arguments| {
         let array = arguments.pop().unwrap().into_array();
 

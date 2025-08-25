@@ -15,18 +15,19 @@ use crate::{
         SequenceExpression, VariantCasePattern, WhileExpression, BlockExpression
     },
     interner::{interner, InternIdx},
-    intrinsics::{IntrinsicFunction, EXTERNAL_FUNCTIONS, INTRINSIC_FUNCTIONS},
+    intrinsics::{EXTERNAL_FUNCTIONS, INTRINSIC_FUNCTIONS},
     location::Located,
     typ::BuiltInType,
     value::{
         ConstructorInstance, FunctionInstance, InstanceInstance, LambdaInstance,
-        MethodInstance, StructConstructorInstance, StructInstanceInstance, Value
+        MethodInstance, StructConstructorInstance, StructInstanceInstance, Value,
+        BuiltInMethodKind
     }
 };
 
 pub struct Interpreter {
     methods: HashMap<Path, HashMap<InternIdx, Rc<FunctionInstance>>>,
-    builtin_methods: HashMap<BuiltInType, HashMap<InternIdx, IntrinsicFunction>>,
+    builtin_methods: HashMap<BuiltInType, HashMap<InternIdx, BuiltInMethodKind>>,
     names: HashMap<Path, Value>,
     locals: Vec<Value>,
 
@@ -231,17 +232,22 @@ impl Interpreter {
         };
 
         self.builtin_methods.insert(t, HashMap::new());
-        for method in methods {
-            let MethodSignature { name, .. } = method;
+        for (signature, body) in methods {
+            let MethodSignature { name, .. } = signature;
 
-            let mpath = path.append(*name.data());
+            if let Some(body) = body {
+                let f = Rc::new(FunctionInstance { body: body.clone() });
+                self.builtin_methods.get_mut(&t).unwrap().insert(*name.data(), BuiltInMethodKind::Normal(f));
+            } else {
+                let mpath = path.append(*name.data());
 
-            // TODO: Better error reporting here
-            let f = INTRINSIC_FUNCTIONS
-                .iter().find(|(ppath, _)| ppath == &mpath.to_string())
-                .unwrap().1;
+                // TODO: Better error reporting here
+                let f = INTRINSIC_FUNCTIONS
+                    .iter().find(|(ppath, _)| ppath == &mpath.to_string())
+                    .unwrap().1;
 
-            self.builtin_methods.get_mut(&t).unwrap().insert(*name.data(), f);
+                self.builtin_methods.get_mut(&t).unwrap().insert(*name.data(), BuiltInMethodKind::Intrinsic(f));
+            }
         }
     }
 
@@ -487,44 +493,132 @@ impl Interpreter {
                         self.methods[type_path][&name].clone()
                     },
                     Value::U64(u64) => {
-                        let f = self.builtin_methods[&BuiltInType::U64][&name];
+                        let f = self.builtin_methods[&BuiltInType::U64][&name].clone();
 
                         let mut argument_values = vec![Value::U64(*u64)];
                         for argument in arguments {
                             argument_values.push(self.expression(argument)?);
                         }
 
-                        return Ok(f(argument_values));
+                        match f {
+                            BuiltInMethodKind::Intrinsic(f) => {
+                                return Ok(f(argument_values))
+                            },
+                            BuiltInMethodKind::Normal(f) => {
+                                let return_value;
+                                scoped!(self, {
+                                    let mut argument_values = vec![];
+                                    for argument in arguments {
+                                        argument_values.push(self.expression(argument)?);
+                                    }
+                                    self.locals.push(instance.clone());
+                                    self.locals.extend(argument_values);
+
+                                    return_value = self.expression(&f.body);
+                                });
+
+                                return match return_value {
+                                    Ok(value) | Err(FlowException::Return(value)) => Ok(value),
+                                    _ => unreachable!()
+                                }
+                            },
+                        }
                     },
                     Value::F32(f32) => {
-                        let f = self.builtin_methods[&BuiltInType::F32][&name];
+                        let f = self.builtin_methods[&BuiltInType::F32][&name].clone();
 
                         let mut argument_values = vec![Value::F32(*f32)];
                         for argument in arguments {
                             argument_values.push(self.expression(argument)?);
                         }
 
-                        return Ok(f(argument_values));
+                        match f {
+                            BuiltInMethodKind::Intrinsic(f) => {
+                                return Ok(f(argument_values))
+                            },
+                            BuiltInMethodKind::Normal(f) => {
+                                let return_value;
+                                scoped!(self, {
+                                    let mut argument_values = vec![];
+                                    for argument in arguments {
+                                        argument_values.push(self.expression(argument)?);
+                                    }
+                                    self.locals.push(instance.clone());
+                                    self.locals.extend(argument_values);
+
+                                    return_value = self.expression(&f.body);
+                                });
+
+                                return match return_value {
+                                    Ok(value) | Err(FlowException::Return(value)) => Ok(value),
+                                    _ => unreachable!()
+                                }
+                            },
+                        }
                     },
                     Value::Char(ch) => {
-                        let f = self.builtin_methods[&BuiltInType::Char][&name];
+                        let f = self.builtin_methods[&BuiltInType::Char][&name].clone();
 
                         let mut argument_values = vec![Value::Char(*ch)];
                         for argument in arguments {
                             argument_values.push(self.expression(argument)?);
                         }
 
-                        return Ok(f(argument_values));
+                        match f {
+                            BuiltInMethodKind::Intrinsic(f) => {
+                                return Ok(f(argument_values))
+                            },
+                            BuiltInMethodKind::Normal(f) => {
+                                let return_value;
+                                scoped!(self, {
+                                    let mut argument_values = vec![];
+                                    for argument in arguments {
+                                        argument_values.push(self.expression(argument)?);
+                                    }
+                                    self.locals.push(instance.clone());
+                                    self.locals.extend(argument_values);
+
+                                    return_value = self.expression(&f.body);
+                                });
+
+                                return match return_value {
+                                    Ok(value) | Err(FlowException::Return(value)) => Ok(value),
+                                    _ => unreachable!()
+                                }
+                            },
+                        }
                     },
                     Value::Array(array) => {
-                        let f = self.builtin_methods[&BuiltInType::Array][&name];
+                        let f = self.builtin_methods[&BuiltInType::Array][&name].clone();
 
                         let mut argument_values = vec![Value::Array(array.clone())];
                         for argument in arguments {
                             argument_values.push(self.expression(argument)?);
                         }
 
-                        return Ok(f(argument_values));
+                        match f {
+                            BuiltInMethodKind::Intrinsic(f) => {
+                                return Ok(f(argument_values))
+                            },
+                            BuiltInMethodKind::Normal(f) => {
+                                let return_value;
+                                scoped!(self, {
+                                    let mut argument_values = vec![];
+                                    for argument in arguments {
+                                        argument_values.push(self.expression(argument)?);
+                                    }
+                                    self.locals.push(instance.clone());
+                                    self.locals.extend(argument_values);
+
+                                    return_value = self.expression(&f.body);
+                                });
+
+                                return match return_value {
+                                    Ok(value) | Err(FlowException::Return(value)) => Ok(value),
+                                    _ => unreachable!()
+                                }
+                            },
+                        }
                     },
                     _ => { unreachable!(); }
                 };
@@ -568,7 +662,28 @@ impl Interpreter {
                     argument_values.push(self.expression(argument)?);
                 }
 
-                Ok(f(argument_values))
+                match f {
+                    BuiltInMethodKind::Intrinsic(f) => {
+                        return Ok(f(argument_values))
+                    },
+                    BuiltInMethodKind::Normal(f) => {
+                        let return_value;
+                        scoped!(self, {
+                            let mut argument_values = vec![];
+                            for argument in arguments {
+                                argument_values.push(self.expression(argument)?);
+                            }
+                            self.locals.extend(argument_values);
+
+                            return_value = self.expression(&f.body);
+                        });
+
+                        return match return_value {
+                            Ok(value) | Err(FlowException::Return(value)) => Ok(value),
+                            _ => unreachable!()
+                        }
+                    },
+                }
             }
             Value::ExternalFunction(f) => {
                 let mut argument_values = vec![];
@@ -609,19 +724,19 @@ impl Interpreter {
                 }
             },
             Value::U64(i64) => {
-                let function = self.builtin_methods[&BuiltInType::U64][name.data()];
+                let function = self.builtin_methods[&BuiltInType::U64][name.data()].clone();
                 Ok(Value::BuiltinMethod(Box::new(Value::U64(*i64)), function))
             }
             Value::F32(f32) => {
-                let function = self.builtin_methods[&BuiltInType::F32][name.data()];
+                let function = self.builtin_methods[&BuiltInType::F32][name.data()].clone();
                 Ok(Value::BuiltinMethod(Box::new(Value::F32(*f32)), function))
             }
             Value::Char(ch) => {
-                let function = self.builtin_methods[&BuiltInType::Char][name.data()];
+                let function = self.builtin_methods[&BuiltInType::Char][name.data()].clone();
                 Ok(Value::BuiltinMethod(Box::new(Value::Char(*ch)), function))
             }
             Value::Array(array) => {
-                let function = self.builtin_methods[&BuiltInType::Array][name.data()];
+                let function = self.builtin_methods[&BuiltInType::Array][name.data()].clone();
                 Ok(Value::BuiltinMethod(Box::new(Value::Array(array.clone())), function))
             }
             _ => unreachable!(),

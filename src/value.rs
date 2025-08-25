@@ -13,12 +13,18 @@ use crate::{
 };
 
 #[derive(Clone)]
+pub enum BuiltInMethodKind {
+    Intrinsic(IntrinsicFunction),
+    Normal(Rc<FunctionInstance>)
+}
+
+#[derive(Clone)]
 pub enum Value {
     Function(Rc<FunctionInstance>),
     Method(Rc<MethodInstance>),
     Lambda(Rc<LambdaInstance>),
     InterfaceFunction(InternIdx),
-    BuiltinMethod(Box<Value>, IntrinsicFunction),
+    BuiltinMethod(Box<Value>, BuiltInMethodKind),
     ExternalFunction(IntrinsicFunction),
     Constructor(Rc<ConstructorInstance>),
     Instance(Rc<InstanceInstance>),

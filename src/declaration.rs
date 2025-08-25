@@ -83,7 +83,7 @@ pub struct StructDeclaration {
 pub struct BuiltInDeclaration {
     pub name: Located<InternIdx>,
     pub type_vars: Vec<Located<InternIdx>>,
-    pub methods: Vec<MethodSignature>,
+    pub methods: Vec<(MethodSignature, Option<Located<Expression>>)>,
     pub path: Path,
 }
 
@@ -98,7 +98,6 @@ pub struct ExternalDeclaration {
 pub struct MethodSignature {
     pub name: Located<InternIdx>,
     pub constraints: Vec<Constraint>,
-    #[allow(unused)]
     pub type_vars: Vec<Located<TypeVar>>,
     pub instance: Located<InternIdx>,
     pub arguments: Vec<Located<TypedIdentifier>>,

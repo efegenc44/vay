@@ -12,5 +12,5 @@ struct Vector2(T) {
     )
 }
 
-fun main() : Vector2(String) =
+fun main() : Vector2(Array(Char)) =
     Vector2("a", "b") + Vector2("c", "d")

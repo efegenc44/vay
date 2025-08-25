@@ -18,11 +18,38 @@ builtin F32 {
     fun compare(this, that : F32) : Core::Ordering
 }
 
-builtin Char { }
+builtin Char {
+    fun equals(this, that : Char) : Bool
+}
 
 builtin Array(T) {
     fun length(this) : U64
     fun append(this, value : T)
     fun pop(this) : T
     fun get(this, index : U64) : T
+
+    fun add(this, that : Array(T)) : Array(T) = (
+        let result = [] in (
+            let i = 0 in while i < this.length(), i = i + 1 then {
+                result.append(this.get(i))
+            }
+            let i = 0 in while i < that.length(), i = i + 1 then {
+                result.append(that.get(i))
+            }
+
+            result
+        )
+    )
+
+    fun:(T (Equatable)) equals(this, that : Array(T)) : Bool =
+        this.length() == that.length() & (
+            let i = 0 in while i < this.length(), i = i + 1 then {
+                match this.get(i) == that.get(i) {
+                    let .True : ()
+                    let .False : return False
+                }
+            }
+
+            True
+        )
 }

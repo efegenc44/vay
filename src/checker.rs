@@ -294,7 +294,7 @@ impl Checker {
             Bound::Absolute(path) => {
                 Ok(self.types[path].clone())
             },
-            Bound::Undetermined => unreachable!(),
+            Bound::Undetermined => unreachable!()
         }
     }
 
@@ -668,7 +668,7 @@ impl Checker {
         let BuiltInDeclaration { methods, path, .. } = builtin;
 
         self.methods.insert(path.clone(), HashMap::new());
-        for signature in methods {
+        for (signature, _) in methods {
             self.collect_method_signatures(path, signature)?;
         }
 
@@ -681,6 +681,7 @@ impl Checker {
             Declaration::Define(define) => self.define(define),
             Declaration::Function(function) => self.function(function),
             Declaration::Struct(strct) => self.strct(strct),
+            Declaration::BuiltIn(builtin) => self.builtin(builtin),
             _ => Ok(())
         }
     }
@@ -690,6 +691,35 @@ impl Checker {
 
         for method in methods {
             let MethodDeclaration { signature, body } = method;
+
+            let method_type = &self.methods[path][signature.name.data()];
+            let FunctionType { arguments, return_type } = self.constantize(
+                Type::Forall(
+                    method_type.type_vars.clone(),
+                    MonoType::Function(method_type.function_type.clone())
+                )
+            ).into_function();
+            let variant_type = self.method_instance_type(path, &method_type.constraints);
+
+            scoped!(self, {
+                self.locals.push(Type::Mono(variant_type));
+                self.locals.extend(arguments.into_iter().map(Type::Mono));
+                self.return_type.push(*return_type.clone());
+                self.check(body, *return_type)?;
+                self.return_type.pop();
+            });
+        }
+
+        Ok(())
+    }
+
+    fn builtin(&mut self, builtin: &BuiltInDeclaration) -> ReportableResult<()> {
+        let BuiltInDeclaration { methods, path, .. } = builtin;
+
+        for (signature, body) in methods {
+            let Some(body) = body else {
+                continue;
+            };
 
             let method_type = &self.methods[path][signature.name.data()];
             let FunctionType { arguments, return_type } = self.constantize(

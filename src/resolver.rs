@@ -993,8 +993,18 @@ impl Resolver {
             let type_vars = type_vars.iter().map(|type_var| type_var.data());
             self.locals.extend(type_vars);
 
-            for method in methods {
-                self.method_signature(method)?;
+            for (signature, body) in methods {
+                self.method_signature(signature)?;
+                if let Some(body) = body {
+                    // TODO : Factor out here
+                    scoped!(self, {
+                        self.locals.push(*signature.instance.data());
+                        let argument_names = signature.arguments.iter().map(|idx| *idx.data().indentifier().data());
+                        self.locals.extend(argument_names);
+
+                        self.expression(body)?;
+                    });
+                }
             }
         });
 

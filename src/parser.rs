@@ -72,7 +72,7 @@ const PATTERN_TOKEN_STARTS: &[Token] = &[
     Token::LeftParenthesis,
 ];
 
-#[derive(Eq, PartialEq, Hash, Clone, Copy)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
 enum Operator {
     Multiplication,
     Division,
@@ -341,7 +341,11 @@ impl<'source> Parser<'source> {
             expression = Located::new(binary, location);
 
             if associativity == Associativity::None {
-                break;
+                if let Some(token) = self.peek()?    {
+                    if let Some((_, Associativity::None, _)) = operators(token.data()) {
+                        break;
+                    };
+                }
             }
         }
 
@@ -1044,7 +1048,21 @@ impl<'source> Parser<'source> {
             vec![]
         };
         self.expect(Token::LeftCurly)?;
-        let (methods, _) = self.until(Token::RightCurly, Self::method_signature, None)?;
+        let (methods, _) = self.until(
+            Token::RightCurly,
+            |parser| {
+                let method_signature = parser.method_signature()?;
+                let body = if parser.peek_is(Token::Equals) {
+                    parser.advance()?;
+                    Some(parser.expression()?)
+                } else {
+                    None
+                };
+
+                Ok((method_signature, body))
+            },
+            None
+        )?;
 
         let builtin = BuiltInDeclaration { name, methods, path: Path::empty(), type_vars };
         Ok(Declaration::BuiltIn(builtin))
