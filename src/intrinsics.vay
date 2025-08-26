@@ -53,3 +53,21 @@ builtin Array(T) {
             True
         )
 }
+
+struct ArrayView(T) {
+    array : Array(T)
+    start : U64
+    length : U64
+
+    fun toArray(this) : Array(T) =
+        let result = [] in (
+            let end = this.start + this.length in
+            let i = this.start in while i < end, i = i + 1 then {
+                result.append(this.array.get(i))
+            }
+
+            result
+        )
+
+    fun get(this, index: U64) : T = this.array.get(this.start + index)
+}

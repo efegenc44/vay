@@ -1025,7 +1025,7 @@ impl Checker {
 
                 Ok(true)
             }
-            (MonoType::BuiltIn(path, BuiltInType::Array, arguments), Pattern::Array(array)) => {
+            (MonoType::BuiltIn(_, BuiltInType::Array, arguments), Pattern::Array(array)) => {
                 let ArrayPattern { before, after, rest } = array;
 
                 let argument = arguments.last().unwrap().clone();
@@ -1035,7 +1035,15 @@ impl Checker {
                 }
 
                 if rest.is_some() {
-                    self.locals.push(Type::Mono(MonoType::BuiltIn(path, BuiltInType::Array, arguments)));
+                    let mut type_path = Path::empty();
+                    let view_type_path = "Intrinsics::ArrayView";
+
+                    view_type_path
+                        .split("::")
+                        .map(|part| type_path.push(interner().intern_idx(part)))
+                        .for_each(drop);
+
+                    self.locals.push(Type::Mono(MonoType::Struct(type_path, arguments)));
                 }
 
                 for pattern in after {

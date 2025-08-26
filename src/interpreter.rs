@@ -311,19 +311,33 @@ impl Interpreter {
             (Value::Array(array), Pattern::Array(pattern)) => {
                 let ArrayPattern { before, after, rest } = pattern;
 
-                let array = array.borrow();
-
-                for (value, pattern) in array.iter().zip(before) {
+                for (value, pattern) in array.borrow().iter().zip(before) {
                     self.value_pattern_match(value, pattern);
                 }
 
                 if rest.is_some() {
-                    let rest = &array[before.len()..array.len() - after.len()];
-                    let rest_array = Value::Array(Rc::new(RefCell::new(rest.to_vec())));
-                    self.locals.push(rest_array);
+                    let mut type_path = Path::empty();
+                    let view_type_path = "Intrinsics::ArrayView";
+
+                    view_type_path
+                        .split("::")
+                        .map(|part| type_path.push(interner().intern_idx(part)))
+                        .for_each(drop);
+
+                    let fields = HashMap::from([
+                        (interner().intern_idx("array"), Value::Array(array.clone())),
+                        (interner().intern_idx("start"), Value::U64(before.len() as u64)),
+                        (interner().intern_idx("length"), Value::U64((array.borrow().len() - after.len() - before.len()) as u64)),
+                    ]);
+                    let fields = RefCell::new(fields);
+
+                    let instance = StructInstanceInstance { type_path, fields };
+
+                    let rest_view = Value::StructInstance(Rc::new(instance));
+                    self.locals.push(rest_view);
                 }
 
-                for (value, pattern) in array.iter().rev().zip(after.iter().rev()) {
+                for (value, pattern) in array.borrow().iter().rev().zip(after.iter().rev()) {
                     self.value_pattern_match(value, pattern);
                 }
             }
