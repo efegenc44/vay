@@ -11,11 +11,11 @@ use crate::{
     },
     expression,
     expression::{
-        ArrayPattern,
+        pattern,
         Expression, FunctionTypeExpression,
         PathTypeExpression,
-        Pattern,
-        TypeApplicationExpression, TypeExpression, VariantCasePattern,
+        pattern::Pattern,
+        TypeApplicationExpression, TypeExpression,
     },
     interner::{interner_mut, InternIdx},
     lexer::Lexer,
@@ -654,7 +654,7 @@ impl<'source> Parser<'source> {
             }
         };
 
-        let array = ArrayPattern { before, after, rest };
+        let array = pattern::Array::new(before, after, rest);
         let pattern = Pattern::Array(array);
         Ok(Located::new(pattern, start.extend(&end)))
     }
@@ -674,7 +674,7 @@ impl<'source> Parser<'source> {
             (None, name.location())
         };
 
-        let variant_case = VariantCasePattern { name, fields };
+        let variant_case = pattern::VariantCase::new(name, fields);
         Ok(Located::new(Pattern::VariantCase(variant_case), location))
     }
 

@@ -1,4 +1,4 @@
-use crate::{expression::{Expression, Pattern}, location::Located};
+use crate::{expression::{pattern::Pattern, Expression}, location::Located};
 
 #[derive(Clone)]
 pub struct T {

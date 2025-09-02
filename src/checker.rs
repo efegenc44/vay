@@ -10,11 +10,10 @@ use crate::{
     },
     expression,
     expression::{
-        ArrayPattern,
         Expression, FunctionTypeExpression,
-        PathTypeExpression, Pattern,
+        PathTypeExpression, pattern::Pattern,
         TypeApplicationExpression,
-        TypeExpression, VariantCasePattern,
+        TypeExpression,
     },
     interner::{interner, InternIdx},
     location::{Located, SourceLocation},
@@ -1023,15 +1022,13 @@ impl Checker {
                 Ok(true)
             }
             (MonoType::BuiltIn(_, BuiltInType::Array, arguments), Pattern::Array(array)) => {
-                let ArrayPattern { before, after, rest } = array;
-
                 let argument = arguments.last().unwrap().clone();
 
-                for pattern in before {
+                for pattern in array.before() {
                     self.type_pattern_match(argument.clone(), pattern)?;
                 }
 
-                if rest.is_some() {
+                if array.rest().is_some() {
                     let mut type_path = Path::empty();
                     let view_type_path = "Intrinsics::ArrayView";
 
@@ -1043,35 +1040,33 @@ impl Checker {
                     self.locals.push(Type::Mono(MonoType::Struct(type_path, arguments)));
                 }
 
-                for pattern in after {
+                for pattern in array.after() {
                     self.type_pattern_match(argument.clone(), pattern)?;
                 }
 
                 Ok(true)
             },
             (MonoType::Variant(path, arguments), Pattern::VariantCase(variant_case)) => {
-                let VariantCasePattern { name, fields } = variant_case;
-
                 let cases = &self.cases[&path];
-                if !cases.contains_key(name.data()) {
+                if !cases.contains_key(variant_case.case().data()) {
                     return self.error(
                         TypeCheckError::CaseNotExist {
                             type_path: path,
-                            case_name: *name.data(),
+                            case_name: *variant_case.case().data(),
                         },
-                        name.location(),
+                        variant_case.case().location(),
                     );
                 }
 
-                let case_fields = cases[name.data()].clone();
+                let case_fields = cases[variant_case.case().data()].clone();
                 let empty_fields = vec![];
-                let fields = fields.as_ref().unwrap_or(&empty_fields);
+                let fields = variant_case.fields().unwrap_or(&empty_fields);
 
                 if case_fields.len() != fields.len() {
                     return self.error(
                         TypeCheckError::WrongCaseArity {
                             type_path: path,
-                            case_name: *name.data(),
+                            case_name: *variant_case.case().data(),
                             expected: case_fields.len(),
                             encountered: fields.len()
                         },

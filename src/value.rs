@@ -5,7 +5,8 @@ use std::{
 use crate::{
     bound::Path,
     expression::{
-        ArrayPattern, Expression, Pattern, VariantCasePattern
+        Expression,
+        pattern::Pattern,
     },
     interner::{interner, InternIdx},
     intrinsics::IntrinsicFunction,
@@ -54,15 +55,14 @@ impl Value {
             },
             (Value::Char(c1), Pattern::Char(c2)) => c1 == c2,
             (Value::Instance(instance), Pattern::VariantCase(variant_case)) => {
-                let VariantCasePattern { name, fields } = variant_case;
                 let InstanceInstance { constructor, values } = instance.as_ref();
 
-                if &constructor.case != name.data() {
+                if &constructor.case != variant_case.case().data() {
                     return false;
                 }
 
                 let empty_field = vec![];
-                let fields = fields.as_ref().unwrap_or(&empty_field);
+                let fields = variant_case.fields().unwrap_or(&empty_field);
 
                 for (value, field) in values.iter().zip(fields) {
                     if !value.matches(field.data()) {
@@ -73,21 +73,19 @@ impl Value {
                 true
             }
             (Value::Array(array), Pattern::Array(pattern)) => {
-                let ArrayPattern { before, after, rest } = pattern;
-
                 let array = array.borrow();
 
                 // TODO: Better error reporting here or prefereably check for an
                 //   exhaustive pattern matching should prevent this
-                if rest.is_some() {
-                    assert!(before.len() + after.len() <= array.len());
+                if pattern.rest().is_some() {
+                    assert!(pattern.before().len() + pattern.after().len() <= array.len());
                 } else {
-                    assert!(before.len() + after.len() == array.len());
+                    assert!(pattern.before().len() + pattern.after().len() == array.len());
                 }
 
-                array.iter().zip(before)
+                array.iter().zip(pattern.before())
                     .all(|(value, pattern)| value.matches(pattern.data())) &&
-                array.iter().rev().zip(after.iter().rev())
+                array.iter().rev().zip(pattern.after().iter().rev())
                     .all(|(value, pattern)| value.matches(pattern.data()))
 
             }

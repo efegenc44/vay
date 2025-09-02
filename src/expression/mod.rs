@@ -11,6 +11,8 @@ mod r#return;
 mod assignment;
 mod r#while;
 
+pub mod pattern;
+
 use crate::{bound::Bound, interner::InternIdx, location::Located};
 
 pub type Path        = path::T;
@@ -47,32 +49,6 @@ pub enum Expression {
     While(While),
     Continue,
     Break,
-}
-
-// TODO: default pattern
-#[derive(Clone)]
-pub enum Pattern {
-    Any(InternIdx),
-    U64(u64),
-    F32(f32),
-    String(InternIdx),
-    Char(char),
-    Array(ArrayPattern),
-    VariantCase(VariantCasePattern),
-    Unit
-}
-
-#[derive(Clone)]
-pub struct VariantCasePattern {
-    pub name: Located<InternIdx>,
-    pub fields: Option<Vec<Located<Pattern>>>,
-}
-
-#[derive(Clone)]
-pub struct ArrayPattern {
-    pub before: Vec<Located<Pattern>>,
-    pub after: Vec<Located<Pattern>>,
-    pub rest: Option<InternIdx>,
 }
 
 #[derive(Clone)]

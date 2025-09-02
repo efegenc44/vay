@@ -10,10 +10,8 @@ use crate::{
     },
     expression,
     expression::{
-        ArrayPattern,
         Expression,
-        Pattern,
-        VariantCasePattern,
+        pattern::Pattern,
     },
     interner::{interner, InternIdx},
     intrinsics::{EXTERNAL_FUNCTIONS, INTRINSIC_FUNCTIONS},
@@ -298,23 +296,20 @@ impl Interpreter {
             (Value::Char(_), Pattern::Char(_)) => (),
             (Value::Instance(instance), Pattern::VariantCase(variant_case)) => {
                 let InstanceInstance { values, .. } = instance.as_ref();
-                let VariantCasePattern { fields, .. } = variant_case;
 
                 let empty_field = vec![];
-                let fields = fields.as_ref().unwrap_or(&empty_field);
+                let fields = variant_case.fields().unwrap_or(&empty_field);
 
                 for (value, field) in values.iter().zip(fields) {
                     self.value_pattern_match(value, field);
                 }
             }
             (Value::Array(array), Pattern::Array(pattern)) => {
-                let ArrayPattern { before, after, rest } = pattern;
-
-                for (value, pattern) in array.borrow().iter().zip(before) {
+                for (value, pattern) in array.borrow().iter().zip(pattern.before()) {
                     self.value_pattern_match(value, pattern);
                 }
 
-                if rest.is_some() {
+                if pattern.rest().is_some() {
                     let mut type_path = Path::empty();
                     let view_type_path = "Intrinsics::ArrayView";
 
@@ -325,8 +320,8 @@ impl Interpreter {
 
                     let fields = HashMap::from([
                         (interner().intern_idx("array"), Value::Array(array.clone())),
-                        (interner().intern_idx("start"), Value::U64(before.len() as u64)),
-                        (interner().intern_idx("length"), Value::U64((array.borrow().len() - after.len() - before.len()) as u64)),
+                        (interner().intern_idx("start"), Value::U64(pattern.before().len() as u64)),
+                        (interner().intern_idx("length"), Value::U64((array.borrow().len() - pattern.after().len() - pattern.before().len()) as u64)),
                     ]);
                     let fields = RefCell::new(fields);
 
@@ -336,7 +331,7 @@ impl Interpreter {
                     self.locals.push(rest_view);
                 }
 
-                for (value, pattern) in array.borrow().iter().rev().zip(after.iter().rev()) {
+                for (value, pattern) in array.borrow().iter().rev().zip(pattern.after().iter().rev()) {
                     self.value_pattern_match(value, pattern);
                 }
             }

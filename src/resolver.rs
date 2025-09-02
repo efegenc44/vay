@@ -11,11 +11,10 @@ use crate::{
     },
     expression,
     expression::{
-        ArrayPattern,
         Expression, FunctionTypeExpression,
-        PathTypeExpression, Pattern,
+        PathTypeExpression, pattern::Pattern,
         TypeApplicationExpression,
-        TypeExpression, VariantCasePattern
+        TypeExpression,
     },
     interner::{interner, InternIdx},
     intrinsics::INTRINSICS_MODULE_NAME,
@@ -692,26 +691,22 @@ impl Resolver {
             Pattern::String(_) |
             Pattern::Char(_) => (),
             Pattern::VariantCase(variant_case) => {
-                let VariantCasePattern { fields, .. } = variant_case;
-
-                if let Some(fields) = fields {
+                if let Some(fields) = variant_case.fields() {
                     for field in fields {
                         self.name_pattern_match(field);
                     }
                 }
             },
             Pattern::Array(array) => {
-                let ArrayPattern { before, after, rest } = array;
-
-                for pattern in before {
+                for pattern in array.before() {
                     self.name_pattern_match(pattern);
                 }
 
-                if let Some(intern_idx) = rest {
-                    self.locals.push(*intern_idx);
+                if let Some(intern_idx) = array.rest() {
+                    self.locals.push(intern_idx);
                 }
 
-                for pattern in after {
+                for pattern in array.after() {
                     self.name_pattern_match(pattern);
                 }
             }
