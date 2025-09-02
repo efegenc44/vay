@@ -9,13 +9,13 @@ use crate::{
         ModuleDeclaration, StructDeclaration, TypeVar, TypedIdentifier,
         VariantCase, VariantDeclaration, DefineDeclaration
     },
+    expression,
     expression::{
-        ApplicationExpression, ArrayExpression, ArrayPattern, AssignmentExpression,
-        Expression, FunctionTypeExpression, LambdaExpression, LetExpression,
-        MatchBranch, MatchExpression, PathExpression, PathTypeExpression,
-        Pattern, ProjectionExpression, ReturnExpression, SequenceExpression,
-        TypeApplicationExpression, TypeExpression, VariantCasePattern, WhileExpression,
-        BlockExpression
+        ArrayPattern,
+        Expression, FunctionTypeExpression,
+        PathTypeExpression,
+        Pattern,
+        TypeApplicationExpression, TypeExpression, VariantCasePattern,
     },
     interner::{interner_mut, InternIdx},
     lexer::Lexer,
@@ -300,10 +300,7 @@ impl<'source> Parser<'source> {
 
             let assign_expression = self.expression()?;
             let location = expression.location().extend(&assign_expression.location());
-            let assignment = AssignmentExpression {
-                assignable: Box::new(expression),
-                expression: Box::new(assign_expression),
-            };
+            let assignment = expression::Assignment::new(Box::new(expression), Box::new(assign_expression));
 
             Ok(Located::new(Expression::Assignment(assignment), location))
         } else {
@@ -323,20 +320,14 @@ impl<'source> Parser<'source> {
             }
 
             let operator_location = self.advance()?.unwrap().location();
-            let operator_path = PathExpression {
-                parts: self.operator_parts[&operator].clone(),
-                bound: Bound::Undetermined
-            };
+            let operator_path = expression::Path::new(self.operator_parts[&operator].clone());
             let operator = Box::new(Located::new(Expression::Path(operator_path), operator_location));
 
             let next_precedence = precedence + (associativity != Associativity::Right) as usize;
             let rhs = self.binary(next_precedence)?;
             let location = expression.location().extend(&rhs.location());
 
-            let application = ApplicationExpression {
-                function: operator,
-                arguments: vec![expression, rhs],
-            };
+            let application = expression::Application::new(operator, vec![expression, rhs]);
             let binary = Expression::Application(application);
             expression = Located::new(binary, location);
 
@@ -364,20 +355,14 @@ impl<'source> Parser<'source> {
                 )?;
 
                 let location = expression.location().extend(&end);
-                let application = ApplicationExpression {
-                    function: Box::new(expression),
-                    arguments,
-                };
+                let application = expression::Application::new(Box::new(expression), arguments);
                 expression = Located::new(Expression::Application(application), location);
             } else if self.peek_is(Token::Dot) {
                 self.advance()?;
                 let name = self.expect_identifier()?;
 
                 let location = expression.location().extend(&name.location());
-                let projection = ProjectionExpression {
-                    expression: Box::new(expression),
-                    name,
-                };
+                let projection = expression::Projection::new(Box::new(expression), name);
                 expression = Located::new(Expression::Projection(projection), location);
             } else {
                 break;
@@ -442,7 +427,7 @@ impl<'source> Parser<'source> {
     fn path(&mut self) -> ReportableResult<Located<Expression>> {
         let parts = self.path_parts()?;
 
-        let path = PathExpression { parts: parts.data().to_owned(), bound: Bound::Undetermined };
+        let path = expression::Path::new(parts.data().to_owned());
         let expression = Expression::Path(path);
         Ok(Located::new(expression, parts.location()))
     }
@@ -456,21 +441,21 @@ impl<'source> Parser<'source> {
             Some(Token::Comma)
         )?;
 
-        let array = ArrayExpression { expressions };
+        let array = expression::Array::new(expressions);
         let expression = Expression::Array(array);
         Ok(Located::new(expression, start.extend(&end)))
     }
 
     fn lett(&mut self) -> ReportableResult<Located<Expression>> {
         let start = self.expect(Token::LetKeyword)?.location();
-        let name = self.expect_identifier()?;
+        let identifier = self.expect_identifier()?;
         self.expect(Token::Equals)?;
         let value_expression = Box::new(self.expression()?);
         self.expect(Token::InKeyword)?;
         let body_expression = Box::new(self.expression()?);
         let end = body_expression.location();
 
-        let lett = LetExpression { name, value_expression, body_expression };
+        let lett = expression::Let::new(identifier, value_expression, body_expression);
         let expression = Expression::Let(lett);
         Ok(Located::new(expression, start.extend(&end)))
     }
@@ -483,7 +468,7 @@ impl<'source> Parser<'source> {
             None
         )?;
 
-        let sequence = SequenceExpression { expressions };
+        let sequence = expression::Sequence::new(expressions);
         let expression = Expression::Sequence(sequence);
         Ok(Located::new(expression, start.extend(&end)))
     }
@@ -496,7 +481,7 @@ impl<'source> Parser<'source> {
             None
         )?;
 
-        let block = BlockExpression { expressions };
+        let block = expression::Block::new(expressions);
         let expression = Expression::Block(block);
         Ok(Located::new(expression, start.extend(&end)))
     }
@@ -512,7 +497,7 @@ impl<'source> Parser<'source> {
         let body = Box::new(self.expression()?);
         let end = body.location();
 
-        let lambda = LambdaExpression  { arguments, body };
+        let lambda = expression::Lambda::new(arguments, body);
         let expression = Expression::Lambda(lambda);
         Ok(Located::new(expression, start.extend(&end)))
     }
@@ -531,10 +516,7 @@ impl<'source> Parser<'source> {
 
         let (branches, end) = self.until(Token::RightCurly, Self::match_branch, None)?;
         let location = start.extend(&end);
-        let matc = MatchExpression {
-            expressions,
-            branches
-        };
+        let matc = expression::Match::new(expressions, branches);
 
         Ok(Located::new(Expression::Match(matc), location))
     }
@@ -544,7 +526,7 @@ impl<'source> Parser<'source> {
         let expression = Box::new(self.expression()?);
         let end = expression.location();
 
-        let retrn = ReturnExpression { expression };
+        let retrn = expression::Return::new(expression);
         Ok(Located::new(Expression::Return(retrn), start.extend(&end)))
     }
 
@@ -564,7 +546,7 @@ impl<'source> Parser<'source> {
         let body = Box::new(self.expression()?);
 
         let location = start.extend(&body.location());
-        let whilee = WhileExpression { condition, post, body };
+        let whilee = expression::While::new(condition, post, body);
         Ok(Located::new(Expression::While(whilee), location))
     }
 
@@ -580,7 +562,7 @@ impl<'source> Parser<'source> {
         Ok(Located::new(Expression::Break, location))
     }
 
-    fn match_branch(&mut self) -> ReportableResult<Located<MatchBranch>> {
+    fn match_branch(&mut self) -> ReportableResult<Located<expression::MatchBranch>> {
         let start = self.expect(Token::LetKeyword)?.location();
         let patterns = self.until(
             Token::Colon,
@@ -595,7 +577,7 @@ impl<'source> Parser<'source> {
         let expression = self.expression()?;
 
         let location = start.extend(&expression.location());
-        Ok(Located::new(MatchBranch::new(patterns, expression), location))
+        Ok(Located::new(expression::MatchBranch::new(patterns, expression), location))
     }
 
     fn pattern(&mut self) -> ReportableResult<Located<Pattern>> {

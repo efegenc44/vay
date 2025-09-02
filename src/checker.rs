@@ -8,12 +8,13 @@ use crate::{
         MethodSignature, Module, StructDeclaration, TypedIdentifier,
         VariantDeclaration, DefineDeclaration
     },
+    expression,
     expression::{
-        ApplicationExpression, ArrayExpression, ArrayPattern, AssignmentExpression,
-        Expression, FunctionTypeExpression, LambdaExpression, LetExpression,
-        MatchExpression, PathExpression, PathTypeExpression, Pattern,
-        ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression,
-        TypeExpression, VariantCasePattern, WhileExpression, BlockExpression
+        ArrayPattern,
+        Expression, FunctionTypeExpression,
+        PathTypeExpression, Pattern,
+        TypeApplicationExpression,
+        TypeExpression, VariantCasePattern,
     },
     interner::{interner, InternIdx},
     location::{Located, SourceLocation},
@@ -776,9 +777,7 @@ impl Checker {
             Expression::Break => false,
 
             Expression::Path(path) => {
-                let PathExpression { bound, .. } = path;
-
-                match bound {
+                match path.bound() {
                     Bound::Local(_) => false,
                     Bound::Absolute(path) => {
                         if current_define == path {
@@ -796,45 +795,45 @@ impl Checker {
             },
 
             Expression::Array(array) => {
-                array.expressions
+                array.expressions()
                     .iter().any(|expression| self.cyclic_define(expression, current_define))
             },
             Expression::Application(application) => {
-                self.cyclic_define(&application.function, current_define) ||
-                application.arguments
+                self.cyclic_define(&application.function(), current_define) ||
+                application.arguments()
                     .iter().any(|expression| self.cyclic_define(expression, current_define))
             },
             Expression::Projection(projection) => {
-                self.cyclic_define(&projection.expression, current_define)
+                self.cyclic_define(&projection.expression(), current_define)
             },
             Expression::Let(lett) => {
-                self.cyclic_define(&lett.value_expression, current_define) ||
-                self.cyclic_define(&lett.body_expression, current_define)
+                self.cyclic_define(&lett.value_expression(), current_define) ||
+                self.cyclic_define(&lett.body_expression(), current_define)
             },
             Expression::Sequence(sequence) => {
-                sequence.expressions
+                sequence.expressions()
                     .iter().any(|expression| self.cyclic_define(expression, current_define))
             }
             Expression::Block(block) => {
-                block.expressions
+                block.expressions()
                     .iter().any(|expression| self.cyclic_define(expression, current_define))
             },
             Expression::Match(mtch) => {
-                mtch.expressions
+                mtch.expressions()
                     .iter().any(|expression| self.cyclic_define(expression, current_define)) ||
-                mtch.branches
+                mtch.branches()
                     .iter().any(|branch| self.cyclic_define(branch.data().expression(), current_define))
             },
             Expression::Return(retrn) => {
-                self.cyclic_define(&retrn.expression, current_define)
+                self.cyclic_define(&retrn.expression(), current_define)
             },
             Expression::Assignment(assignment) => {
-                self.cyclic_define(&assignment.expression, current_define)
+                self.cyclic_define(&assignment.expression(), current_define)
             },
             Expression::While(whilee) => {
-                self.cyclic_define(&whilee.condition, current_define) ||
-                self.cyclic_define(&whilee.body, current_define) ||
-                whilee.post
+                self.cyclic_define(&whilee.condition(), current_define) ||
+                self.cyclic_define(&whilee.body(), current_define) ||
+                whilee.post()
                     .as_ref()
                     .map(|expression| self.cyclic_define(expression, current_define))
                     .unwrap_or(false)
@@ -958,16 +957,14 @@ impl Checker {
         Ok(())
     }
 
-    fn matc(&mut self, matc: &MatchExpression) -> ReportableResult<MonoType> {
+    fn matc(&mut self, matc: &expression::Match) -> ReportableResult<MonoType> {
         // TODO: Exhaustiveness check
-        let MatchExpression { expressions, branches } = matc;
-
-        let mut ms = expressions
+        let mut ms = matc.expressions()
             .iter().map(|expression| self.infer(expression))
             .collect::<ReportableResult<Vec<_>>>()?;
         let mut return_type = MonoType::Var(self.newvar());
 
-        match &branches[..] {
+        match &matc.branches()[..] {
             [] => return_type = MonoType::Unit,
             branches => {
                 for branch in branches {
@@ -1099,13 +1096,11 @@ impl Checker {
         }
     }
 
-    fn retrn(&mut self, retrn: &ReturnExpression) -> ReportableResult<MonoType> {
-        let ReturnExpression { expression } = retrn;
-
+    fn retrn(&mut self, retrn: &expression::Return) -> ReportableResult<MonoType> {
         let Some(return_type) = self.return_type.last().cloned() else {
             todo!("Return outside of a function");
         };
-        self.check(expression, return_type)?;
+        self.check(retrn.expression(), return_type)?;
 
         Ok(MonoType::Bottom)
     }
@@ -1287,10 +1282,8 @@ impl Checker {
     }
 
     // NOTE: bool indicates if the path is assignable
-    fn path(&mut self, path: &PathExpression) -> ReportableResult<(MonoType, bool)> {
-        let PathExpression { bound, .. } = path;
-
-        match bound {
+    fn path(&mut self, path: &expression::Path) -> ReportableResult<(MonoType, bool)> {
+        match path.bound() {
             Bound::Local(bound_idx) => {
                 let index = self.locals.len() - 1 - bound_idx;
                 let local = self.locals[index].clone();
@@ -1312,12 +1305,10 @@ impl Checker {
         }
     }
 
-    fn array(&mut self, array: &ArrayExpression) -> ReportableResult<MonoType> {
-        let ArrayExpression { expressions } = array;
-
+    fn array(&mut self, array: &expression::Array) -> ReportableResult<MonoType> {
         let mut inner_type = MonoType::Var(self.newvar());
 
-        for expression in expressions {
+        for expression in array.expressions() {
             self.check(expression, inner_type.clone())?;
             inner_type = inner_type.substitute(&self.unification_table);
         }
@@ -1331,31 +1322,29 @@ impl Checker {
         Ok(m)
     }
 
-    fn application(&mut self, application: &ApplicationExpression) -> ReportableResult<MonoType> {
-        let ApplicationExpression { function, arguments } = application;
-
-        let m = self.infer(function)?;
+    fn application(&mut self, application: &expression::Application) -> ReportableResult<MonoType> {
+        let m = self.infer(application.function())?;
         let MonoType::Function(function_type) = m else {
             return self.error(
                 TypeCheckError::ExpectedAFunction { encountered: m },
-                function.location()
+                application.function().location()
             );
         };
 
         let FunctionType { arguments: expected_types, return_type } = function_type;
 
-        if arguments.len() != expected_types.len() {
+        if application.arguments().len() != expected_types.len() {
             return self.error(
                 TypeCheckError::ArityMismatch {
                     expected: expected_types.len(),
-                    encountered: arguments.len()
+                    encountered: application.arguments().len()
                 },
-                function.location()
+                application.function().location()
             );
         }
 
         let mut argument_types = vec![];
-        for argument in arguments {
+        for argument in application.arguments() {
             argument_types.push((self.infer(argument)?, argument.location()));
         }
 
@@ -1375,14 +1364,12 @@ impl Checker {
     }
 
     // NOTE: bool indicates if the projection is assignable
-    fn projection(&mut self, projection: &ProjectionExpression) -> ReportableResult<(MonoType, bool)> {
-        let ProjectionExpression { expression, name } = projection;
-
-        let m = self.infer(expression)?;
+    fn projection(&mut self, projection: &expression::Projection) -> ReportableResult<(MonoType, bool)> {
+        let m = self.infer(projection.expression())?;
 
         // Field Projection (Only structs)
         if let MonoType::Struct(path, arguments) = &m {
-            if let Some(m) = self.fields[path].get(name.data()).cloned() {
+            if let Some(m) = self.fields[path].get(projection.projected().data()).cloned() {
                 let m = self.substitute_arguments_one(path, arguments.clone(), m);
 
                 return Ok((m, true))
@@ -1394,13 +1381,13 @@ impl Checker {
             MonoType::Variant(path, arguments) |
             MonoType::Struct(path, arguments) |
             MonoType::BuiltIn(path, _, arguments) => {
-                let Some(method_type) = self.methods[path].get(name.data()).cloned() else {
+                let Some(method_type) = self.methods[path].get(projection.projected().data()).cloned() else {
                     return self.error(
                         TypeCheckError::NotProjectable {
                             ty: m,
-                            name: *name.data()
+                            name: *projection.projected().data()
                         },
-                        name.location()
+                        projection.projected().location()
                     );
                 };
 
@@ -1416,7 +1403,7 @@ impl Checker {
                                 t: argument.clone(),
                                 interfaces: constraint.clone()
                             },
-                            expression.location(),
+                            projection.expression().location(),
                         );
                     }
                 }
@@ -1433,13 +1420,13 @@ impl Checker {
                 Ok((m, false))
             },
             MonoType::Constant(type_var) | MonoType::Var(type_var) => {
-                let Some(variable_function) = self.find_method_in_interfaces(name.data(), &type_var.interfaces) else {
+                let Some(variable_function) = self.find_method_in_interfaces(projection.projected().data(), &type_var.interfaces) else {
                     return self.error(
                         TypeCheckError::NotProjectable {
                             ty: m,
-                            name: *name.data()
+                            name: *projection.projected().data()
                         },
-                        name.location()
+                        projection.projected().location()
                     );
                 };
 
@@ -1453,33 +1440,29 @@ impl Checker {
                 self.error(
                     TypeCheckError::NotProjectable {
                         ty: m,
-                        name: *name.data()
+                        name: *projection.projected().data()
                     },
-                    name.location()
+                    projection.projected().location()
                 )
             }
         }
     }
 
-    fn lett(&mut self, lett: &LetExpression) -> ReportableResult<MonoType> {
-        let LetExpression { value_expression, body_expression, .. } = lett;
-
-        let m = self.infer(value_expression)?;
+    fn lett(&mut self, lett: &expression::Let) -> ReportableResult<MonoType> {
+        let m = self.infer(lett.value_expression())?;
         let t = self.generalize(m);
 
         let return_type;
         scoped!(self, {
             self.locals.push(t);
-            return_type = self.infer(body_expression)?;
+            return_type = self.infer(lett.body_expression())?;
         });
 
         Ok(return_type)
     }
 
-    fn sequence(&mut self, sequence: &SequenceExpression) -> ReportableResult<MonoType> {
-        let SequenceExpression { expressions } = sequence;
-
-        match &expressions[..] {
+    fn sequence(&mut self, sequence: &expression::Sequence) -> ReportableResult<MonoType> {
+        match &sequence.expressions()[..] {
             [] => Ok(MonoType::Unit),
             [init@.., last] => {
                 init
@@ -1491,21 +1474,17 @@ impl Checker {
         }
     }
 
-    fn block(&mut self, block: &BlockExpression) -> ReportableResult<MonoType> {
-        let BlockExpression { expressions } = block;
-
-        expressions
+    fn block(&mut self, block: &expression::Block) -> ReportableResult<MonoType> {
+        block.expressions()
             .iter().map(|expression| self.infer(expression))
             .collect::<ReportableResult<Vec<_>>>()?;
 
         Ok(MonoType::Unit)
     }
 
-    fn lambda(&mut self, lambda: &LambdaExpression) -> ReportableResult<MonoType> {
-        let LambdaExpression { arguments, body } = lambda;
-
+    fn lambda(&mut self, lambda: &expression::Lambda) -> ReportableResult<MonoType> {
         let return_type = MonoType::Var(self.newvar());
-        let variables = arguments
+        let variables = lambda.arguments()
             .iter().map(|_| self.newvar())
             .map(MonoType::Var)
             .collect::<Vec<_>>();
@@ -1517,7 +1496,7 @@ impl Checker {
             );
 
             self.return_type.push(return_type.clone());
-            self.check(body, return_type.clone())?;
+            self.check(lambda.body(), return_type.clone())?;
             self.return_type.pop();
         });
 
@@ -1532,27 +1511,23 @@ impl Checker {
         Ok(MonoType::Function(function_type))
     }
 
-    fn assignment(&mut self, assignment: &AssignmentExpression) -> ReportableResult<MonoType> {
-        let AssignmentExpression { assignable, expression } = assignment;
-
-        let (assignable_type, is_assignable) = match assignable.data() {
+    fn assignment(&mut self, assignment: &expression::Assignment) -> ReportableResult<MonoType> {
+        let (assignable_type, is_assignable) = match assignment.assignable().data() {
             Expression::Path(path) => self.path(path)?,
             Expression::Projection(projection) => self.projection(projection)?,
-            _ => return self.error(TypeCheckError::NotAssignable, assignable.location())
+            _ => return self.error(TypeCheckError::NotAssignable, assignment.assignable().location())
         };
 
         if !is_assignable {
-            return self.error(TypeCheckError::NotAssignable, assignable.location());
+            return self.error(TypeCheckError::NotAssignable, assignment.assignable().location());
         }
 
-        self.check(expression, assignable_type)?;
+        self.check(assignment.expression(), assignable_type)?;
 
         Ok(MonoType::Unit)
     }
 
-    fn whilee(&mut self, whilee: &WhileExpression) -> ReportableResult<MonoType> {
-        let WhileExpression { condition, post, body } = whilee;
-
+    fn whilee(&mut self, whilee: &expression::While) -> ReportableResult<MonoType> {
         let mut type_path = Path::empty();
         let bool_type_path = "Core::Bool";
 
@@ -1563,13 +1538,13 @@ impl Checker {
 
         let boole = MonoType::Variant(type_path, vec![]);
 
-        self.check(condition, boole)?;
+        self.check(whilee.condition(), boole)?;
 
-        if let Some(post) = post {
+        if let Some(post) = whilee.post() {
             self.infer(post)?;
         }
 
-        self.infer(body)?;
+        self.infer(whilee.body())?;
 
         Ok(MonoType::Unit)
     }

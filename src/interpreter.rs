@@ -8,11 +8,12 @@ use crate::{
         MethodSignature, Module, StructDeclaration, VariantDeclaration,
         DefineDeclaration
     },
+    expression,
     expression::{
-        ApplicationExpression, ArrayExpression, ArrayPattern, AssignmentExpression,
-        Expression, LambdaExpression, LetExpression, MatchExpression,
-        PathExpression, Pattern, ProjectionExpression, ReturnExpression,
-        SequenceExpression, VariantCasePattern, WhileExpression, BlockExpression
+        ArrayPattern,
+        Expression,
+        Pattern,
+        VariantCasePattern,
     },
     interner::{interner, InternIdx},
     intrinsics::{EXTERNAL_FUNCTIONS, INTRINSIC_FUNCTIONS},
@@ -264,15 +265,13 @@ impl Interpreter {
         self.names.insert(path.clone(), function);
     }
 
-    fn matc(&mut self, matc: &MatchExpression) -> ControlFlow {
-        let MatchExpression { expressions, branches } = matc;
-
+    fn matc(&mut self, matc: &expression::Match) -> ControlFlow {
         let mut values = vec![];
-        for expression in expressions {
+        for expression in matc.expressions() {
             values.push(self.expression(expression)?)
         }
 
-        for branch in branches {
+        for branch in matc.branches() {
             if values.iter().zip(branch.data().patterns()).all(|(v, p)| v.matches(p.data())) {
                 let return_value;
                 scoped!(self, {
@@ -346,10 +345,8 @@ impl Interpreter {
         }
     }
 
-    fn retrn(&mut self, retrn: &ReturnExpression) -> ControlFlow {
-        let ReturnExpression { expression } = retrn;
-
-        let value = self.expression(expression)?;
+    fn retrn(&mut self, retrn: &expression::Return) -> ControlFlow {
+        let value = self.expression(retrn.expression())?;
         Err(FlowException::Return(value))
     }
 
@@ -378,10 +375,8 @@ impl Interpreter {
         }
     }
 
-    fn path(&mut self, path: &PathExpression) -> ControlFlow {
-        let PathExpression { bound, .. } = path;
-
-        match bound {
+    fn path(&mut self, path: &expression::Path) -> ControlFlow {
+        match path.bound() {
             Bound::Undetermined => unreachable!(),
             Bound::Local(bound_idx) => {
                 let index = self.locals.len() - 1 - bound_idx;
@@ -404,11 +399,9 @@ impl Interpreter {
         }
     }
 
-    fn array(&mut self, array: &ArrayExpression) -> ControlFlow {
-        let ArrayExpression { expressions } = array;
-
+    fn array(&mut self, array: &expression::Array) -> ControlFlow {
         let mut values = vec![];
-        for expression in expressions {
+        for expression in array.expressions() {
             values.push(self.expression(expression)?);
         }
 
@@ -416,17 +409,15 @@ impl Interpreter {
     }
 
     // TODO: Abstract application on Value and use it here
-    fn application(&mut self, application: &ApplicationExpression) -> ControlFlow {
-        let ApplicationExpression { function, arguments } = application;
-
-        match self.expression(function)? {
+    fn application(&mut self, application: &expression::Application) -> ControlFlow {
+        match self.expression(application.function())? {
             Value::Function(function) => {
                 let FunctionInstance { body } = function.as_ref();
 
                 let return_value;
                 scoped!(self, {
                     let mut argument_values = vec![];
-                    for argument in arguments {
+                    for argument in application.arguments() {
                         let argument = self.expression(argument)?;
                         argument_values.push(argument);
                     }
@@ -447,7 +438,7 @@ impl Interpreter {
                 let return_value;
                 scoped!(self, {
                     let mut argument_values = vec![];
-                    for argument in arguments {
+                    for argument in application.arguments() {
                         argument_values.push(self.expression(argument)?);
                     }
                     self.locals.push(instance.clone());
@@ -463,7 +454,7 @@ impl Interpreter {
             },
             Value::Constructor(constructor) => {
                 let mut values = vec![];
-                for argument in arguments {
+                for argument in application.arguments() {
                     values.push(self.expression(argument)?);
                 }
 
@@ -476,7 +467,7 @@ impl Interpreter {
                 let return_value;
                 scoped!(self, {
                     let mut argument_values = vec![];
-                    for argument in arguments {
+                    for argument in application.arguments() {
                         argument_values.push(self.expression(argument)?);
                     }
 
@@ -492,7 +483,7 @@ impl Interpreter {
                 }
             }
             Value::InterfaceFunction(name) => {
-                let instance = self.expression(&arguments[0])?.clone();
+                let instance = self.expression(&application.arguments()[0])?.clone();
                 // TODO: Abstract projection on Value and use it here
                 let method = match &instance {
                     Value::Instance(value) => {
@@ -510,7 +501,7 @@ impl Interpreter {
                         let f = self.builtin_methods[&BuiltInType::U64][&name].clone();
 
                         let mut argument_values = vec![Value::U64(*u64)];
-                        for argument in arguments {
+                        for argument in application.arguments() {
                             argument_values.push(self.expression(argument)?);
                         }
 
@@ -522,7 +513,7 @@ impl Interpreter {
                                 let return_value;
                                 scoped!(self, {
                                     let mut argument_values = vec![];
-                                    for argument in arguments {
+                                    for argument in application.arguments() {
                                         argument_values.push(self.expression(argument)?);
                                     }
                                     self.locals.push(instance.clone());
@@ -542,7 +533,7 @@ impl Interpreter {
                         let f = self.builtin_methods[&BuiltInType::F32][&name].clone();
 
                         let mut argument_values = vec![Value::F32(*f32)];
-                        for argument in arguments {
+                        for argument in application.arguments() {
                             argument_values.push(self.expression(argument)?);
                         }
 
@@ -554,7 +545,7 @@ impl Interpreter {
                                 let return_value;
                                 scoped!(self, {
                                     let mut argument_values = vec![];
-                                    for argument in arguments {
+                                    for argument in application.arguments() {
                                         argument_values.push(self.expression(argument)?);
                                     }
                                     self.locals.push(instance.clone());
@@ -574,7 +565,7 @@ impl Interpreter {
                         let f = self.builtin_methods[&BuiltInType::Char][&name].clone();
 
                         let mut argument_values = vec![Value::Char(*ch)];
-                        for argument in arguments {
+                        for argument in application.arguments() {
                             argument_values.push(self.expression(argument)?);
                         }
 
@@ -586,7 +577,7 @@ impl Interpreter {
                                 let return_value;
                                 scoped!(self, {
                                     let mut argument_values = vec![];
-                                    for argument in arguments {
+                                    for argument in application.arguments() {
                                         argument_values.push(self.expression(argument)?);
                                     }
                                     self.locals.push(instance.clone());
@@ -606,7 +597,7 @@ impl Interpreter {
                         let f = self.builtin_methods[&BuiltInType::Array][&name].clone();
 
                         let mut argument_values = vec![Value::Array(array.clone())];
-                        for argument in arguments {
+                        for argument in application.arguments() {
                             argument_values.push(self.expression(argument)?);
                         }
 
@@ -618,7 +609,7 @@ impl Interpreter {
                                 let return_value;
                                 scoped!(self, {
                                     let mut argument_values = vec![];
-                                    for argument in arguments {
+                                    for argument in application.arguments() {
                                         argument_values.push(self.expression(argument)?);
                                     }
                                     self.locals.push(instance.clone());
@@ -642,7 +633,7 @@ impl Interpreter {
                 let return_value;
                 scoped!(self, {
                     let mut argument_values = vec![];
-                    for argument in arguments {
+                    for argument in application.arguments() {
                         argument_values.push(self.expression(argument)?);
                     }
                     self.locals.push(instance.clone());
@@ -660,7 +651,7 @@ impl Interpreter {
                 let StructConstructorInstance { fields, type_path } = constructor.as_ref();
 
                 let mut values = HashMap::new();
-                for (argument, field_name) in arguments.iter().zip(fields.iter()) {
+                for (argument, field_name) in application.arguments().iter().zip(fields.iter()) {
                     values.insert(*field_name, self.expression(argument)?);
                 }
 
@@ -672,7 +663,7 @@ impl Interpreter {
             },
             Value::BuiltinMethod(v, f) => {
                 let mut argument_values = vec![*v];
-                for argument in arguments {
+                for argument in application.arguments() {
                     argument_values.push(self.expression(argument)?);
                 }
 
@@ -684,7 +675,7 @@ impl Interpreter {
                         let return_value;
                         scoped!(self, {
                             let mut argument_values = vec![];
-                            for argument in arguments {
+                            for argument in application.arguments() {
                                 argument_values.push(self.expression(argument)?);
                             }
                             self.locals.extend(argument_values);
@@ -701,7 +692,7 @@ impl Interpreter {
             }
             Value::ExternalFunction(f) => {
                 let mut argument_values = vec![];
-                for argument in arguments {
+                for argument in application.arguments() {
                     argument_values.push(self.expression(argument)?);
                 }
 
@@ -712,69 +703,63 @@ impl Interpreter {
         }
     }
 
-    fn projection(&mut self, projection: &ProjectionExpression) -> ControlFlow {
-        let ProjectionExpression { expression, name } = projection;
-
-        let instance = self.expression(expression)?;
+    fn projection(&mut self, projection: &expression::Projection) -> ControlFlow {
+        let instance = self.expression(projection.expression())?;
 
         match &instance {
             Value::Instance(instanceinstance) => {
                 let InstanceInstance { constructor, .. } = instanceinstance.as_ref();
                 let ConstructorInstance { type_path, .. } = constructor.as_ref();
 
-                let function = self.methods[type_path][name.data()].clone();
+                let function = self.methods[type_path][projection.projected().data()].clone();
                 let method = MethodInstance { instance, function };
                 Ok(Value::Method(Rc::new(method)))
             }
             Value::StructInstance(structinstanceinstance) => {
                 let StructInstanceInstance { type_path, fields } = structinstanceinstance.as_ref();
 
-                if fields.borrow().contains_key(name.data()) {
-                    Ok(fields.borrow().get(name.data()).unwrap().clone())
+                if fields.borrow().contains_key(projection.projected().data()) {
+                    Ok(fields.borrow().get(projection.projected().data()).unwrap().clone())
                 } else {
-                    let function = self.methods[type_path][name.data()].clone();
+                    let function = self.methods[type_path][projection.projected().data()].clone();
                     let method = MethodInstance { instance, function };
                     Ok(Value::Method(Rc::new(method)))
                 }
             },
             Value::U64(i64) => {
-                let function = self.builtin_methods[&BuiltInType::U64][name.data()].clone();
+                let function = self.builtin_methods[&BuiltInType::U64][projection.projected().data()].clone();
                 Ok(Value::BuiltinMethod(Box::new(Value::U64(*i64)), function))
             }
             Value::F32(f32) => {
-                let function = self.builtin_methods[&BuiltInType::F32][name.data()].clone();
+                let function = self.builtin_methods[&BuiltInType::F32][projection.projected().data()].clone();
                 Ok(Value::BuiltinMethod(Box::new(Value::F32(*f32)), function))
             }
             Value::Char(ch) => {
-                let function = self.builtin_methods[&BuiltInType::Char][name.data()].clone();
+                let function = self.builtin_methods[&BuiltInType::Char][projection.projected().data()].clone();
                 Ok(Value::BuiltinMethod(Box::new(Value::Char(*ch)), function))
             }
             Value::Array(array) => {
-                let function = self.builtin_methods[&BuiltInType::Array][name.data()].clone();
+                let function = self.builtin_methods[&BuiltInType::Array][projection.projected().data()].clone();
                 Ok(Value::BuiltinMethod(Box::new(Value::Array(array.clone())), function))
             }
             _ => unreachable!(),
         }
     }
 
-    fn lett(&mut self, lett: &LetExpression) -> ControlFlow {
-        let LetExpression { value_expression, body_expression, .. } = lett;
-
-        let value = self.expression(value_expression)?;
+    fn lett(&mut self, lett: &expression::Let) -> ControlFlow {
+        let value = self.expression(lett.value_expression())?;
 
         let return_value;
         scoped!(self, {
             self.locals.push(value);
-            return_value = self.expression(body_expression)?;
+            return_value = self.expression(lett.body_expression())?;
         });
 
         Ok(return_value)
     }
 
-    fn sequence(&mut self, sequence: &SequenceExpression) -> ControlFlow {
-        let SequenceExpression { expressions } = sequence;
-
-        match &expressions[..] {
+    fn sequence(&mut self, sequence: &expression::Sequence) -> ControlFlow {
+        match &sequence.expressions()[..] {
             [] => Ok(Value::Unit),
             [init@.., last] => {
                 for expression in init {
@@ -786,35 +771,27 @@ impl Interpreter {
         }
     }
 
-    fn block(&mut self, block: &BlockExpression) -> ControlFlow {
-        let BlockExpression { expressions } = block;
-
-        for expression in expressions {
+    fn block(&mut self, block: &expression::Block) -> ControlFlow {
+        for expression in block.expressions() {
             self.expression(expression)?;
         }
 
         Ok(Value::Unit)
     }
 
-    fn lambda(&mut self, lambda: &LambdaExpression) -> ControlFlow {
-        let LambdaExpression { body, .. } = lambda;
-
+    fn lambda(&mut self, lambda: &expression::Lambda) -> ControlFlow {
         let capture = self.locals.clone();
-        let body = *body.clone();
+        let body = lambda.body().clone();
         let lambda = LambdaInstance { capture, body };
 
         Ok(Value::Lambda(Rc::new(lambda)))
     }
 
-    fn assignment(&mut self, assignment: &AssignmentExpression) -> ControlFlow {
-        let AssignmentExpression { assignable, expression } = assignment;
-
-        let value = self.expression(expression)?;
-        match assignable.data() {
+    fn assignment(&mut self, assignment: &expression::Assignment) -> ControlFlow {
+        let value = self.expression(assignment.expression())?;
+        match assignment.assignable().data() {
             Expression::Path(path) => {
-                let PathExpression { bound, .. } = path;
-
-                match bound {
+                match path.bound() {
                     Bound::Local(idx) => {
                         let index = self.locals.len() - 1 - idx;
                         self.locals[index] = value
@@ -824,13 +801,12 @@ impl Interpreter {
                 }
             },
             Expression::Projection(projection) => {
-                let ProjectionExpression { expression, name } = projection;
-                let Value::StructInstance(instance) = self.expression(expression)? else {
+                let Value::StructInstance(instance) = self.expression(projection.expression())? else {
                     unreachable!()
                 };
 
                 let StructInstanceInstance { fields, .. } = instance.as_ref();
-                *fields.borrow_mut().get_mut(name.data()).unwrap() = value;
+                *fields.borrow_mut().get_mut(projection.projected().data()).unwrap() = value;
             },
             _ => unreachable!()
         }
@@ -838,25 +814,23 @@ impl Interpreter {
         Ok(Value::Unit)
     }
 
-    fn whilee(&mut self, whilee: &WhileExpression) -> ControlFlow {
-        let WhileExpression { condition, post, body } = whilee;
-
-        let mut result = self.expression(condition)?.into_core_bool();
+    fn whilee(&mut self, whilee: &expression::While) -> ControlFlow {
+        let mut result = self.expression(whilee.condition())?.into_core_bool();
         while result {
-            let body_result = self.expression(body);
+            let body_result = self.expression(whilee.body());
 
-            if let Some(post) = post {
+            if let Some(post) = whilee.post() {
                 self.expression(post)?;
             }
 
             match body_result {
                 Err(FlowException::Break) => break,
                 Err(FlowException::Continue) => {
-                    result = self.expression(condition)?.into_core_bool();
+                    result = self.expression(whilee.condition())?.into_core_bool();
                     continue
                 },
                 Err(FlowException::Return(value)) => return Err(FlowException::Return(value)),
-                Ok(_) => result = self.expression(condition)?.into_core_bool()
+                Ok(_) => result = self.expression(whilee.condition())?.into_core_bool()
             }
         }
 

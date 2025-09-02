@@ -9,12 +9,13 @@ use crate::{
         ModuleDeclaration, StructDeclaration, TypeVar, VariantDeclaration,
         DefineDeclaration
     },
+    expression,
     expression::{
-        ApplicationExpression, ArrayExpression, ArrayPattern, AssignmentExpression,
-        Expression, FunctionTypeExpression, LambdaExpression, LetExpression,
-        MatchExpression, PathExpression, PathTypeExpression, Pattern,
-        ProjectionExpression, ReturnExpression, SequenceExpression, TypeApplicationExpression,
-        TypeExpression, VariantCasePattern, WhileExpression, BlockExpression
+        ArrayPattern,
+        Expression, FunctionTypeExpression,
+        PathTypeExpression, Pattern,
+        TypeApplicationExpression,
+        TypeExpression, VariantCasePattern
     },
     interner::{interner, InternIdx},
     intrinsics::INTRINSICS_MODULE_NAME,
@@ -504,24 +505,22 @@ impl Resolver {
         }
     }
 
-    fn path(&mut self, path: &mut PathExpression, location: SourceLocation) -> ReportableResult<()> {
-        let PathExpression { parts, bound } = path;
-
+    fn path(&mut self, path: &mut expression::Path, location: SourceLocation) -> ReportableResult<()> {
         let base = self
-            .find_name(&parts[0])
-            .unwrap_or(Bound::Absolute(self.current_path().append(parts[0])));
+            .find_name(&path.parts()[0])
+            .unwrap_or(Bound::Absolute(self.current_path().append(path.parts()[0])));
 
         match base {
             Bound::Local(_) => {
-                assert!(parts.len() == 1);
-                *bound = base
+                assert!(path.parts().len() == 1);
+                path.set_bound(base);
             }
             Bound::Absolute(base_path) => {
-                let path = base_path.append_parts(&parts[1..]);
-                let Some(path) = self.value_names.get(&path) else {
-                    return self.error(ResolveError::UnboundValuePath(path), location);
+                let absolute_path = base_path.append_parts(&path.parts()[1..]);
+                let Some(absolute_path) = self.value_names.get(&absolute_path) else {
+                    return self.error(ResolveError::UnboundValuePath(absolute_path), location);
                 };
-                *bound = Bound::Absolute(path.clone());
+                path.set_bound(Bound::Absolute(absolute_path.clone()));
             }
             Bound::Undetermined => unreachable!(),
         };
@@ -529,94 +528,80 @@ impl Resolver {
         Ok(())
     }
 
-    fn array(&mut self, array: &mut ArrayExpression) -> ReportableResult<()> {
-        let ArrayExpression { expressions } = array;
-
-        for expression in expressions {
+    fn array(&mut self, array: &mut expression::Array) -> ReportableResult<()> {
+        for expression in array.expressions_mut() {
             self.expression(expression)?;
         }
 
         Ok(())
     }
 
-    fn application(&mut self, application: &mut ApplicationExpression) -> ReportableResult<()> {
-        let ApplicationExpression { function, arguments } = application;
-
-        self.expression(function)?;
-        for argument in arguments {
+    fn application(&mut self, application: &mut expression::Application) -> ReportableResult<()> {
+        self.expression(application.function_mut())?;
+        for argument in application.arguments_mut() {
             self.expression(argument)?;
         }
 
         Ok(())
     }
 
-    fn projection(&mut self, projection: &mut ProjectionExpression) -> ReportableResult<()> {
-        let ProjectionExpression { expression, .. } = projection;
-
-        self.expression(expression)
+    fn projection(&mut self, projection: &mut expression::Projection) -> ReportableResult<()> {
+        self.expression(projection.expression_mut())
     }
 
-    fn lett(&mut self, lett: &mut LetExpression) -> ReportableResult<()> {
-        let LetExpression { name, value_expression, body_expression } = lett;
-
-        self.expression(value_expression)?;
+    fn lett(&mut self, lett: &mut expression::Let) -> ReportableResult<()> {
+        self.expression(lett.value_expression_mut())?;
 
         scoped!(self, {
-            self.locals.push(*name.data());
-            self.expression(body_expression)?;
+            self.locals.push(*lett.identifier().data());
+            self.expression(lett.body_expression_mut())?;
         });
 
         Ok(())
     }
 
-    fn sequence(&mut self, sequence: &mut SequenceExpression) -> ReportableResult<()> {
-        let SequenceExpression { expressions } = sequence;
-
-        expressions
-            .iter_mut().map(|expression| self.expression(expression))
+    fn sequence(&mut self, sequence: &mut expression::Sequence) -> ReportableResult<()> {
+        sequence
+            .expressions_mut()
+            .iter_mut()
+            .map(|expression| self.expression(expression))
             .collect::<ReportableResult<Vec<_>>>()
             .map(|_| ())
     }
 
-    fn block(&mut self, block: &mut BlockExpression) -> ReportableResult<()> {
-        let BlockExpression { expressions } = block;
-
-        expressions
-            .iter_mut().map(|expression| self.expression(expression))
+    fn block(&mut self, block: &mut expression::Block) -> ReportableResult<()> {
+        block
+            .expressions_mut()
+            .iter_mut()
+            .map(|expression| self.expression(expression))
             .collect::<ReportableResult<Vec<_>>>()
             .map(|_| ())
     }
 
-    fn lambda(&mut self, lambda: &mut LambdaExpression) -> ReportableResult<()> {
-        let LambdaExpression { arguments, body } = lambda;
-
+    fn lambda(&mut self, lambda: &mut expression::Lambda) -> ReportableResult<()> {
         scoped!(self, {
-            let argument_names = arguments.iter().map(|idx| *idx.data());
+            let argument_names = lambda.arguments().iter().map(|idx| *idx.data());
             self.locals.extend(argument_names);
 
-            self.expression(body)?;
+            self.expression(lambda.body_mut())?;
         });
 
         Ok(())
     }
 
-    fn assignment(&mut self, assignment: &mut AssignmentExpression) -> ReportableResult<()> {
-        let AssignmentExpression { assignable, expression } = assignment;
-
-        self.expression(assignable)?;
-        self.expression(expression)
+    fn assignment(&mut self, assignment: &mut expression::Assignment) -> ReportableResult<()> {
+        self.expression(assignment.assignable_mut())?;
+        self.expression(assignment.expression_mut())
     }
 
-    fn whilee(&mut self, whilee: &mut WhileExpression) -> ReportableResult<()> {
-        let WhileExpression { condition, post, body } = whilee;
+    fn whilee(&mut self, whilee: &mut expression::While) -> ReportableResult<()> {
+        self.expression(whilee.condition_mut())?;
 
-        self.expression(condition)?;
-
-        if let Some(post) = post {
+        if let Some(post) = whilee.post_mut() {
             self.expression(post)?;
         }
 
-        self.expression(body)
+        self.expression(whilee.body_mut())
     }
 
     fn type_expression(&mut self, type_expression: &mut Located<TypeExpression>) -> ReportableResult<()> {
@@ -680,14 +665,12 @@ impl Resolver {
         Ok(())
     }
 
-    fn matc(&mut self, matc: &mut MatchExpression) -> ReportableResult<()> {
-        let MatchExpression { expressions, branches } = matc;
-
-        for expression in expressions {
+    fn matc(&mut self, matc: &mut expression::Match) -> ReportableResult<()> {
+        for expression in matc.expressions_mut() {
             self.expression(expression)?;
         }
 
-        for branch in branches {
+        for branch in matc.branches_mut() {
             scoped!(self, {
                 for pattern in branch.data().patterns() {
                     self.name_pattern_match(pattern);
@@ -736,12 +719,8 @@ impl Resolver {
         }
     }
 
-    fn retrn(&mut self, retrn: &mut ReturnExpression) -> ReportableResult<()> {
-        let ReturnExpression { expression } = retrn;
-
-        self.expression(expression)?;
-
-        Ok(())
+    fn retrn(&mut self, retrn: &mut expression::Return) -> ReportableResult<()> {
+        self.expression(retrn.expression_mut())
     }
 
     pub fn declaration(&mut self, declaration: &mut Declaration) -> ReportableResult<()> {
