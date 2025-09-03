@@ -2,17 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     bound::{Bound, Path},
-    declaration::{
-        self, BuiltInDeclaration, Declaration, ExternalDeclaration,
-        FunctionDeclaration, InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration,
-        MethodSignature, Module, StructDeclaration, TypedIdentifier,
-        VariantDeclaration, DefineDeclaration
-    },
-    expression::{
-        self,
-        Expression,
-        pattern::Pattern,
-    },
+    declaration::{self, Declaration},
+    expression::{self, Expression, pattern::Pattern},
     type_expression::{self, TypeExpression},
     interner::{interner, InternIdx},
     location::{Located, SourceLocation},
@@ -131,8 +122,9 @@ impl Checker {
             let mut newvar = self.newvar();
             let interfaces = var
                 .data()
-                .interfaces
-                .iter().map(|interface| interface.1.clone());
+                .interfaces()
+                .iter()
+                .map(|interface| interface.1.clone());
 
             newvar.interfaces.extend(interfaces);
             vars.push(newvar);
@@ -151,8 +143,8 @@ impl Checker {
 
     fn get_function_type(
         &mut self,
-        arguments: &[Located<TypedIdentifier>],
-        return_type: &Option<Located<TypeExpression>>,
+        arguments: &[Located<declaration::TypedIdentifier>],
+        return_type: Option<&Located<TypeExpression>>,
     ) -> ReportableResult<FunctionType> {
         let arguments = arguments
             .iter().map(|argument| self.eval_to_mono(argument.data().type_expression()))
@@ -352,7 +344,7 @@ impl Checker {
         Ok(Type::Mono(m))
     }
 
-    pub fn type_check(&mut self, modules: &[Module]) -> ReportableResult<()> {
+    pub fn type_check(&mut self, modules: &[declaration::Module]) -> ReportableResult<()> {
         for module in modules {
             self.current_source = module.source().to_string();
             self.collect_types(module)?;
@@ -371,7 +363,7 @@ impl Checker {
         Ok(())
     }
 
-    fn module(&mut self, module: &Module) -> ReportableResult<()> {
+    fn module(&mut self, module: &declaration::Module) -> ReportableResult<()> {
         for declaration in module.declarations() {
             self.declaration(declaration)?;
         }
@@ -379,7 +371,7 @@ impl Checker {
         Ok(())
     }
 
-    fn collect_types(&mut self, module: &Module) -> ReportableResult<()> {
+    fn collect_types(&mut self, module: &declaration::Module) -> ReportableResult<()> {
         for declaration in module.declarations() {
             match declaration {
                 Declaration::Interface(interface) => self.collect_interface_type(interface)?,
@@ -393,7 +385,7 @@ impl Checker {
         Ok(())
     }
 
-    fn collect_names(&mut self, module: &Module) -> ReportableResult<()> {
+    fn collect_names(&mut self, module: &declaration::Module) -> ReportableResult<()> {
         for declaration in module.declarations() {
             if let Declaration::Interface(interface) = declaration {
                 self.collect_interface_name(interface)?
@@ -431,71 +423,59 @@ impl Checker {
         Ok(())
     }
 
-    fn collect_function_name(&mut self, function: &FunctionDeclaration) -> ReportableResult<()> {
-        let FunctionDeclaration { type_vars, arguments, return_type, path, .. } = function;
-
-        let type_vars = self.type_vars(type_vars);
+    fn collect_function_name(&mut self, function: &declaration::Function) -> ReportableResult<()> {
+        let type_vars = self.type_vars(function.type_vars());
 
         scoped!(self, {
             self.define_type_vars(type_vars.clone());
 
-            let m = self.get_function_type(arguments, return_type)?.into_mono();
+            let m = self.get_function_type(function.arguments(), function.return_type())?.into_mono();
             let t = self.declaration_type(m, type_vars);
 
-            self.value_types.insert(path.clone(), t);
+            self.value_types.insert(function.path().clone(), t);
         });
 
         Ok(())
     }
 
-    fn collect_define_name(&mut self, define: &DefineDeclaration) -> ReportableResult<()> {
-        let DefineDeclaration { type_expression, path, expression, .. } = define;
-
-        let t = self.eval_type_expression(type_expression)?;
-        self.value_types.insert(path.clone(), t);
-        self.defines.insert(path.clone(), expression.clone());
+    fn collect_define_name(&mut self, define: &declaration::Define) -> ReportableResult<()> {
+        let t = self.eval_type_expression(define.type_expression())?;
+        self.value_types.insert(define.path().clone(), t);
+        self.defines.insert(define.path().clone(), define.expression().clone());
 
         Ok(())
     }
 
-    fn collect_variant_type(&mut self, variant: &VariantDeclaration) -> ReportableResult<()> {
-        let VariantDeclaration { path, type_vars, .. } = variant;
+    fn collect_variant_type(&mut self, variant: &declaration::Variant) -> ReportableResult<()> {
+        let type_vars = variant.type_vars().iter().map(|_| self.newvar()).collect();
 
-        let type_vars = type_vars.iter().map(|_| self.newvar()).collect();
-
-        let m = MonoType::Variant(path.clone(), vec![]);
+        let m = MonoType::Variant(variant.path().clone(), vec![]);
         let t = self.declaration_type(m, type_vars);
 
-        self.types.insert(path.clone(), t);
+        self.types.insert(variant.path().clone(), t);
 
         Ok(())
     }
 
-    fn collect_struct_type(&mut self, strct: &StructDeclaration) -> ReportableResult<()> {
-        let StructDeclaration { type_vars, path, .. } = strct;
+    fn collect_struct_type(&mut self, strct: &declaration::Struct) -> ReportableResult<()> {
+        let type_vars = strct.type_vars().iter().map(|_| self.newvar()).collect();
 
-        let type_vars = type_vars.iter().map(|_| self.newvar()).collect();
-
-        let m = MonoType::Struct(path.clone(), vec![]);
+        let m = MonoType::Struct(strct.path().clone(), vec![]);
         let t = self.declaration_type(m, type_vars);
 
-        self.types.insert(path.clone(), t);
+        self.types.insert(strct.path().clone(), t);
 
         Ok(())
     }
 
-    fn collect_interface_type(&mut self, interface: &InterfaceDeclaration) -> ReportableResult<()> {
-        let InterfaceDeclaration { path, .. } = interface;
-
-        self.interfaces.insert(path.clone(), Interface { methods: HashMap::new() });
+    fn collect_interface_type(&mut self, interface: &declaration::Interface) -> ReportableResult<()> {
+        self.interfaces.insert(interface.path().clone(), Interface { methods: HashMap::new() });
 
         Ok(())
     }
 
-    fn collect_builtin_type(&mut self, builtin: &BuiltInDeclaration) -> ReportableResult<()> {
-        let BuiltInDeclaration { type_vars, path, name, .. } = builtin;
-
-        let builtin_type = match interner().get(name.data()) {
+    fn collect_builtin_type(&mut self, builtin: &declaration::BuiltIn) -> ReportableResult<()> {
+        let builtin_type = match interner().get(builtin.name().data()) {
             "U64" => BuiltInType::U64,
             "F32" => BuiltInType::F32,
             "Char" => BuiltInType::Char,
@@ -503,72 +483,70 @@ impl Checker {
             _ => panic!("Unknown builtin")
         };
 
-        let type_vars = type_vars.iter().map(|_| self.newvar()).collect();
+        let type_vars = builtin.type_vars().iter().map(|_| self.newvar()).collect();
 
-        let m = MonoType::BuiltIn(path.clone(), builtin_type, vec![]);
+        let m = MonoType::BuiltIn(builtin.path().clone(), builtin_type, vec![]);
         let t = self.declaration_type(m, type_vars);
 
-        self.builtin_paths.insert(builtin_type, path.clone());
-        self.types.insert(path.clone(), t);
+        self.builtin_paths.insert(builtin_type, builtin.path().clone());
+        self.types.insert(builtin.path().clone(), t);
 
         Ok(())
     }
 
-    fn collect_external_name(&mut self, external: &ExternalDeclaration) -> ReportableResult<()> {
-        let ExternalDeclaration { type_vars, arguments, return_type, path, .. } = external;
-
-        let type_vars = self.type_vars(type_vars);
+    fn collect_external_name(&mut self, external: &declaration::External) -> ReportableResult<()> {
+        let type_vars = self.type_vars(external.type_vars());
 
         scoped!(self, {
             self.define_type_vars(type_vars.clone());
 
-            let m = self.get_function_type(arguments, return_type)?.into_mono();
+            let m = self.get_function_type(external.arguments(), external.return_type())?.into_mono();
             let t = self.declaration_type(m, type_vars);
 
-            self.value_types.insert(path.clone(), t);
+            self.value_types.insert(external.path().clone(), t);
         });
 
         Ok(())
     }
 
-    fn method_constraints(constraints: &[declaration::Constraint]) -> HashMap<usize, HashSet<Path>> {
+    fn method_constraints(constraints: &[declaration::MethodConstraint]) -> HashMap<usize, HashSet<Path>> {
         fn interfaces(type_var: &Located<declaration::TypeVar>) -> HashSet<Path> {
             type_var
-                .data().interfaces
-                .iter().map(|interface| interface.1.clone())
+                .data()
+                .interfaces()
+                .iter()
+                .map(|interface| interface.1.clone())
                 .collect()
         }
 
         constraints
             .iter()
-            .map(|constraint| (constraint.nth, interfaces(&constraint.type_var)))
+            .map(|constraint| (constraint.nth(), interfaces(constraint.type_var())))
             .collect()
     }
 
-    fn collect_method_signatures(&mut self, path: &Path, signature: &MethodSignature) -> ReportableResult<()> {
-        let MethodSignature { constraints, type_vars, name, arguments, return_type, .. } = signature;
-
-        let constraints = Self::method_constraints(constraints);
+    fn collect_method_signatures(&mut self, path: &Path, signature: &declaration::MethodSignature) -> ReportableResult<()> {
+        let constraints = Self::method_constraints(signature.constraints());
 
         scoped!(self, {
             if let Type::Forall(type_vars, _) = self.types[path].clone() {
                 self.define_constrained_type_constants(type_vars, &constraints);
             }
 
-            let type_vars = self.type_vars(type_vars);
+            let type_vars = self.type_vars(signature.type_vars());
             self.define_type_vars(type_vars.clone());
 
-            let function_type = self.get_function_type(arguments, return_type)?;
+            let function_type = self.get_function_type(signature.arguments(), signature.return_type())?;
             let method_type = MethodType { function_type, constraints, type_vars };
 
             let methods = self.methods.get_mut(path).unwrap();
-            if methods.insert(*name.data(), method_type).is_some() {
+            if methods.insert(*signature.name().data(), method_type).is_some() {
                 return self.error(
                     TypeCheckError::DuplicateMethodDeclaration {
                         variant_path: path.clone(),
-                        method_name: *name.data(),
+                        method_name: *signature.name().data(),
                     },
-                    name.location(),
+                    signature.name().location(),
                 );
             }
         });
@@ -576,23 +554,21 @@ impl Checker {
         Ok(())
     }
 
-    fn collect_variant_name(&mut self, variant: &VariantDeclaration) -> ReportableResult<()> {
-        let VariantDeclaration { cases, methods, path, .. } = variant;
-
-        self.methods.insert(path.clone(), HashMap::new());
-        for method in methods {
-            self.collect_method_signatures(path, &method.signature)?;
+    fn collect_variant_name(&mut self, variant: &declaration::Variant) -> ReportableResult<()> {
+        self.methods.insert(variant.path().clone(), HashMap::new());
+        for method in variant.methods() {
+            self.collect_method_signatures(variant.path(), method.signature())?;
         }
 
-        let type_vars = self.type_vars_of_type(path);
+        let type_vars = self.type_vars_of_type(variant.path());
 
         scoped!(self, {
             self.define_type_vars(type_vars.clone());
-            let variant_type = self.argumented_typed(path);
-            self.cases.insert(path.clone(), HashMap::new());
+            let variant_type = self.argumented_typed(variant.path());
+            self.cases.insert(variant.path().clone(), HashMap::new());
 
             let mut variant_cases = HashMap::new();
-            for case in cases {
+            for case in variant.cases() {
                 let case_name = *case.data().identifier().data();
                 let case_path = case.data().path().clone();
 
@@ -614,55 +590,53 @@ impl Checker {
                 self.value_types.insert(case_path, t);
             }
 
-            self.cases.insert(path.clone(), variant_cases);
+            self.cases.insert(variant.path().clone(), variant_cases);
         });
 
         Ok(())
     }
 
-    fn collect_struct_name(&mut self, strct: &StructDeclaration) -> ReportableResult<()> {
-        let StructDeclaration { fields, methods, path, .. } = strct;
-
-        self.methods.insert(path.clone(), HashMap::new());
-        for method in methods {
-            self.collect_method_signatures(path, &method.signature)?;
+    fn collect_struct_name(&mut self, strct: &declaration::Struct) -> ReportableResult<()> {
+        self.methods.insert(strct.path().clone(), HashMap::new());
+        for method in strct.methods() {
+            self.collect_method_signatures(strct.path(), method.signature())?;
         }
 
-        let type_vars = self.type_vars_of_type(path);
+        let type_vars = self.type_vars_of_type(strct.path());
 
         scoped!(self, {
             self.define_type_vars(type_vars.clone());
 
-            let struct_type = self.argumented_typed(path);
+            let struct_type = self.argumented_typed(strct.path());
 
-            let arguments = fields
-                .iter().map(|field| self.eval_to_mono(field.data().type_expression()))
+            let arguments = strct.fields()
+                .iter()
+                .map(|field| self.eval_to_mono(field.data().type_expression()))
                 .collect::<ReportableResult<Vec<_>>>()?;
 
-            let fields = fields
-                .iter().zip(arguments.clone())
-                .map(|(field, argument)| (*field.data().indentifier().data(), argument))
+            let fields = strct.fields()
+                .iter()
+                .zip(arguments.clone())
+                .map(|(field, argument)| (*field.data().identifier().data(), argument))
                 .collect::<HashMap<_, _>>();
 
-            self.fields.insert(path.clone(), fields);
+            self.fields.insert(strct.path().clone(), fields);
 
             let return_type = Box::new(struct_type.clone());
 
             let m = FunctionType { arguments, return_type }.into_mono();
             let t = self.declaration_type(m, type_vars.clone());
 
-            self.value_types.insert(path.clone(), t);
+            self.value_types.insert(strct.path().clone(), t);
         });
 
         Ok(())
     }
 
-    fn collect_builtin_name(&mut self, builtin: &BuiltInDeclaration) -> ReportableResult<()> {
-        let BuiltInDeclaration { methods, path, .. } = builtin;
-
-        self.methods.insert(path.clone(), HashMap::new());
-        for (signature, _) in methods {
-            self.collect_method_signatures(path, signature)?;
+    fn collect_builtin_name(&mut self, builtin: &declaration::BuiltIn) -> ReportableResult<()> {
+        self.methods.insert(builtin.path().clone(), HashMap::new());
+        for (signature, _) in builtin.methods() {
+            self.collect_method_signatures(builtin.path(), signature)?;
         }
 
         Ok(())
@@ -679,26 +653,22 @@ impl Checker {
         }
     }
 
-    fn variant(&mut self, variant: &VariantDeclaration) -> ReportableResult<()> {
-        let VariantDeclaration { methods, path, .. } = variant;
-
-        for method in methods {
-            let MethodDeclaration { signature, body } = method;
-
-            let method_type = &self.methods[path][signature.name.data()];
+    fn variant(&mut self, variant: &declaration::Variant) -> ReportableResult<()> {
+        for method in variant.methods() {
+            let method_type = &self.methods[variant.path()][method.signature().name().data()];
             let FunctionType { arguments, return_type } = self.constantize(
                 Type::Forall(
                     method_type.type_vars.clone(),
                     MonoType::Function(method_type.function_type.clone())
                 )
             ).into_function();
-            let variant_type = self.method_instance_type(path, &method_type.constraints);
+            let variant_type = self.method_instance_type(variant.path(), &method_type.constraints);
 
             scoped!(self, {
                 self.locals.push(Type::Mono(variant_type));
                 self.locals.extend(arguments.into_iter().map(Type::Mono));
                 self.return_type.push(*return_type.clone());
-                self.check(body, *return_type)?;
+                self.check(method.body(), *return_type)?;
                 self.return_type.pop();
             });
         }
@@ -706,22 +676,20 @@ impl Checker {
         Ok(())
     }
 
-    fn builtin(&mut self, builtin: &BuiltInDeclaration) -> ReportableResult<()> {
-        let BuiltInDeclaration { methods, path, .. } = builtin;
-
-        for (signature, body) in methods {
+    fn builtin(&mut self, builtin: &declaration::BuiltIn) -> ReportableResult<()> {
+        for (signature, body) in builtin.methods() {
             let Some(body) = body else {
                 continue;
             };
 
-            let method_type = &self.methods[path][signature.name.data()];
+            let method_type = &self.methods[builtin.path()][signature.name().data()];
             let FunctionType { arguments, return_type } = self.constantize(
                 Type::Forall(
                     method_type.type_vars.clone(),
                     MonoType::Function(method_type.function_type.clone())
                 )
             ).into_function();
-            let variant_type = self.method_instance_type(path, &method_type.constraints);
+            let variant_type = self.method_instance_type(builtin.path(), &method_type.constraints);
 
             scoped!(self, {
                 self.locals.push(Type::Mono(variant_type));
@@ -833,55 +801,47 @@ impl Checker {
         }
     }
 
-    fn define(&mut self, define: &DefineDeclaration) -> ReportableResult<()> {
-        let DefineDeclaration { expression, path, .. } = define;
-
-        if self.cyclic_define(expression, path) {
+    fn define(&mut self, define: &declaration::Define) -> ReportableResult<()> {
+        if self.cyclic_define(define.expression(), define.path()) {
             panic!("Error: Cyclic define");
         }
 
-        let Type::Mono(expected) = self.value_types[path].clone() else {
+        let Type::Mono(expected) = self.value_types[define.path()].clone() else {
             unreachable!();
         };
-        self.check(expression, expected)
+        self.check(define.expression(), expected)
     }
 
-    fn function(&mut self, function: &FunctionDeclaration) -> ReportableResult<()> {
-        let FunctionDeclaration { body, path, .. } = function;
-
-        let t = self.value_types[path].clone();
+    fn function(&mut self, function: &declaration::Function) -> ReportableResult<()> {
+        let t = self.value_types[function.path()].clone();
         let FunctionType { arguments, return_type } = self.constantize(t).into_function();
 
         scoped!(self, {
             self.locals.extend(arguments.into_iter().map(Type::Mono));
             self.return_type.push(*return_type.clone());
-            self.check(body, *return_type)?;
+            self.check(function.body(), *return_type)?;
             self.return_type.pop();
         });
 
         Ok(())
     }
 
-    fn strct(&mut self, strct: &StructDeclaration) -> ReportableResult<()> {
-        let StructDeclaration { methods, path, .. } = strct;
-
-        for method in methods {
-            let MethodDeclaration { signature, body, .. } = method;
-
-            let method_type = &self.methods[path][signature.name.data()];
+    fn strct(&mut self, strct: &declaration::Struct) -> ReportableResult<()> {
+        for method in strct.methods() {
+            let method_type = &self.methods[strct.path()][method.signature().name().data()];
             let FunctionType { arguments, return_type } = self.constantize(
                 Type::Forall(
                     method_type.type_vars.clone(),
                     MonoType::Function(method_type.function_type.clone())
                 )
             ).into_function();
-            let struct_type = self.method_instance_type(path, &method_type.constraints);
+            let struct_type = self.method_instance_type(strct.path(), &method_type.constraints);
 
             scoped!(self, {
                 self.locals.push(Type::Mono(struct_type));
                 self.locals.extend(arguments.into_iter().map(Type::Mono));
                 self.return_type.push(*return_type.clone());
-                self.check(body, *return_type)?;
+                self.check(method.body(), *return_type)?;
                 self.return_type.pop();
             });
         }
@@ -889,12 +849,10 @@ impl Checker {
         Ok(())
     }
 
-    fn collect_interface_name(&mut self, interface: &InterfaceDeclaration) -> ReportableResult<()> {
-        let InterfaceDeclaration { methods, path, .. } = interface;
-
+    fn collect_interface_name(&mut self, interface: &declaration::Interface) -> ReportableResult<()> {
         let instance_type_var = TypeVar {
             idx: INTERFACE_CONSTANT_IDX,
-            interfaces: HashSet::from([path.clone()])
+            interfaces: HashSet::from([interface.path().clone()])
         };
 
         let type_vars = vec![instance_type_var.clone()];
@@ -902,39 +860,33 @@ impl Checker {
         scoped!(self, {
             self.define_type_constants(type_vars.clone());
 
-            for method in methods {
-                let InterfaceMethodSignature { name, arguments, return_type, .. } = method;
+            for method in interface.methods() {
+                let function_type = self.get_function_type(method.arguments(), method.return_type())?;
 
-                let function_type = self.get_function_type(arguments, return_type)?;
-
-                self.interfaces.get_mut(path).unwrap().methods
-                    .insert(*name.data(), function_type);
+                self.interfaces.get_mut(interface.path()).unwrap().methods
+                    .insert(*method.name().data(), function_type);
             }
         });
 
         scoped!(self, {
             self.define_type_vars(type_vars.clone());
 
-            for method in methods {
-                let InterfaceMethodSignature { arguments, return_type, path, .. } = method;
-
+            for method in interface.methods() {
                 let mut arguments_with_instance = vec![MonoType::Var(instance_type_var.clone())];
-                let mut function_type = self.get_function_type(arguments, return_type)?;
+                let mut function_type = self.get_function_type(method.arguments(), method.return_type())?;
                 arguments_with_instance.extend(function_type.arguments);
                 function_type.arguments = arguments_with_instance;
 
                 let t = self.declaration_type(function_type.into_mono(), type_vars.clone());
-                self.value_types.insert(path.clone(), t);
+                self.value_types.insert(method.path().clone(), t);
             }
         });
 
         Ok(())
     }
 
-    fn collect_interface_name_extras(&mut self, interface: &InterfaceDeclaration) -> ReportableResult<()> {
-        let InterfaceDeclaration { type_name, path, .. } = interface;
-
-        let paths = type_name.data().interfaces.iter().map(|interface| &interface.1);
+    fn collect_interface_name_extras(&mut self, interface: &declaration::Interface) -> ReportableResult<()> {
+        let paths = interface.type_name().data().interfaces().iter().map(|interface| &interface.1);
         let interfaces = paths.map(|path| &self.interfaces[path]);
 
         let mut extra_methods = HashMap::new();
@@ -944,7 +896,7 @@ impl Checker {
             }
         }
 
-        self.interfaces.get_mut(path).unwrap().methods.extend(extra_methods);
+        self.interfaces.get_mut(interface.path()).unwrap().methods.extend(extra_methods);
 
         Ok(())
     }

@@ -2,13 +2,7 @@ use std::{collections::HashMap, iter::Peekable};
 
 use crate::{
     bound::Path,
-    declaration::{
-        BuiltInDeclaration, Constraint, Declaration, ExternalDeclaration,
-        FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration,
-        InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module,
-        ModuleDeclaration, StructDeclaration, TypeVar, TypedIdentifier,
-        VariantCase, VariantDeclaration, DefineDeclaration
-    },
+    declaration::{self, Declaration},
     expression::{
         self,
         pattern,
@@ -708,15 +702,15 @@ impl<'source> Parser<'source> {
         }
     }
 
-    pub fn module(&mut self) -> ReportableResult<Module> {
+    pub fn module(&mut self) -> ReportableResult<declaration::Module> {
         let mut declarations = vec![];
         while self.peek()?.is_some() {
             declarations.push(self.declaration()?);
         }
-        Ok(Module::new(declarations, self.source.clone()))
+        Ok(declaration::Module::new(declarations, self.source.clone()))
     }
 
-    fn type_var(&mut self) -> ReportableResult<Located<TypeVar>> {
+    fn type_var(&mut self) -> ReportableResult<Located<declaration::TypeVar>> {
         let name = self.expect_identifier()?;
         let (interfaces, end) = if self.peek_is(Token::LeftParenthesis) {
             self.advance()?;
@@ -731,7 +725,7 @@ impl<'source> Parser<'source> {
             (vec![], name.location())
         };
 
-        let type_var = TypeVar { name, interfaces };
+        let type_var = declaration::TypeVar::new(name, interfaces);
         Ok(Located::new(type_var, name.location().extend(&end)))
     }
 
@@ -739,19 +733,18 @@ impl<'source> Parser<'source> {
         self.expect(Token::ModuleKeyword)?;
         let parts = self.path_parts()?;
 
-        let module = ModuleDeclaration { parts };
-        Ok(Declaration::Module(module))
+        let module = declaration::ModulePath::new(parts);
+        Ok(Declaration::ModulePath(module))
     }
 
     fn import(&mut self) -> ReportableResult<Declaration> {
         self.expect(Token::ImportKeyword)?;
-        let name = self.import_name()?;
+        let import = self.import_name()?;
 
-        let import = ImportDeclaration { name };
         Ok(Declaration::Import(import))
     }
 
-    fn import_name(&mut self) -> ReportableResult<ImportName> {
+    fn import_name(&mut self) -> ReportableResult<declaration::Import> {
         let import_in = if self.peek_is(Token::InKeyword) {
             self.advance()?;
             true
@@ -779,7 +772,7 @@ impl<'source> Parser<'source> {
             None
         };
 
-        Ok(ImportName { import_in, name, subnames, as_name })
+        Ok(declaration::Import::new(import_in, name, subnames, as_name))
     }
 
     fn function(&mut self) -> ReportableResult<Declaration> {
@@ -815,15 +808,7 @@ impl<'source> Parser<'source> {
         self.expect(Token::Equals)?;
         let body = self.expression()?;
 
-        let function = FunctionDeclaration {
-            name,
-            type_vars,
-            arguments,
-            return_type,
-            body,
-            path: Path::empty(),
-        };
-
+        let function = declaration::Function::new(name, type_vars, arguments, return_type, body);
         Ok(Declaration::Function(function))
     }
 
@@ -835,29 +820,22 @@ impl<'source> Parser<'source> {
         self.expect(Token::Equals)?;
         let expression = self.expression()?;
 
-        let define = DefineDeclaration { name, type_expression, expression, path: Path::empty() };
+        let define = declaration::Define::new(name, type_expression, expression);
         Ok(Declaration::Define(define))
     }
 
-    fn method_declaration(&mut self) -> ReportableResult<MethodDeclaration> {
+    fn method_declaration(&mut self) -> ReportableResult<declaration::Method> {
         let signature = self.method_signature()?;
         self.expect(Token::Equals)?;
         let body = self.expression()?;
 
-        Ok(MethodDeclaration {
-            signature,
-            body,
-        })
+        Ok(declaration::Method::new(signature, body))
     }
 
-    fn constraint(&mut self) -> ReportableResult<Constraint> {
+    fn constraint(&mut self) -> ReportableResult<declaration::MethodConstraint> {
         let type_var = self.type_var()?;
 
-        let constraint = Constraint {
-            nth: usize::default(),
-            type_var,
-        };
-
+        let constraint = declaration::MethodConstraint::new(type_var);
         Ok(constraint)
     }
 
@@ -885,18 +863,11 @@ impl<'source> Parser<'source> {
             }
         }
 
-        let variant = VariantDeclaration {
-            name,
-            type_vars,
-            cases,
-            methods,
-            path: Path::empty(),
-        };
-
+        let variant = declaration::Variant::new(name, type_vars, cases, methods);
         Ok(Declaration::Variant(variant))
     }
 
-    fn interface_method_signature(&mut self) -> ReportableResult<InterfaceMethodSignature> {
+    fn interface_signature(&mut self) -> ReportableResult<declaration::InterfaceSignature> {
         self.expect(Token::FunKeyword)?;
         let name = self.expect_identifier()?;
         self.expect(Token::LeftParenthesis)?;
@@ -913,10 +884,10 @@ impl<'source> Parser<'source> {
             None
         };
 
-        Ok(InterfaceMethodSignature { name, arguments, return_type, path: Path::empty() })
+        Ok(declaration::InterfaceSignature::new(name, arguments, return_type))
     }
 
-    fn method_signature(&mut self) -> ReportableResult<MethodSignature> {
+    fn method_signature(&mut self) -> ReportableResult<declaration::MethodSignature> {
         self.expect(Token::FunKeyword)?;
 
         let constraints = if self.peek_is(Token::Colon) {
@@ -965,7 +936,7 @@ impl<'source> Parser<'source> {
             None
         };
 
-        Ok(MethodSignature { name, constraints, type_vars, instance, arguments, return_type })
+        Ok(declaration::MethodSignature::new(name, constraints, type_vars, instance, arguments, return_type))
     }
 
     fn interface(&mut self) -> ReportableResult<Declaration> {
@@ -973,10 +944,9 @@ impl<'source> Parser<'source> {
         let name = self.expect_identifier()?;
         let type_name = self.type_var()?;
         self.expect(Token::LeftCurly)?;
-        let (methods, _) = self.until(Token::RightCurly, Self::interface_method_signature, None)?;
+        let (methods, _) = self.until(Token::RightCurly, Self::interface_signature, None)?;
 
-
-        let interface = InterfaceDeclaration { name, type_name, methods, path: Path::empty() };
+        let interface = declaration::Interface::new(name, type_name, methods);
         Ok(Declaration::Interface(interface))
     }
 
@@ -1004,14 +974,7 @@ impl<'source> Parser<'source> {
             }
         }
 
-        let strct = StructDeclaration {
-            name,
-            type_vars,
-            fields,
-            methods,
-            path: Path::empty(),
-        };
-
+        let strct = declaration::Struct::new(name, type_vars, fields, methods);
         Ok(Declaration::Struct(strct))
     }
 
@@ -1045,7 +1008,7 @@ impl<'source> Parser<'source> {
             None
         )?;
 
-        let builtin = BuiltInDeclaration { name, methods, path: Path::empty(), type_vars };
+        let builtin = declaration::BuiltIn::new(name, type_vars, methods);
         Ok(Declaration::BuiltIn(builtin))
     }
 
@@ -1079,7 +1042,7 @@ impl<'source> Parser<'source> {
             None
         };
 
-        let external = ExternalDeclaration { name, type_vars, arguments, return_type, path: Path::empty() };
+        let external = declaration::External::new(name, type_vars, arguments, return_type);
         Ok(Declaration::External(external))
     }
 
@@ -1167,17 +1130,17 @@ impl<'source> Parser<'source> {
         }
     }
 
-    fn typed_identifier(&mut self) -> ReportableResult<Located<TypedIdentifier>> {
+    fn typed_identifier(&mut self) -> ReportableResult<Located<declaration::TypedIdentifier>> {
         let identifier = self.expect_identifier()?;
         self.expect(Token::Colon)?;
         let type_expression = self.type_expression()?;
 
         let location = identifier.location().extend(&type_expression.location());
-        let typed_identifier = TypedIdentifier::new(identifier, type_expression);
+        let typed_identifier = declaration::TypedIdentifier::new(identifier, type_expression);
         Ok(Located::new(typed_identifier, location))
     }
 
-    fn variant_case(&mut self) -> ReportableResult<Located<VariantCase>> {
+    fn variant_case(&mut self) -> ReportableResult<Located<declaration::VariantCase>> {
         let identifier = self.expect_identifier()?;
         let (arguments, location) = if self.peek_is(Token::LeftParenthesis) {
             self.advance()?;
@@ -1192,7 +1155,7 @@ impl<'source> Parser<'source> {
             (None, identifier.location())
         };
 
-        let variant_case = VariantCase::new(identifier, arguments, Path::empty());
+        let variant_case = declaration::VariantCase::new(identifier, arguments);
         Ok(Located::new(variant_case, location))
     }
 

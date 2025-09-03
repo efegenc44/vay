@@ -2,12 +2,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
     bound::{Bound, Path},
-    declaration::{
-        BuiltInDeclaration, Declaration, ExternalDeclaration, FunctionDeclaration,
-        InterfaceDeclaration, InterfaceMethodSignature, MethodDeclaration,
-        MethodSignature, Module, StructDeclaration, VariantDeclaration,
-        DefineDeclaration
-    },
+    declaration::{self, Declaration},
     expression,
     expression::{
         Expression,
@@ -65,7 +60,7 @@ impl Interpreter {
         }
     }
 
-    pub fn evaluate_main(&mut self, modules: &[Module]) {
+    pub fn evaluate_main(&mut self, modules: &[declaration::Module]) {
         for module in modules {
             self.collect_names(module);
         }
@@ -85,7 +80,7 @@ impl Interpreter {
         let mut main_function = None;
         'outer: for declaration in main_module.declarations() {
             if let Declaration::Function(function) = declaration {
-                if interner().get(function.name.data()) == "main" {
+                if interner().get(function.name().data()) == "main" {
                     main_function = Some(declaration);
                     break 'outer;
                 }
@@ -99,11 +94,11 @@ impl Interpreter {
             unreachable!();
         };
 
-        if !function.arguments.is_empty() {
+        if !function.arguments().is_empty() {
             todo!("main function is not supposed to take any arguments");
         }
 
-        let value = self.expression(&function.body);
+        let value = self.expression(function.body());
         let value = match value {
             Ok(value) | Err(FlowException::Return(value)) => value,
             _ => unreachable!()
@@ -112,13 +107,13 @@ impl Interpreter {
         println!("\nResult = {}", value);
     }
 
-    pub fn collect_names(&mut self, module: &Module) {
+    pub fn collect_names(&mut self, module: &declaration::Module) {
         for declaration in module.declarations() {
             match declaration {
-                Declaration::Module(..) => (),
+                Declaration::ModulePath(..) => (),
                 Declaration::Import(..) => (),
                 Declaration::Define(define) => {
-                    self.defines.insert(define.path.clone(), define.expression.clone());
+                    self.defines.insert(define.path().clone(), define.expression().clone());
                 },
                 Declaration::Interface(interface) => self.collect_interface_name(interface),
                 Declaration::Function(function) => self.collect_function_name(function),
@@ -136,40 +131,32 @@ impl Interpreter {
         }
     }
 
-    fn collect_function_name(&mut self, function: &FunctionDeclaration) {
-        let FunctionDeclaration { body, path, .. } = function;
+    fn collect_function_name(&mut self, function: &declaration::Function) {
+        let function_inst = FunctionInstance { body: function.body().clone() };
+        let value = Value::Function(Rc::new(function_inst));
 
-        let function = FunctionInstance { body: body.clone() };
-        let value = Value::Function(Rc::new(function));
-
-        self.names.insert(path.clone(), value);
+        self.names.insert(function.path().clone(), value);
     }
 
-    fn collect_define_name(&mut self, define: &DefineDeclaration) {
-        let DefineDeclaration { expression, path, .. } = define;
-
+    fn collect_define_name(&mut self, define: &declaration::Define) {
         self.collecting_define = true;
-        let Ok(value) = self.expression(expression) else {
+        let Ok(value) = self.expression(define.expression()) else {
             panic!();
         };
         self.collecting_define = false;
 
-        self.names.insert(path.clone(), value);
+        self.names.insert(define.path().clone(), value);
     }
 
-    fn collect_method_name(&mut self, path: &Path, method: &MethodDeclaration) {
-        let MethodDeclaration { signature, body, .. } = method;
-
-        let function = FunctionInstance { body: body.clone() };
-        self.methods.get_mut(path).unwrap().insert(*signature.name.data(), Rc::new(function));
+    fn collect_method_name(&mut self, path: &Path, method: &declaration::Method) {
+        let function = FunctionInstance { body: method.body().clone() };
+        self.methods.get_mut(path).unwrap().insert(*method.signature().name().data(), Rc::new(function));
     }
 
-    fn collect_variant_name(&mut self, variant: &VariantDeclaration) {
-        let VariantDeclaration { cases, methods, path, .. } = variant;
-
-        for case in cases {
+    fn collect_variant_name(&mut self, variant: &declaration::Variant) {
+        for case in variant.cases() {
             let constructor = ConstructorInstance {
-                type_path: path.clone(),
+                type_path: variant.path().clone(),
                 case: *case.data().identifier().data(),
             };
 
@@ -187,42 +174,34 @@ impl Interpreter {
             self.names.insert(case.data().path().clone(), value);
         }
 
-        self.methods.insert(path.clone(), HashMap::new());
-        for method in methods {
-            self.collect_method_name(path, method);
+        self.methods.insert(variant.path().clone(), HashMap::new());
+        for method in variant.methods() {
+            self.collect_method_name(variant.path(), method);
         }
     }
 
-    fn collect_struct_name(&mut self, strct: &StructDeclaration) {
-        let StructDeclaration { methods, path, fields, .. } = strct;
-
-        let fields = fields
-            .iter().map(|field| *field.data().indentifier().data())
+    fn collect_struct_name(&mut self, strct: &declaration::Struct) {
+        let fields = strct.fields()
+            .iter().map(|field| *field.data().identifier().data())
             .collect();
-        let constructor = StructConstructorInstance { type_path: path.clone(), fields };
-        self.names.insert(path.clone(), Value::StructConstructor(Rc::new(constructor)));
+        let constructor = StructConstructorInstance { type_path: strct.path().clone(), fields };
+        self.names.insert(strct.path().clone(), Value::StructConstructor(Rc::new(constructor)));
 
-        self.methods.insert(path.clone(), HashMap::new());
-        for method in methods {
-            self.collect_method_name(path, method);
+        self.methods.insert(strct.path().clone(), HashMap::new());
+        for method in strct.methods() {
+            self.collect_method_name(strct.path(), method);
         }
     }
 
-    fn collect_interface_name(&mut self, interface: &InterfaceDeclaration) {
-        let InterfaceDeclaration { methods, .. } = interface;
-
-        for method in methods {
-            let InterfaceMethodSignature { path, name, .. } = method;
-
-            let function = Value::InterfaceFunction(*name.data());
-            self.names.insert(path.clone(), function);
+    fn collect_interface_name(&mut self, interface: &declaration::Interface) {
+        for method in interface.methods() {
+            let function = Value::InterfaceFunction(*method.name().data());
+            self.names.insert(method.path().clone(), function);
         }
     }
 
-    fn collect_builtin_name(&mut self, builtin: &BuiltInDeclaration) {
-        let BuiltInDeclaration { name, methods, path, ..  } = builtin;
-
-        let t = match interner().get(name.data()) {
+    fn collect_builtin_name(&mut self, builtin: &declaration::BuiltIn) {
+        let t = match interner().get(builtin.name().data()) {
             "U64" => BuiltInType::U64,
             "F32" => BuiltInType::F32,
             "Char" => BuiltInType::Char,
@@ -231,36 +210,32 @@ impl Interpreter {
         };
 
         self.builtin_methods.insert(t, HashMap::new());
-        for (signature, body) in methods {
-            let MethodSignature { name, .. } = signature;
-
+        for (signature, body) in builtin.methods() {
             if let Some(body) = body {
                 let f = Rc::new(FunctionInstance { body: body.clone() });
-                self.builtin_methods.get_mut(&t).unwrap().insert(*name.data(), BuiltInMethodKind::Normal(f));
+                self.builtin_methods.get_mut(&t).unwrap().insert(*signature.name().data(), BuiltInMethodKind::Normal(f));
             } else {
-                let mpath = path.append(*name.data());
+                let mpath = builtin.path().append(*signature.name().data());
 
                 // TODO: Better error reporting here
                 let f = INTRINSIC_FUNCTIONS
                     .iter().find(|(ppath, _)| ppath == &mpath.to_string())
                     .unwrap().1;
 
-                self.builtin_methods.get_mut(&t).unwrap().insert(*name.data(), BuiltInMethodKind::Intrinsic(f));
+                self.builtin_methods.get_mut(&t).unwrap().insert(*signature.name().data(), BuiltInMethodKind::Intrinsic(f));
             }
         }
     }
 
-    fn collect_external_name(&mut self, external: &ExternalDeclaration) {
-        let ExternalDeclaration { path, .. } = external;
-
+    fn collect_external_name(&mut self, external: &declaration::External) {
         // TODO: Better error reporting here
         // TODO: External functions via dynamic loading?
         let f = EXTERNAL_FUNCTIONS
-            .iter().find(|(ppath, _)| ppath == &path.to_string())
+            .iter().find(|(ppath, _)| ppath == &external.path().to_string())
             .unwrap().1;
 
         let function = Value::ExternalFunction(f);
-        self.names.insert(path.clone(), function);
+        self.names.insert(external.path().clone(), function);
     }
 
     fn matc(&mut self, matc: &expression::Match) -> ControlFlow {

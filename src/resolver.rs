@@ -2,13 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     bound::{Bound, Path},
-    declaration::{
-        BuiltInDeclaration, Constraint, Declaration, ExternalDeclaration,
-        FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration,
-        InterfaceMethodSignature, MethodDeclaration, MethodSignature, Module,
-        ModuleDeclaration, StructDeclaration, TypeVar, VariantDeclaration,
-        DefineDeclaration
-    },
+    declaration::{self, Declaration},
     expression::{
         self,
         Expression,
@@ -129,7 +123,7 @@ impl Resolver {
         &mut self.current_module_path
     }
 
-    pub fn resolve(&mut self, mut modules: Vec<Module>) -> ReportableResult<Vec<Module>> {
+    pub fn resolve(&mut self, mut modules: Vec<declaration::Module>) -> ReportableResult<Vec<declaration::Module>> {
         for module in &mut modules {
             self.current_source = module.source().to_string();
             self.collect_module(module)?;
@@ -155,7 +149,7 @@ impl Resolver {
         Ok(modules)
     }
 
-    fn module(&mut self, module: &mut Module) -> ReportableResult<()> {
+    fn module(&mut self, module: &mut declaration::Module) -> ReportableResult<()> {
         self.import_names()?;
 
         for declaration in module.declarations_mut() {
@@ -165,24 +159,22 @@ impl Resolver {
         Ok(())
     }
 
-    fn collect_module(&mut self, module: &mut Module) -> ReportableResult<()> {
+    fn collect_module(&mut self, module: &mut declaration::Module) -> ReportableResult<()> {
         let mut module_path = None;
         let mut declared = false;
         for declaration in module.declarations() {
-            if let Declaration::Module(module) = declaration {
-                let ModuleDeclaration { parts } = module;
-
+            if let Declaration::ModulePath(module) = declaration {
                 if !declared {
                     declared = true;
-                    let path = Path::empty().append_parts(parts.data());
+                    let path = Path::empty().append_parts(module.parts().data());
                     module_path = Some(path.clone());
-                    if self.modules.insert(path.clone(), ModuleInformation::with_path_location(parts.location())).is_some() {
+                    if self.modules.insert(path.clone(), ModuleInformation::with_path_location(module.parts().location())).is_some() {
                         // Without this error, behaviour is extending the existing module
                         //   maybe that's an interesting idea!
-                        return self.error(ResolveError::CollidingModulePaths(path), parts.location())
+                        return self.error(ResolveError::CollidingModulePaths(path), module.parts().location())
                     }
                 } else {
-                    return self.error(ResolveError::DuplicateModuleDeclaration, parts.location());
+                    return self.error(ResolveError::DuplicateModuleDeclaration, module.parts().location());
                 }
             }
         }
@@ -190,31 +182,29 @@ impl Resolver {
         let Some(module_name) = module_path else {
             return self.error(ResolveError::ModuleIsNotDeclared, SourceLocation::dummy());
         };
-        *module.path_mut() = module_name.clone();
+        module.set_path(module_name.clone());
 
         let module_information = self.modules.get_mut(&module_name).unwrap();
         for declaration in module.declarations() {
             if let Declaration::Import(import) = declaration {
-                let ImportDeclaration { name } = import;
-
-                Self::module_imports(name, module_information);
+                Self::module_imports(import, module_information);
             }
         }
 
         Ok(())
     }
 
-    fn module_imports(import_name: &ImportName, module_information: &mut ModuleInformation) {
-        fn f(import_name: &ImportName, path: Path, module_information: &mut ModuleInformation) {
-            let import_path = path.append(*import_name.name.data());
+    fn module_imports(import_name: &declaration::Import, module_information: &mut ModuleInformation) {
+        fn f(import: &declaration::Import, path: Path, module_information: &mut ModuleInformation) {
+            let import_path = path.append(*import.name().data());
 
-            let name = if let Some(as_name) = import_name.as_name {
+            let name = if let Some(as_name) = import.as_name() {
                 as_name
             } else {
-                import_name.name
+                import.name()
             };
 
-            if import_name.import_in {
+            if import.import_in() {
                 module_information.import_ins.insert(
                     import_path.clone(),
                     name.location()
@@ -226,7 +216,7 @@ impl Resolver {
                 (import_path.clone(), name.location())
             );
 
-            if let Some(subnames) = &import_name.subnames {
+            if let Some(subnames) = import.subnames() {
                 for import_name in subnames {
                     f(import_name, import_path.clone(), module_information);
                 }
@@ -236,10 +226,10 @@ impl Resolver {
         f(import_name, Path::empty(), module_information);
     }
 
-    fn collect_names(&mut self, module: &mut Module) -> ReportableResult<()> {
+    fn collect_names(&mut self, module: &mut declaration::Module) -> ReportableResult<()> {
         for declaration in module.declarations_mut() {
             match declaration {
-                Declaration::Module(..) => {}
+                Declaration::ModulePath(..) => {}
                 Declaration::Import(..) => {}
                 Declaration::Define(define) => self.collect_define_name(define)?,
                 Declaration::Function(precodure) => self.collect_function_name(precodure)?,
@@ -254,58 +244,52 @@ impl Resolver {
         Ok(())
     }
 
-    fn collect_define_name(&mut self, define: &mut DefineDeclaration) -> ReportableResult<()> {
-        let DefineDeclaration { name, path, .. } = define;
-
-        let define_path = self.current_path().append(*name.data());
+    fn collect_define_name(&mut self, define: &mut declaration::Define) -> ReportableResult<()> {
+        let define_path = self.current_path().append(*define.name().data());
         if !self.value_names.contains(&define_path) {
             self.value_names.insert(define_path.clone());
-            *path = define_path;
+            define.set_path(define_path);
         } else {
             return self.error(
                 ResolveError::DuplicateNameDeclaration(define_path),
-                name.location(),
+                define.name().location(),
             );
         }
 
         Ok(())
     }
 
-    fn collect_function_name(&mut self, function: &mut FunctionDeclaration) -> ReportableResult<()> {
-        let FunctionDeclaration { name, path, .. } = function;
-
-        let function_path = self.current_path().append(*name.data());
+    fn collect_function_name(&mut self, function: &mut declaration::Function) -> ReportableResult<()> {
+        let function_path = self.current_path().append(*function.name().data());
         if !self.value_names.contains(&function_path) {
             self.value_names.insert(function_path.clone());
-            *path = function_path;
+            function.set_path(function_path);
         } else {
             return self.error(
                 ResolveError::DuplicateNameDeclaration(function_path),
-                name.location(),
+                function.name().location(),
             );
         }
 
         Ok(())
     }
 
-    fn collect_variant_name(&mut self, variant: &mut VariantDeclaration) -> ReportableResult<()> {
-        let VariantDeclaration { name, cases, path, .. } = variant;
-
-        let variant_path = self.current_path().append(*name.data());
+    fn collect_variant_name(&mut self, variant: &mut declaration::Variant) -> ReportableResult<()> {
+        let variant_path = self.current_path().append(*variant.name().data());
         if self.type_names.contains(&variant_path) {
             return self.error(
                 ResolveError::DuplicateTypeDeclaration(variant_path),
-                name.location(),
+                variant.name().location(),
             );
         }
 
-        self.current_path_mut().push(*name.data());
-        for case in cases.iter_mut() {
+        self.current_path_mut().push(*variant.name().data());
+        for case in variant.cases_mut().iter_mut() {
             let constructor = *case.data().identifier().data();
             let constructor_path = self.current_path().append(constructor);
             if !self.value_names.contains(&constructor_path) {
                 self.value_names.insert(constructor_path.clone());
-                *case.data_mut().path_mut() = constructor_path;
+                case.data_mut().set_path(constructor_path);
             } else {
                 return self.error(
                     ResolveError::DuplicateConstructorDeclaration {
@@ -318,29 +302,27 @@ impl Resolver {
         }
         self.current_path_mut().pop();
         self.type_names.insert(variant_path.clone());
-        *path = variant_path;
+        variant.set_path(variant_path);
 
         Ok(())
     }
 
-    fn collect_interface_name(&mut self, interface: &mut InterfaceDeclaration) -> ReportableResult<()> {
-        let InterfaceDeclaration { name, path, methods, .. } = interface;
-
-        let interface_path = self.current_path().append(*name.data());
+    fn collect_interface_name(&mut self, interface: &mut declaration::Interface) -> ReportableResult<()> {
+        let interface_path = self.current_path().append(*interface.name().data());
         if self.type_names.contains(&interface_path) {
             return self.error(
                 ResolveError::DuplicateTypeDeclaration(interface_path),
-                name.location(),
+                interface.name().location(),
             );
         }
 
         self.type_names.insert(interface_path.clone());
-        *path = interface_path;
+        interface.set_path(interface_path);
 
-        self.current_path_mut().push(*name.data());
-        for method in methods {
-            let function_path = self.current_path().append(*method.name.data());
-            method.path = function_path.clone();
+        self.current_path_mut().push(*interface.name().data());
+        for method in interface.methods_mut() {
+            let function_path = self.current_path().append(*method.name().data());
+            method.set_path(function_path.clone());
             // TODO: Check for duplicate interface method declarations
             self.value_names.insert(function_path);
         }
@@ -349,56 +331,50 @@ impl Resolver {
         Ok(())
     }
 
-    fn collect_struct_name(&mut self, strct: &mut StructDeclaration) -> ReportableResult<()> {
-        let StructDeclaration { name, path, .. } = strct;
-
-        let struct_path = self.current_path().append(*name.data());
+    fn collect_struct_name(&mut self, strct: &mut declaration::Struct) -> ReportableResult<()> {
+        let struct_path = self.current_path().append(*strct.name().data());
         if self.type_names.contains(&struct_path) {
             return self.error(
                 ResolveError::DuplicateTypeDeclaration(struct_path),
-                name.location(),
+                strct.name().location(),
             );
         }
 
         self.type_names.insert(struct_path.clone());
         self.value_names.insert(struct_path.clone());
-        *path = struct_path;
+        strct.set_path(struct_path);
 
         Ok(())
     }
 
-    fn collect_builtin_name(&mut self, builtin: &mut BuiltInDeclaration) -> ReportableResult<()> {
-        let BuiltInDeclaration { name, path, .. } = builtin;
-
+    fn collect_builtin_name(&mut self, builtin: &mut declaration::BuiltIn) -> ReportableResult<()> {
         if self.current_path().to_string() != INTRINSICS_MODULE_NAME {
             panic!("Not allowed in builtin declarations outside of Intrinsics Module.")
         }
 
-        let builtin = self.current_path().append(*name.data());
-        if self.type_names.contains(&builtin) {
+        let builtin_path = self.current_path().append(*builtin.name().data());
+        if self.type_names.contains(&builtin_path) {
             return self.error(
-                ResolveError::DuplicateTypeDeclaration(builtin),
-                name.location(),
+                ResolveError::DuplicateTypeDeclaration(builtin_path),
+                builtin.name().location(),
             );
         }
 
-        self.type_names.insert(builtin.clone());
-        *path = builtin;
+        self.type_names.insert(builtin_path.clone());
+        builtin.set_path(builtin_path);
 
         Ok(())
     }
 
-    fn collect_external_name(&mut self, external: &mut ExternalDeclaration) -> ReportableResult<()> {
-        let ExternalDeclaration { name, path, .. } = external;
-
-        let external = self.current_path().append(*name.data());
-        if !self.value_names.contains(&external) {
-            self.value_names.insert(external.clone());
-            *path = external;
+    fn collect_external_name(&mut self, external: &mut declaration::External) -> ReportableResult<()> {
+        let external_path = self.current_path().append(*external.name().data());
+        if !self.value_names.contains(&external_path) {
+            self.value_names.insert(external_path.clone());
+            external.set_path(external_path);
         } else {
             return self.error(
-                ResolveError::DuplicateNameDeclaration(external),
-                name.location(),
+                ResolveError::DuplicateNameDeclaration(external_path),
+                external.name().location(),
             );
         }
 
@@ -714,7 +690,7 @@ impl Resolver {
     pub fn declaration(&mut self, declaration: &mut Declaration) -> ReportableResult<()> {
         // TODO: maybe take Located<Declaration> for better error reporting
         match declaration {
-            Declaration::Module(..) => {}
+            Declaration::ModulePath(..) => {}
             Declaration::Import(..) => {},
             Declaration::Define(define) => self.define(define)?,
             Declaration::Function(function) => self.function(function)?,
@@ -728,10 +704,8 @@ impl Resolver {
         Ok(())
     }
 
-    fn type_var(&mut self, type_var: &mut Located<TypeVar>) -> ReportableResult<()> {
-        let TypeVar { interfaces, .. } = type_var.data_mut();
-
-        for (interface, path) in interfaces.iter_mut() {
+    fn type_var(&mut self, type_var: &mut Located<declaration::TypeVar>) -> ReportableResult<()> {
+        for (interface, path) in type_var.data_mut().interfaces_mut().iter_mut() {
             *path = self.find_interface_path(interface.data(), interface.location())?;
         }
 
@@ -764,7 +738,7 @@ impl Resolver {
         Ok(())
     }
 
-    fn module_path(&mut self, module: &Module) -> ReportableResult<()> {
+    fn module_path(&mut self, module: &declaration::Module) -> ReportableResult<()> {
         let mut path = module.path().clone();
         let module_information = &self.modules[&path];
         path.pop();
@@ -779,67 +753,61 @@ impl Resolver {
         Ok(())
     }
 
-    fn define(&mut self, define: &mut DefineDeclaration) -> ReportableResult<()> {
-        let DefineDeclaration { type_expression, expression, .. } = define;
-
-        self.type_expression(type_expression)?;
-        self.expression(expression)?;
+    fn define(&mut self, define: &mut declaration::Define) -> ReportableResult<()> {
+        self.type_expression(define.type_expression_mut())?;
+        self.expression(define.expression_mut())?;
 
         Ok(())
     }
 
-    fn function(&mut self, function: &mut FunctionDeclaration) -> ReportableResult<()> {
-        let FunctionDeclaration { type_vars, arguments, return_type, body, .. } = function;
-
-        for type_var in type_vars.iter_mut() {
+    fn function(&mut self, function: &mut declaration::Function) -> ReportableResult<()> {
+        for type_var in function.type_vars_mut().iter_mut() {
             self.type_var(type_var)?;
         }
 
         scoped!(self, {
-            for type_var in type_vars {
-                self.locals.push(*type_var.data().name.data());
+            for type_var in function.type_vars() {
+                self.locals.push(*type_var.data().name().data());
             }
 
-            for argument in arguments.iter_mut() {
+            for argument in function.arguments_mut().iter_mut() {
                 self.type_expression(argument.data_mut().type_expression_mut())?;
             }
 
-            if let Some(return_type) = return_type {
+            if let Some(return_type) = function.return_type_mut() {
                 self.type_expression(return_type)?;
             }
         });
 
         scoped!(self, {
-            let argument_names = arguments.iter().map(|idx| *idx.data().indentifier().data());
+            let argument_names = function.arguments().iter().map(|idx| *idx.data().identifier().data());
             self.locals.extend(argument_names);
 
-            self.expression(body)?;
+            self.expression(function.body_mut())?;
         });
 
         Ok(())
     }
 
-    fn method_signature(&mut self, signature: &mut MethodSignature) -> ReportableResult<()> {
-        let MethodSignature { constraints, type_vars, arguments, return_type, .. } = signature;
-
-        for constraint in constraints.iter_mut() {
+    fn method_signature(&mut self, signature: &mut declaration::MethodSignature) -> ReportableResult<()> {
+        for constraint in signature.constraints_mut().iter_mut() {
             self.constraint(constraint)?;
         }
 
-        for type_var in type_vars.iter_mut() {
+        for type_var in signature.type_vars_mut().iter_mut() {
             self.type_var(type_var)?;
         }
 
         scoped!(self, {
-            for type_var in type_vars {
-                self.locals.push(*type_var.data().name.data());
+            for type_var in signature.type_vars() {
+                self.locals.push(*type_var.data().name().data());
             }
 
-            for argument in arguments.iter_mut() {
+            for argument in signature.arguments_mut().iter_mut() {
                 self.type_expression(argument.data_mut().type_expression_mut())?;
             }
 
-            if let Some(return_type) = return_type {
+            if let Some(return_type) = signature.return_type_mut() {
                 self.type_expression(return_type)?;
             }
         });
@@ -847,29 +815,27 @@ impl Resolver {
         Ok(())
     }
 
-    fn method(&mut self, method: &mut MethodDeclaration) -> ReportableResult<()> {
-        let MethodDeclaration { signature, body, .. } = method;
-
-        self.method_signature(signature)?;
+    fn method(&mut self, method: &mut declaration::Method) -> ReportableResult<()> {
+        self.method_signature(method.signature_mut())?;
 
         scoped!(self, {
-            self.locals.push(*signature.instance.data());
-            let argument_names = signature.arguments.iter().map(|idx| *idx.data().indentifier().data());
+            self.locals.push(*method.signature().instance().data());
+            let argument_names = method.signature().arguments().iter().map(|idx| *idx.data().identifier().data());
             self.locals.extend(argument_names);
 
-            self.expression(body)?;
+            self.expression(method.body_mut())?;
         });
 
         Ok(())
     }
 
-    fn constraint(&mut self, constraint: &mut Constraint) -> ReportableResult<()> {
+    fn constraint(&mut self, constraint: &mut declaration::MethodConstraint) -> ReportableResult<()> {
         // NOTE: At this point we only have type parameters of the type
         //   so index represent the order of the type parameter
         let mut found = false;
         for (index, name_idx) in self.locals.iter().enumerate() {
-            if name_idx == constraint.type_var.data().name.data() {
-                constraint.nth = index;
+            if name_idx == constraint.type_var().data().name().data() {
+                constraint.set_nth(index);
                 found = true;
             }
         }
@@ -878,20 +844,18 @@ impl Resolver {
             todo!("Not a type var of type");
         }
 
-        self.type_var(&mut constraint.type_var)?;
+        self.type_var(constraint.type_var_mut())?;
 
         Ok(())
     }
 
-    fn variant(&mut self, variant: &mut VariantDeclaration) -> ReportableResult<()> {
-        let VariantDeclaration { cases, methods, type_vars, .. } = variant;
-
+    fn variant(&mut self, variant: &mut declaration::Variant) -> ReportableResult<()> {
         scoped!(self, {
             // TODO: These ones are leaked
-            let type_vars = type_vars.iter().map(|type_var| type_var.data());
+            let type_vars = variant.type_vars().iter().map(|type_var| type_var.data());
             self.locals.extend(type_vars);
 
-            for case in cases {
+            for case in variant.cases_mut() {
                 if let Some(arguments) = case.data_mut().arguments_mut() {
                     for argument in arguments {
                         self.type_expression(argument)?;
@@ -900,7 +864,7 @@ impl Resolver {
             }
 
             // TODO: Here we leak type variables in value names, fix
-            for method in methods {
+            for method in variant.methods_mut() {
                 self.method(method)?;
             }
         });
@@ -908,22 +872,18 @@ impl Resolver {
         Ok(())
     }
 
-    fn interface(&mut self, interface: &mut InterfaceDeclaration) -> ReportableResult<()> {
-        let InterfaceDeclaration { methods, type_name, .. } = interface;
-
-        self.type_var(type_name)?;
+    fn interface(&mut self, interface: &mut declaration::Interface) -> ReportableResult<()> {
+        self.type_var(interface.type_name_mut())?;
 
         scoped!(self, {
-            self.locals.push(*type_name.data().name.data());
+            self.locals.push(*interface.type_name().data().name().data());
 
-            for method in methods {
-                let InterfaceMethodSignature { arguments, return_type, .. } = method;
-
-                for argument in arguments {
+            for method in interface.methods_mut() {
+                for argument in method.arguments_mut() {
                     self.type_expression(argument.data_mut().type_expression_mut())?;
                 }
 
-                if let Some(return_type) = return_type {
+                if let Some(return_type) = method.return_type_mut() {
                     self.type_expression(return_type)?;
                 }
             }
@@ -932,20 +892,18 @@ impl Resolver {
         Ok(())
     }
 
-    fn strct(&mut self, strct: &mut StructDeclaration) -> ReportableResult<()> {
-        let StructDeclaration { type_vars, fields, methods, .. } = strct;
-
+    fn strct(&mut self, strct: &mut declaration::Struct) -> ReportableResult<()> {
         scoped!(self, {
             // TODO: These ones are leaked
-            let type_vars = type_vars.iter().map(|type_var| type_var.data());
+            let type_vars = strct.type_vars().iter().map(|type_var| type_var.data());
             self.locals.extend(type_vars);
 
-            for field in fields {
+            for field in strct.fields_mut() {
                 self.type_expression(field.data_mut().type_expression_mut())?;
             }
 
             // TODO: Here we leak type variables in value names, fix
-            for method in methods {
+            for method in strct.methods_mut() {
                 self.method(method)?;
             }
         });
@@ -953,20 +911,18 @@ impl Resolver {
         Ok(())
     }
 
-    fn builtin(&mut self, builtin: &mut BuiltInDeclaration) -> ReportableResult<()> {
-        let BuiltInDeclaration { type_vars, methods, .. } = builtin;
-
+    fn builtin(&mut self, builtin: &mut declaration::BuiltIn) -> ReportableResult<()> {
         scoped!(self, {
-            let type_vars = type_vars.iter().map(|type_var| type_var.data());
+            let type_vars = builtin.type_vars().iter().map(|type_var| type_var.data());
             self.locals.extend(type_vars);
 
-            for (signature, body) in methods {
+            for (signature, body) in builtin.methods_mut() {
                 self.method_signature(signature)?;
                 if let Some(body) = body {
                     // TODO : Factor out here
                     scoped!(self, {
-                        self.locals.push(*signature.instance.data());
-                        let argument_names = signature.arguments.iter().map(|idx| *idx.data().indentifier().data());
+                        self.locals.push(*signature.instance().data());
+                        let argument_names = signature.arguments().iter().map(|idx| *idx.data().identifier().data());
                         self.locals.extend(argument_names);
 
                         self.expression(body)?;
@@ -978,23 +934,21 @@ impl Resolver {
         Ok(())
     }
 
-    fn external(&mut self, external: &mut ExternalDeclaration) -> ReportableResult<()> {
-        let ExternalDeclaration { type_vars, arguments, return_type, .. } = external;
-
-        for type_var in type_vars.iter_mut() {
+    fn external(&mut self, external: &mut declaration::External) -> ReportableResult<()> {
+        for type_var in external.type_vars_mut().iter_mut() {
             self.type_var(type_var)?;
         }
 
         scoped!(self, {
-            for type_var in type_vars {
-                self.locals.push(*type_var.data().name.data());
+            for type_var in external.type_vars() {
+                self.locals.push(*type_var.data().name().data());
             }
 
-            for argument in arguments.iter_mut() {
+            for argument in external.arguments_mut().iter_mut() {
                 self.type_expression(argument.data_mut().type_expression_mut())?;
             }
 
-            if let Some(return_type) = return_type {
+            if let Some(return_type) = external.return_type_mut() {
                 self.type_expression(return_type)?;
             }
         });
