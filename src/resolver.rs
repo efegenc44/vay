@@ -9,13 +9,12 @@ use crate::{
         ModuleDeclaration, StructDeclaration, TypeVar, VariantDeclaration,
         DefineDeclaration
     },
-    expression,
     expression::{
-        Expression, FunctionTypeExpression,
-        PathTypeExpression, pattern::Pattern,
-        TypeApplicationExpression,
-        TypeExpression,
+        self,
+        Expression,
+        pattern::Pattern,
     },
+    type_expression::{self, TypeExpression},
     interner::{interner, InternIdx},
     intrinsics::INTRINSICS_MODULE_NAME,
     location::{Located, SourceLocation},
@@ -614,24 +613,22 @@ impl Resolver {
         }
     }
 
-    fn path_type(&mut self, path: &mut PathTypeExpression, location: SourceLocation) -> ReportableResult<()> {
-        let PathTypeExpression { parts, bound } = path;
-
+    fn path_type(&mut self, path: &mut type_expression::Path, location: SourceLocation) -> ReportableResult<()> {
         let base = self
-            .find_type_name(&parts[0])
-            .unwrap_or(Bound::Absolute(self.current_path().append(parts[0])));
+            .find_type_name(&path.parts()[0])
+            .unwrap_or(Bound::Absolute(self.current_path().append(path.parts()[0])));
 
         match base {
             Bound::Local(_) => {
-                assert!(parts.len() == 1);
-                *bound = base
+                assert!(path.parts().len() == 1);
+                path.set_bound(base);
             }
             Bound::Absolute(base_path) => {
-                let path = base_path.append_parts(&parts[1..]);
-                let Some(path) = self.type_names.get(&path) else {
-                    return self.error(ResolveError::UnboundTypePath(path), location);
+                let absolute_path = base_path.append_parts(&path.parts()[1..]);
+                let Some(absolute_path) = self.type_names.get(&absolute_path) else {
+                    return self.error(ResolveError::UnboundTypePath(absolute_path), location);
                 };
-                *bound = Bound::Absolute(path.clone());
+                path.set_bound(Bound::Absolute(absolute_path.clone()));
             }
             Bound::Undetermined => unreachable!(),
         };
@@ -639,25 +636,21 @@ impl Resolver {
         Ok(())
     }
 
-    fn function_type(&mut self, function_type: &mut FunctionTypeExpression) -> ReportableResult<()> {
-        let FunctionTypeExpression { arguments, return_type } = function_type;
-
-        for argument in arguments {
+    fn function_type(&mut self, function_type: &mut type_expression::Function) -> ReportableResult<()> {
+        for argument in function_type.arguments_mut() {
             self.type_expression(argument)?;
         }
 
-        if let Some(return_type) = return_type {
+        if let Some(return_type) = function_type.return_type_mut() {
             self.type_expression(return_type)?;
         }
 
         Ok(())
     }
 
-    fn type_application(&mut self, type_application: &mut TypeApplicationExpression) -> ReportableResult<()> {
-        let TypeApplicationExpression { function, arguments } = type_application;
-
-        self.type_expression(function)?;
-        for argument in arguments {
+    fn type_application(&mut self, type_application: &mut type_expression::Application) -> ReportableResult<()> {
+        self.type_expression(type_application.function_mut())?;
+        for argument in type_application.arguments_mut() {
             self.type_expression(argument)?;
         }
 

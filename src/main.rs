@@ -17,6 +17,7 @@ mod runner;
 mod intrinsics;
 mod core;
 mod stdlib;
+mod type_expression;
 
 fn main() {
     commandline::execute()

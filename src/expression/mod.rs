@@ -13,7 +13,7 @@ mod r#while;
 
 pub mod pattern;
 
-use crate::{bound::Bound, interner::InternIdx, location::Located};
+use crate::{interner::InternIdx};
 
 pub type Path        = path::T;
 pub type Array       = array::T;
@@ -49,30 +49,4 @@ pub enum Expression {
     While(While),
     Continue,
     Break,
-}
-
-#[derive(Clone)]
-pub enum TypeExpression {
-    Path(PathTypeExpression),
-    Function(FunctionTypeExpression),
-    Application(TypeApplicationExpression),
-    Unit
-}
-
-#[derive(Clone)]
-pub struct PathTypeExpression {
-    pub parts: Vec<InternIdx>,
-    pub bound: Bound
-}
-
-#[derive(Clone)]
-pub struct FunctionTypeExpression {
-    pub arguments: Vec<Located<TypeExpression>>,
-    pub return_type: Option<Box<Located<TypeExpression>>>
-}
-
-#[derive(Clone)]
-pub struct TypeApplicationExpression {
-    pub function: Box<Located<TypeExpression>>,
-    pub arguments: Vec<Located<TypeExpression>>,
 }

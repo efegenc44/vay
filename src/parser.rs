@@ -1,7 +1,7 @@
 use std::{collections::HashMap, iter::Peekable};
 
 use crate::{
-    bound::{Bound, Path},
+    bound::Path,
     declaration::{
         BuiltInDeclaration, Constraint, Declaration, ExternalDeclaration,
         FunctionDeclaration, ImportDeclaration, ImportName, InterfaceDeclaration,
@@ -9,14 +9,13 @@ use crate::{
         ModuleDeclaration, StructDeclaration, TypeVar, TypedIdentifier,
         VariantCase, VariantDeclaration, DefineDeclaration
     },
-    expression,
     expression::{
+        self,
         pattern,
-        Expression, FunctionTypeExpression,
-        PathTypeExpression,
+        Expression,
         pattern::Pattern,
-        TypeApplicationExpression, TypeExpression,
     },
+    type_expression::{self, TypeExpression},
     interner::{interner_mut, InternIdx},
     lexer::Lexer,
     location::{Located, SourceLocation},
@@ -1100,10 +1099,7 @@ impl<'source> Parser<'source> {
                 )?;
 
                 let location = expression.location().extend(&end);
-                let application = TypeApplicationExpression {
-                    function: Box::new(expression),
-                    arguments,
-                };
+                let application = type_expression::Application::new(Box::new(expression), arguments);
                 expression = Located::new(TypeExpression::Application(application), location);
             } else {
                 break;
@@ -1125,7 +1121,7 @@ impl<'source> Parser<'source> {
 
     fn type_path(&mut self) -> ReportableResult<Located<TypeExpression>> {
         let parts = self.path_parts()?;
-        let path = PathTypeExpression { parts: parts.data().to_owned(), bound: Bound::Undetermined };
+        let path = type_expression::Path::new(parts.data().to_owned());
         let type_expression = TypeExpression::Path(path);
         Ok(Located::new(
             type_expression,
@@ -1152,10 +1148,7 @@ impl<'source> Parser<'source> {
         };
 
         let location = start.extend(&end);
-        let function_type = FunctionTypeExpression {
-            arguments,
-            return_type,
-        };
+        let function_type = type_expression::Function::new(arguments, return_type);
         Ok(Located::new(TypeExpression::Function(function_type), location))
     }
 

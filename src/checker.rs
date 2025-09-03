@@ -8,13 +8,12 @@ use crate::{
         MethodSignature, Module, StructDeclaration, TypedIdentifier,
         VariantDeclaration, DefineDeclaration
     },
-    expression,
     expression::{
-        Expression, FunctionTypeExpression,
-        PathTypeExpression, pattern::Pattern,
-        TypeApplicationExpression,
-        TypeExpression,
+        self,
+        Expression,
+        pattern::Pattern,
     },
+    type_expression::{self, TypeExpression},
     interner::{interner, InternIdx},
     location::{Located, SourceLocation},
     reportable::{Reportable, ReportableResult},
@@ -283,10 +282,8 @@ impl Checker {
         }
     }
 
-    fn eval_path_type(&mut self, type_path: &PathTypeExpression) -> ReportableResult<Type> {
-        let PathTypeExpression { bound, .. } = type_path;
-
-        match bound {
+    fn eval_path_type(&mut self, type_path: &type_expression::Path) -> ReportableResult<Type> {
+        match type_path.bound() {
             Bound::Local(bound_idx) => {
                 let index = self.locals.len() - 1 - bound_idx;
                 Ok(self.locals[index].clone())
@@ -298,14 +295,12 @@ impl Checker {
         }
     }
 
-    fn eval_function_type(&mut self, function_type: &FunctionTypeExpression) -> ReportableResult<Type> {
-        let FunctionTypeExpression { arguments, return_type } = function_type;
-
-        let arguments = arguments
+    fn eval_function_type(&mut self, function_type: &type_expression::Function) -> ReportableResult<Type> {
+        let arguments = function_type.arguments()
             .iter().map(|argument| self.eval_to_mono(argument))
             .collect::<ReportableResult<Vec<_>>>()?;
 
-        let return_type = return_type
+        let return_type = function_type.return_type()
             .as_ref()
             .map(|return_type| self.eval_to_mono(return_type))
             .unwrap_or(Ok(MonoType::Unit))?;
@@ -315,26 +310,24 @@ impl Checker {
         Ok(Type::Mono(MonoType::Function(FunctionType { arguments, return_type })))
     }
 
-    fn eval_type_application(&mut self, type_application: &TypeApplicationExpression) -> ReportableResult<Type> {
-        let TypeApplicationExpression { function, arguments } = &type_application;
-
-        let t = self.eval_type_expression(function)?;
+    fn eval_type_application(&mut self, type_application: &type_expression::Application) -> ReportableResult<Type> {
+        let t = self.eval_type_expression(type_application.function())?;
         let Type::Forall(variables, mut m) = t else {
             return self.error(
                 TypeCheckError::NotAPolyType {
                     encountered: t
                 },
-                function.location()
+                type_application.function().location()
             )
         };
 
-        if variables.len() != arguments.len() {
+        if variables.len() != type_application.arguments().len() {
             return self.error(
                 TypeCheckError::TypeArityMismatch {
                     expected: variables.len(),
-                    encountered: arguments.len()
+                    encountered: type_application.arguments().len()
                 },
-                function.location()
+                type_application.function().location()
             )
         }
 
@@ -342,7 +335,7 @@ impl Checker {
             MonoType::Variant(_, variant_arguments) |
             MonoType::Struct(_, variant_arguments) |
             MonoType::BuiltIn(_, _, variant_arguments) => {
-                for (argument, variable) in arguments.iter().zip(variables) {
+                for (argument, variable) in type_application.arguments().iter().zip(variables) {
                     assert!(variable.interfaces.is_empty());
                     variant_arguments.push(self.eval_to_mono(argument)?);
                 }

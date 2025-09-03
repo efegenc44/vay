@@ -1,5 +1,9 @@
 use crate::{
-    bound::Path, expression::{Expression, TypeExpression}, interner::InternIdx, location::Located,
+    bound::Path,
+    expression::Expression,
+    type_expression::TypeExpression,
+    interner::InternIdx,
+    location::Located,
 };
 
 pub enum Declaration {
