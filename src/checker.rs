@@ -2,9 +2,12 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     bound::{Bound, Path},
-    declaration::{self, Declaration},
-    expression::{self, Expression, pattern::Pattern},
-    type_expression::{self, TypeExpression},
+    ast::{
+        declaration::{self, Declaration},
+        expression::{self, Expression},
+        type_expression::{self, TypeExpression},
+        pattern::Pattern
+    },
     interner::{interner, InternIdx},
     location::{Located, SourceLocation},
     reportable::{Reportable, ReportableResult},

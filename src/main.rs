@@ -1,7 +1,5 @@
 mod bound;
 mod checker;
-mod declaration;
-mod expression;
 mod interner;
 mod lexer;
 mod location;
@@ -17,7 +15,7 @@ mod runner;
 mod intrinsics;
 mod core;
 mod stdlib;
-mod type_expression;
+mod ast;
 
 fn main() {
     commandline::execute()

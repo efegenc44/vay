@@ -4,8 +4,8 @@ use std::{
 
 use crate::{
     bound::Path,
-    expression::{
-        Expression,
+    ast::{
+        expression::Expression,
         pattern::Pattern,
     },
     interner::{interner, InternIdx},

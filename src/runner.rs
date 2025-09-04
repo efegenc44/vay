@@ -11,7 +11,7 @@ use crate::{
     stdlib,
     checker::Checker,
     core::CORE_FILE_PATH,
-    declaration::Module,
+    ast::declaration::Module,
     interpreter::{ControlFlow, Interpreter},
     intrinsics::INTRINSICS_FILE_PATH,
     lexer::Lexer,

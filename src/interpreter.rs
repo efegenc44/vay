@@ -2,10 +2,9 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
     bound::{Bound, Path},
-    declaration::{self, Declaration},
-    expression,
-    expression::{
-        Expression,
+    ast::{
+        declaration::{self, Declaration},
+        expression::{self, Expression},
         pattern::Pattern,
     },
     interner::{interner, InternIdx},

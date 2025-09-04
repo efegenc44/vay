@@ -2,14 +2,12 @@ use std::{collections::HashMap, iter::Peekable};
 
 use crate::{
     bound::Path,
-    declaration::{self, Declaration},
-    expression::{
-        self,
-        pattern,
-        Expression,
-        pattern::Pattern,
+    ast::{
+        declaration::{self, Declaration},
+        expression::{self, Expression},
+        type_expression::{self, TypeExpression},
+        pattern::{self, Pattern},
     },
-    type_expression::{self, TypeExpression},
     interner::{interner_mut, InternIdx},
     lexer::Lexer,
     location::{Located, SourceLocation},
