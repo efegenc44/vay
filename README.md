@@ -5,41 +5,35 @@ _vay!_ is an expression based, multi paradigm programming language which feature
 _vay!_ also provides algebraic data types, imperative constructs and a structured module system.
 
 ---
+## Quick Start
 
-Because _vay!_ right now lacks primitives, writing "Hello, World" is not possible but Peano style natural numbers can be implemented.
+```
+vay help
+```
 
-While this example does not show all of the features of _vay!_ more examples can be found [here](./examples).
+## Examples
 
+More examples can be found [here](./examples).
+
+#### Hello, World!
 ```
 module Main
 
-import Main (Nat (Zero, Succ))
-
-variant Nat {
-    Zero
-    Succ(Nat)
-
-    fun add(this, that : Nat) : Nat = match that {
-        let .Zero    : this
-        let .Succ(n) : Succ(this.add(n))
-    }
-
-    fun mul(this, that : Nat) : Nat = match that {
-        let .Zero    : Zero
-        let .Succ(n) : this.add(this.mul(n))
-    }
-}
-
-fun main() : Nat =
-    Succ(Succ(Succ(Zero))).mul(Succ(Succ(Zero)))
+fun main() = println("Hello, World");
 ```
 
----
+#### Fibonacci
+```
+module Main
 
-### Goals to be useful :
-- [x] Operators
-- [X] Primitives
-- [x] Arrays
-- [ ] REPL
-- [x] More imperative constructs
-- [x] Polymorphic methods
+fun fibonacci(n : U64) : U64 = match n {
+    let 0 : 0
+    let 1 : 1
+    let n : fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+fun main() : Bool =
+    fibonacci(8) == 21
+```
+
+
