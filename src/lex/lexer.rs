@@ -4,10 +4,16 @@ use core::{
 };
 
 use crate::{
-    location::{Located, Position, SourceLocation},
+    lex::{
+        location::{
+            Located,
+            Position,
+            SourceLocation
+        },
+        token::Token
+    },
     reportable::{Reportable, ReportableResult},
     interner::interner_mut,
-    token::Token
 };
 
 const PUNCTUATION_CHARS: &[char] = &[

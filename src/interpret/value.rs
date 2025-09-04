@@ -3,14 +3,14 @@ use std::{
 };
 
 use crate::{
-    bound::Path,
+    name::bound::Path,
     ast::{
         expression::Expression,
         pattern::Pattern,
     },
     interner::{interner, InternIdx},
-    intrinsics::IntrinsicFunction,
-    location::Located,
+    vay::intrinsics::IntrinsicFunction,
+    lex::location::Located,
 };
 
 #[derive(Clone)]

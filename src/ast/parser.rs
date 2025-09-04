@@ -1,7 +1,7 @@
 use std::{collections::HashMap, iter::Peekable};
 
 use crate::{
-    bound::Path,
+    name::bound::Path,
     ast::{
         declaration::{self, Declaration},
         expression::{self, Expression},
@@ -9,10 +9,12 @@ use crate::{
         pattern::{self, Pattern},
     },
     interner::{interner_mut, InternIdx},
-    lexer::Lexer,
-    location::{Located, SourceLocation},
+    lex::{
+        location::{Located, SourceLocation},
+        token::Token,
+        lexer::Lexer
+    },
     reportable::{Reportable, ReportableResult},
-    token::Token
 };
 
 const PRIMARY_TOKEN_STARTS: &[Token] = &[

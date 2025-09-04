@@ -8,16 +8,17 @@ use std::{
 };
 
 use crate::{
-    stdlib,
-    checker::Checker,
-    core::CORE_FILE_PATH,
-    ast::declaration::Module,
-    interpreter::{ControlFlow, Interpreter},
-    intrinsics::INTRINSICS_FILE_PATH,
-    lexer::Lexer,
-    parser::Parser,
+    vay::{
+        intrinsics::INTRINSICS_FILE_PATH,
+        stdlib
+    },
+    check::checker::Checker,
+    vay::core::CORE_FILE_PATH,
+    ast::{declaration::Module, parser::Parser},
+    interpret::interpreter::{ControlFlow, Interpreter},
+    lex::lexer::Lexer,
     reportable::ReportableResult,
-    resolver::Resolver
+    name::resolver::Resolver
 };
 
 pub const SESSION_SOURCE: &str = "Interactive session";

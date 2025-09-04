@@ -1,17 +1,17 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    bound::{Bound, Path},
+    name::bound::{Bound, Path},
     ast::{
         declaration::{self, Declaration},
         expression::{self, Expression},
         pattern::Pattern,
     },
     interner::{interner, InternIdx},
-    intrinsics::{EXTERNAL_FUNCTIONS, INTRINSIC_FUNCTIONS},
-    location::Located,
-    typ::BuiltInType,
-    value::{
+    vay::intrinsics::{EXTERNAL_FUNCTIONS, INTRINSIC_FUNCTIONS},
+    lex::location::Located,
+    check::typ::BuiltInType,
+    interpret::value::{
         ConstructorInstance, FunctionInstance, InstanceInstance, LambdaInstance,
         MethodInstance, StructConstructorInstance, StructInstanceInstance, Value,
         BuiltInMethodKind

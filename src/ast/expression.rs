@@ -1,7 +1,7 @@
 use crate::{
-    bound::Bound,
+    name::bound::Bound,
     interner::InternIdx,
-    location::Located,
+    lex::location::Located,
     ast::pattern::Pattern
 };
 

@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    bound::{Bound, Path},
+    name::bound::{Bound, Path},
     ast::{
         declaration::{self, Declaration},
         expression::{self, Expression},
@@ -9,10 +9,10 @@ use crate::{
         pattern::Pattern
     },
     interner::{interner, InternIdx},
-    location::{Located, SourceLocation},
+    lex::location::{Located, SourceLocation},
     reportable::{Reportable, ReportableResult},
     runner,
-    typ::{
+    check::typ::{
         BuiltInType, FunctionType, Interface, MethodType,
         MonoType, Type, TypeVar
     }

@@ -1,6 +1,6 @@
 use std::{fs, path::Path};
 
-const STDLIB_DIR_PATH: &'static str = "./src/stdlib";
+const STDLIB_DIR_PATH: &'static str = "./src/vay/stdlib";
 
 fn collect_file_paths(dir_path: &Path) -> Vec<String> {
     let mut file_paths = vec![];

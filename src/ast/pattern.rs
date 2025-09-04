@@ -1,4 +1,4 @@
-use crate::{interner::InternIdx, location::Located};
+use crate::{interner::InternIdx, lex::location::Located};
 
 // TODO: default pattern
 #[derive(Clone)]

@@ -1,4 +1,4 @@
-use crate::{location::SourceLocation};
+use crate::lex::location::SourceLocation;
 
 pub trait Reportable {
     fn location(&self) -> SourceLocation;

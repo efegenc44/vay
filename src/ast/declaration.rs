@@ -1,11 +1,11 @@
 use crate::{
-    bound::Path,
+    name::bound::Path,
     ast::{
         expression::Expression,
         type_expression::TypeExpression
     },
     interner::InternIdx,
-    location::Located,
+    lex::location::Located,
 };
 
 pub enum Declaration {

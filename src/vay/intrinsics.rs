@@ -1,13 +1,17 @@
 use std::rc::Rc;
 
 use crate::{
-    bound::Path,
+    name::bound::Path,
     interner::interner,
-    value::{ConstructorInstance, InstanceInstance, Value}
+    interpret::value::{
+        ConstructorInstance,
+        InstanceInstance,
+        Value
+    }
 };
 
 pub const INTRINSICS_MODULE_NAME: &str = "Intrinsics";
-pub const INTRINSICS_FILE_PATH: &str = "./src/intrinsics.vay";
+pub const INTRINSICS_FILE_PATH: &str = "./src/vay/intrinsics.vay";
 
 pub type IntrinsicFunction = fn(Vec<Value>) -> Value;
 
