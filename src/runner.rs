@@ -3,7 +3,7 @@ use core::panic;
 use std::{
     collections::HashMap,
     fs,
-    io::{stdin, stdout, Write},
+    io::{stdout, Write},
     process::exit,
 };
 
@@ -19,6 +19,13 @@ use crate::{
     lex::lexer::Lexer,
     reportable::ReportableResult,
     name::resolver::Resolver
+};
+
+use crossterm::{
+    cursor::MoveTo,
+    event::{Event, KeyCode, KeyModifiers},
+    terminal,
+    ExecutableCommand
 };
 
 pub const SESSION_SOURCE: &str = "Interactive session";
@@ -123,20 +130,69 @@ impl Runner {
         self.resolver.init_interactive_module();
         self.checker.init_interactive_session();
 
-        let stdin = stdin();
+        // let stdin = stdin();
         let mut stdout = stdout();
 
         self.source_contents.insert(SESSION_SOURCE.into(), String::new());
 
-        println!("Welcome to the vay! interactive session. Write `:help` for more information.");
+        let mut cursor_position;
+
+        crossterm::terminal::enable_raw_mode().unwrap();
+
+        write!(stdout, "Welcome to the vay! interactive session. Write `:help` for more information.\r\n").unwrap();
         loop {
-            print!("vay! > ");
+            write!(stdout, "vay! > ").unwrap();
             stdout.flush().unwrap();
+            let input_start = crossterm::cursor::position().unwrap();
+            cursor_position = 0;
 
             let mut input = String::new();
-            // TODO: Error handling
-            stdin.read_line(&mut input).unwrap();
-            input = input.trim_end().to_string();
+            loop {
+                let event = crossterm::event::read().unwrap();
+
+                if let Event::Key(key) = event {
+                    if let Some(ch) = key.code.as_char() {
+                        if key.modifiers.contains(KeyModifiers::SHIFT) {
+                            let uppercase = ch.to_uppercase().collect::<Vec<_>>();
+                            for (i, ch) in uppercase.into_iter().enumerate() {
+                                input.insert(cursor_position as usize + i, ch);
+                            }
+                        } else {
+                            input.insert(cursor_position as usize, ch);
+                        }
+                        cursor_position += 1;
+                    }
+                }
+
+                if event == Event::Key(KeyCode::Enter.into()) {
+                    break;
+                }
+
+                if event == Event::Key(KeyCode::Backspace.into()) {
+                    input.remove(cursor_position as usize - 1);
+                    if cursor_position > 0 {
+                        cursor_position -= 1;
+                    }
+                }
+
+                if event == Event::Key(KeyCode::Right.into()) {
+                    if cursor_position as usize + 1 <= input.len() {
+                        cursor_position += 1;
+                    }
+                }
+
+                if event == Event::Key(KeyCode::Left.into()) {
+                    if cursor_position > 0 {
+                        cursor_position -= 1;
+                    }
+                }
+
+                stdout.execute(MoveTo(input_start.0, input_start.1)).unwrap();
+                write!(stdout, "{}                  ", input).unwrap();
+                stdout.flush().unwrap();
+                stdout.execute(MoveTo(cursor_position + input_start.0, input_start.1)).unwrap();
+            }
+            write!(stdout, "\r\n").unwrap();
 
             if input.is_empty() {
                 continue;
@@ -160,7 +216,7 @@ impl Runner {
 
                 match (command.action)(self, input.into()) {
                     Ok(()) => (),
-                    Err(error) => error.report(&self.source_contents[SESSION_SOURCE], ""),
+                    Err(error) => error.report(&self.source_contents[SESSION_SOURCE], "")
                 };
             } else {
                 *self.source_contents.get_mut(SESSION_SOURCE).unwrap() = input;
@@ -176,9 +232,8 @@ impl Runner {
                 let ControlFlow::Ok(result) = self.interpreter.expression(&expression) else {
                     unreachable!()
                 };
-                println!("{} : {}", result, t)
+                write!(stdout, "{} : {}\r\n", result, t).unwrap()
             }
-
         }
     }
 }
@@ -201,20 +256,23 @@ const COMMANDS: &[Command] = &[
     Command {
         name: "exit",
         description: "Exits the session",
-        action: |_, _| exit(0)
+        action: |_, _| {
+            terminal::disable_raw_mode().unwrap();
+            exit(0);
+        }
     },
 ];
 
 fn help() {
-    println!();
-    println!("    Session Commands:");
+    println!("\r");
+    println!("    Session Commands:\r");
     for command in COMMANDS {
-        println!("        {:<15} {}", command.name, command.description);
+        println!("        {:<15} {}\r", command.name, command.description);
     }
 }
 
 fn error(msg: &str) {
-    println!();
-    println!("    Error: {}", msg);
+    println!("\r");
+    println!("    Error: {}\r", msg);
     help();
 }
