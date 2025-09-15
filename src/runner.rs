@@ -130,7 +130,6 @@ impl Runner {
         self.resolver.init_interactive_module();
         self.checker.init_interactive_session();
 
-        // let stdin = stdin();
         let mut stdout = stdout();
 
         self.source_contents.insert(SESSION_SOURCE.into(), String::new());
@@ -139,6 +138,9 @@ impl Runner {
 
         crossterm::terminal::enable_raw_mode().unwrap();
 
+        let mut history: Vec<String> = vec![];
+        let mut history_position = 0;
+
         write!(stdout, "Welcome to the vay! interactive session. Write `:help` for more information.\r\n").unwrap();
         loop {
             write!(stdout, "vay! > ").unwrap();
@@ -146,8 +148,17 @@ impl Runner {
             let input_start = crossterm::cursor::position().unwrap();
             cursor_position = 0;
 
-            let mut input = String::new();
+            let mut new_input = String::new();
+            let mut input;
+
             loop {
+                let history_len = history.len();
+                input = if history_position == 0 {
+                    &mut new_input
+                } else {
+                    &mut history[history_len - history_position]
+                };
+
                 let event = crossterm::event::read().unwrap();
 
                 if let Event::Key(key) = event {
@@ -169,8 +180,8 @@ impl Runner {
                 }
 
                 if event == Event::Key(KeyCode::Backspace.into()) {
-                    input.remove(cursor_position as usize - 1);
                     if cursor_position > 0 {
+                        input.remove(cursor_position as usize - 1);
                         cursor_position -= 1;
                     }
                 }
@@ -187,12 +198,45 @@ impl Runner {
                     }
                 }
 
+                if event == Event::Key(KeyCode::Up.into()) {
+                    if history_position + 1 <= history_len {
+                        history_position += 1;
+                    }
+                }
+
+                if event == Event::Key(KeyCode::Down.into()) {
+                    if history_position > 0 {
+                        history_position -= 1;
+                    }
+                }
+
                 stdout.execute(MoveTo(input_start.0, input_start.1)).unwrap();
-                write!(stdout, "{}                  ", input).unwrap();
+                if history_position == 0 {
+                    // FIXME: hack
+                    write!(stdout, "{}                  ", new_input).unwrap();
+                } else {
+                    // FIXME: hack
+                    write!(stdout, "{}                  ", history[history_len - history_position]).unwrap();
+                }
                 stdout.flush().unwrap();
-                stdout.execute(MoveTo(cursor_position + input_start.0, input_start.1)).unwrap();
+
+                let input_len = if history_position == 0 {
+                    new_input.len()
+                } else {
+                    history[history_len - history_position].len()
+                };
+
+                let pos_x = if cursor_position as usize > input_len {
+                    cursor_position = input_len as u16;
+                    input_len as u16 + input_start.0
+                } else {
+                    cursor_position + input_start.0
+                };
+
+                stdout.execute(MoveTo(pos_x, input_start.1)).unwrap();
             }
             write!(stdout, "\r\n").unwrap();
+            let input = input.clone();
 
             if input.is_empty() {
                 continue;
@@ -219,7 +263,7 @@ impl Runner {
                     Err(error) => error.report(&self.source_contents[SESSION_SOURCE], "")
                 };
             } else {
-                *self.source_contents.get_mut(SESSION_SOURCE).unwrap() = input;
+                *self.source_contents.get_mut(SESSION_SOURCE).unwrap() = input.clone();
 
                 let input = &self.source_contents[SESSION_SOURCE];
                 let lexer = Lexer::new(SESSION_SOURCE.into(), input);
@@ -234,6 +278,8 @@ impl Runner {
                 };
                 write!(stdout, "{} : {}\r\n", result, t).unwrap()
             }
+
+            history.push(input);
         }
     }
 }
