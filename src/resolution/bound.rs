@@ -2,9 +2,8 @@ use std::fmt::Display;
 
 use crate::interner::{interner, InternIdx};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Bound {
-    Undetermined,
     Local(usize),
     Absolute(Path),
 }

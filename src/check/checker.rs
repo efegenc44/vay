@@ -286,7 +286,6 @@ impl Checker {
             Bound::Absolute(path) => {
                 Ok(self.types[path].clone())
             },
-            Bound::Undetermined => unreachable!()
         }
     }
 
@@ -752,8 +751,7 @@ impl Checker {
                         };
 
                         self.cyclic_define(define, current_define)
-                    },
-                    Bound::Undetermined => unreachable!(),
+                    }
                 }
             },
 
@@ -1244,7 +1242,6 @@ impl Checker {
                 let t = self.value_types[path].clone();
                 Ok((self.instantiate(t), false))
             },
-            Bound::Undetermined => unreachable!(),
         }
     }
 

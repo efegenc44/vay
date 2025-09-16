@@ -433,7 +433,6 @@ impl Resolver {
                     return self.error(ResolveError::UnboundValuePath(absolute_path), location);
                 };
             }
-            Bound::Undetermined => unreachable!(),
         };
 
         Ok(())
@@ -599,7 +598,6 @@ impl Resolver {
                     return self.error(ResolveError::UnboundTypePath(absolute_path), location);
                 };
             }
-            Bound::Undetermined => unreachable!(),
         };
 
         Ok(())

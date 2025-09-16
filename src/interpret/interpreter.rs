@@ -346,7 +346,6 @@ impl Interpreter {
 
     fn path(&mut self, path: &expression::Path) -> ControlFlow {
         match path.bound() {
-            Bound::Undetermined => unreachable!(),
             Bound::Local(bound_idx) => {
                 let index = self.locals.len() - 1 - bound_idx;
                 Ok(self.locals[index].clone())
@@ -765,8 +764,7 @@ impl Interpreter {
                         let index = self.locals.len() - 1 - idx;
                         self.locals[index] = value
                     },
-                    Bound::Absolute(_) |
-                    Bound::Undetermined => unreachable!(),
+                    Bound::Absolute(_) => panic!("Global values are not assignable. Ensured by the type checker.")
                 }
             },
             Expression::Projection(projection) => {

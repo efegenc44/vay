@@ -1,3 +1,5 @@
+use std::cell::OnceCell;
+
 use crate::{
     resolution::bound::Bound,
     interner::InternIdx,
@@ -30,14 +32,14 @@ pub enum Expression {
 #[derive(Clone)]
 pub struct Path {
     parts: Vec<InternIdx>,
-    bound: Bound
+    bound: OnceCell<Bound>
 }
 
 impl Path {
     pub fn new(parts: Vec<InternIdx>) -> Self {
         Self {
             parts,
-            bound: Bound::Undetermined
+            bound: OnceCell::new()
         }
     }
 
@@ -46,11 +48,11 @@ impl Path {
     }
 
     pub fn bound(&self) -> &Bound {
-        &self.bound
+        self.bound.get().unwrap()
     }
 
     pub fn set_bound(&mut self, bound: Bound) {
-        self.bound = bound;
+        self.bound.set(bound).unwrap();
     }
 }
 

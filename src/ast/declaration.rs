@@ -1,3 +1,5 @@
+use std::cell::OnceCell;
+
 use crate::{
     resolution::bound::Path,
     ast::{
@@ -39,7 +41,7 @@ pub struct Define {
     name: Located<InternIdx>,
     type_expression: Located<TypeExpression>,
     expression: Located<Expression>,
-    path: Path
+    path: OnceCell<Path>
 }
 
 impl Define {
@@ -52,7 +54,7 @@ impl Define {
             name,
             type_expression,
             expression,
-            path: Path::empty()
+            path: OnceCell::new()
         }
     }
 
@@ -77,11 +79,11 @@ impl Define {
     }
 
     pub fn path(&self) -> &Path {
-        &self.path
+        self.path.get().unwrap()
     }
 
     pub fn set_path(&mut self, path: Path) {
-        self.path = path;
+        self.path.set(path).unwrap();
     }
 }
 
@@ -125,7 +127,7 @@ pub struct Function {
     arguments: Vec<Located<TypedIdentifier>>,
     return_type: Option<Located<TypeExpression>>,
     body: Located<Expression>,
-    path: Path,
+    path: OnceCell<Path>,
 }
 
 impl Function {
@@ -141,7 +143,7 @@ impl Function {
             arguments,
             return_type,
             body,
-            path: Path::empty()
+            path: OnceCell::new()
         }
     }
 
@@ -182,11 +184,11 @@ impl Function {
     }
 
     pub fn path(&self) -> &Path {
-        &self.path
+        self.path.get().unwrap()
     }
 
     pub fn set_path(&mut self, path: Path) {
-        self.path = path;
+        self.path.set(path).unwrap();
     }
 }
 
@@ -196,7 +198,7 @@ pub struct Variant {
     type_vars: Vec<Located<InternIdx>>,
     cases: Vec<Located<VariantCase>>,
     methods: Vec<Method>,
-    path: Path,
+    path: OnceCell<Path>,
 }
 
 impl Variant {
@@ -211,7 +213,7 @@ impl Variant {
             type_vars,
             cases,
             methods,
-            path: Path::empty()
+            path: OnceCell::new()
         }
     }
 
@@ -240,18 +242,18 @@ impl Variant {
     }
 
     pub fn path(&self) -> &Path {
-        &self.path
+        self.path.get().unwrap()
     }
 
     pub fn set_path(&mut self, path: Path) {
-        self.path = path;
+        self.path.set(path).unwrap();
     }
 }
 
 pub struct VariantCase {
     identifier: Located<InternIdx>,
     arguments: Option<Vec<Located<TypeExpression>>>,
-    path: Path,
+    path: OnceCell<Path>,
 }
 
 impl VariantCase {
@@ -259,7 +261,7 @@ impl VariantCase {
         Self {
             identifier,
             arguments,
-            path: Path::empty()
+            path: OnceCell::new()
         }
     }
 
@@ -276,11 +278,11 @@ impl VariantCase {
     }
 
     pub fn path(&self) -> &Path {
-        &self.path
+        self.path.get().unwrap()
     }
 
     pub fn set_path(&mut self, path: Path) {
-        self.path = path;
+        self.path.set(path).unwrap();
     }
 }
 
@@ -288,7 +290,7 @@ pub struct Interface {
     name: Located<InternIdx>,
     type_name: Located<TypeVar>,
     methods: Vec<InterfaceSignature>,
-    path: Path,
+    path: OnceCell<Path>,
 }
 
 impl Interface {
@@ -301,7 +303,7 @@ impl Interface {
             name,
             type_name,
             methods,
-            path: Path::empty()
+            path: OnceCell::new()
         }
     }
 
@@ -326,11 +328,11 @@ impl Interface {
     }
 
     pub fn path(&self) -> &Path {
-        &self.path
+        self.path.get().unwrap()
     }
 
     pub fn set_path(&mut self, path: Path) {
-        self.path = path;
+        self.path.set(path).unwrap();
     }
 }
 
@@ -338,7 +340,7 @@ pub struct InterfaceSignature {
     name: Located<InternIdx>,
     arguments: Vec<Located<TypedIdentifier>>,
     return_type: Option<Located<TypeExpression>>,
-    path: Path,
+    path: OnceCell<Path>,
 }
 
 impl InterfaceSignature {
@@ -351,7 +353,7 @@ impl InterfaceSignature {
             name,
             arguments,
             return_type,
-            path: Path::empty()
+            path: OnceCell::new()
         }
     }
 
@@ -376,11 +378,11 @@ impl InterfaceSignature {
     }
 
     pub fn path(&self) -> &Path {
-        &self.path
+        self.path.get().unwrap()
     }
 
     pub fn set_path(&mut self, path: Path) {
-        self.path = path;
+        self.path.set(path).unwrap();
     }
 }
 
@@ -389,7 +391,7 @@ pub struct Struct {
     type_vars: Vec<Located<InternIdx>>,
     fields: Vec<Located<TypedIdentifier>>,
     methods: Vec<Method>,
-    path: Path,
+    path: OnceCell<Path>,
 }
 
 impl Struct {
@@ -404,7 +406,7 @@ impl Struct {
             type_vars,
             fields,
             methods,
-            path: Path::empty()
+            path: OnceCell::new()
         }
     }
 
@@ -433,11 +435,11 @@ impl Struct {
     }
 
     pub fn path(&self) -> &Path {
-        &self.path
+        self.path.get().unwrap()
     }
 
     pub fn set_path(&mut self, path: Path) {
-        self.path = path;
+        self.path.set(path).unwrap();
     }
 }
 
@@ -445,7 +447,7 @@ pub struct BuiltIn {
     name: Located<InternIdx>,
     type_vars: Vec<Located<InternIdx>>,
     methods: Vec<(MethodSignature, Option<Located<Expression>>)>,
-    path: Path,
+    path: OnceCell<Path>,
 }
 
 impl BuiltIn {
@@ -458,7 +460,7 @@ impl BuiltIn {
             name,
             type_vars,
             methods,
-            path: Path::empty()
+            path: OnceCell::new()
         }
     }
 
@@ -479,11 +481,11 @@ impl BuiltIn {
     }
 
     pub fn path(&self) -> &Path {
-        &self.path
+        self.path.get().unwrap()
     }
 
     pub fn set_path(&mut self, path: Path) {
-        self.path = path;
+        self.path.set(path).unwrap();
     }
 }
 
@@ -492,7 +494,7 @@ pub struct External {
     type_vars: Vec<Located<TypeVar>>,
     arguments: Vec<Located<TypedIdentifier>>,
     return_type: Option<Located<TypeExpression>>,
-    path: Path,
+    path: OnceCell<Path>,
 }
 
 impl External {
@@ -506,7 +508,7 @@ impl External {
             type_vars,
             arguments,
             return_type,
-            path: Path::empty()
+            path: OnceCell::new()
         }
     }
 
@@ -539,11 +541,11 @@ impl External {
     }
 
     pub fn path(&self) -> &Path {
-        &self.path
+        self.path.get().unwrap()
     }
 
     pub fn set_path(&mut self, path: Path) {
-        self.path = path;
+        self.path.set(path).unwrap();
     }
 }
 
@@ -637,24 +639,24 @@ impl MethodSignature {
 }
 
 pub struct MethodConstraint {
-    nth: usize,
+    nth: OnceCell<usize>,
     type_var: Located<TypeVar>
 }
 
 impl MethodConstraint {
     pub fn new(type_var: Located<TypeVar>) -> Self {
         Self {
-            nth: usize::default(),
+            nth: OnceCell::new(),
             type_var
         }
     }
 
     pub fn nth(&self) -> usize {
-        self.nth
+        *self.nth.get().unwrap()
     }
 
     pub fn set_nth(&mut self, nth: usize) {
-        self.nth = nth;
+        self.nth.set(nth).unwrap();
     }
 
     pub fn type_var(&self) -> &Located<TypeVar> {
@@ -716,7 +718,7 @@ impl TypeVar {
 pub struct Module {
     declarations: Vec<Declaration>,
     source: String,
-    path: Path
+    path: OnceCell<Path>
 }
 
 impl Module {
@@ -724,7 +726,7 @@ impl Module {
         Self {
             declarations,
             source,
-            path: Path::empty()
+            path: OnceCell::new()
         }
     }
 
@@ -741,10 +743,10 @@ impl Module {
     }
 
     pub fn path(&self) -> &Path {
-        &self.path
+        self.path.get().unwrap()
     }
 
     pub fn set_path(&mut self, path: Path) {
-        self.path = path;
+        self.path.set(path).unwrap();
     }
 }
