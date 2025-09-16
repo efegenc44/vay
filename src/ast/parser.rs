@@ -185,19 +185,7 @@ impl<'source> Parser<'source> {
         let result = expected_ones
             .iter()
             .find(|expected| {
-                if matches!(expected, Token::Identifier(_)) {
-                    matches!(token.data(), Token::Identifier(_))
-                } else if matches!(expected, Token::U64(_)) {
-                    matches!(token.data(), Token::U64(_))
-                } else if matches!(expected, Token::F32(_)) {
-                    matches!(token.data(), Token::F32(_))
-                } else if matches!(expected, Token::String(_)) {
-                    matches!(token.data(), Token::String(_))
-                } else if matches!(expected, Token::Char(_)) {
-                    matches!(token.data(), Token::Char(_))
-                } else {
-                    expected == &token.data()
-                }
+                std::mem::discriminant(*expected) == std::mem::discriminant(token.data())
             });
 
         match result {
