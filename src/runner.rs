@@ -14,7 +14,7 @@ use crate::{
     },
     check::Checker,
     vay::core::CORE_FILE_PATH,
-    ast::{declaration::Module, parser::Parser},
+    ast::{declaration::Module, Parser},
     interpret::interpreter::{ControlFlow, Interpreter},
     lex::lexer::Lexer,
     reportable::ReportableResult,
