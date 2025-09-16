@@ -10,7 +10,7 @@ use crate::{
     interner::{interner, InternIdx},
     vay::intrinsics::{EXTERNAL_FUNCTIONS, INTRINSIC_FUNCTIONS},
     lex::location::Located,
-    check::typ::BuiltInType,
+    check::typ,
     interpret::value::{
         ConstructorInstance, FunctionInstance, InstanceInstance, LambdaInstance,
         MethodInstance, StructConstructorInstance, StructInstanceInstance, Value,
@@ -20,7 +20,7 @@ use crate::{
 
 pub struct Interpreter {
     methods: HashMap<Path, HashMap<InternIdx, Rc<FunctionInstance>>>,
-    builtin_methods: HashMap<BuiltInType, HashMap<InternIdx, BuiltInMethodKind>>,
+    builtin_methods: HashMap<typ::BuiltIn, HashMap<InternIdx, BuiltInMethodKind>>,
     names: HashMap<Path, Value>,
     locals: Vec<Value>,
 
@@ -201,10 +201,10 @@ impl Interpreter {
 
     fn collect_builtin_name(&mut self, builtin: &declaration::BuiltIn) {
         let t = match interner().get(builtin.name().data()) {
-            "U64" => BuiltInType::U64,
-            "F32" => BuiltInType::F32,
-            "Char" => BuiltInType::Char,
-            "Array" => BuiltInType::Array,
+            "U64" => typ::BuiltIn::U64,
+            "F32" => typ::BuiltIn::F32,
+            "Char" => typ::BuiltIn::Char,
+            "Array" => typ::BuiltIn::Array,
             _ => unreachable!()
         };
 
@@ -466,7 +466,7 @@ impl Interpreter {
                         self.methods[type_path][&name].clone()
                     },
                     Value::U64(u64) => {
-                        let f = self.builtin_methods[&BuiltInType::U64][&name].clone();
+                        let f = self.builtin_methods[&typ::BuiltIn::U64][&name].clone();
 
                         let mut argument_values = vec![Value::U64(*u64)];
                         for argument in application.arguments() {
@@ -498,7 +498,7 @@ impl Interpreter {
                         }
                     },
                     Value::F32(f32) => {
-                        let f = self.builtin_methods[&BuiltInType::F32][&name].clone();
+                        let f = self.builtin_methods[&typ::BuiltIn::F32][&name].clone();
 
                         let mut argument_values = vec![Value::F32(*f32)];
                         for argument in application.arguments() {
@@ -530,7 +530,7 @@ impl Interpreter {
                         }
                     },
                     Value::Char(ch) => {
-                        let f = self.builtin_methods[&BuiltInType::Char][&name].clone();
+                        let f = self.builtin_methods[&typ::BuiltIn::Char][&name].clone();
 
                         let mut argument_values = vec![Value::Char(*ch)];
                         for argument in application.arguments() {
@@ -562,7 +562,7 @@ impl Interpreter {
                         }
                     },
                     Value::Array(array) => {
-                        let f = self.builtin_methods[&BuiltInType::Array][&name].clone();
+                        let f = self.builtin_methods[&typ::BuiltIn::Array][&name].clone();
 
                         let mut argument_values = vec![Value::Array(array.clone())];
                         for argument in application.arguments() {
@@ -695,19 +695,19 @@ impl Interpreter {
                 }
             },
             Value::U64(i64) => {
-                let function = self.builtin_methods[&BuiltInType::U64][projection.projected().data()].clone();
+                let function = self.builtin_methods[&typ::BuiltIn::U64][projection.projected().data()].clone();
                 Ok(Value::BuiltinMethod(Box::new(Value::U64(*i64)), function))
             }
             Value::F32(f32) => {
-                let function = self.builtin_methods[&BuiltInType::F32][projection.projected().data()].clone();
+                let function = self.builtin_methods[&typ::BuiltIn::F32][projection.projected().data()].clone();
                 Ok(Value::BuiltinMethod(Box::new(Value::F32(*f32)), function))
             }
             Value::Char(ch) => {
-                let function = self.builtin_methods[&BuiltInType::Char][projection.projected().data()].clone();
+                let function = self.builtin_methods[&typ::BuiltIn::Char][projection.projected().data()].clone();
                 Ok(Value::BuiltinMethod(Box::new(Value::Char(*ch)), function))
             }
             Value::Array(array) => {
-                let function = self.builtin_methods[&BuiltInType::Array][projection.projected().data()].clone();
+                let function = self.builtin_methods[&typ::BuiltIn::Array][projection.projected().data()].clone();
                 Ok(Value::BuiltinMethod(Box::new(Value::Array(array.clone())), function))
             }
             _ => unreachable!(),

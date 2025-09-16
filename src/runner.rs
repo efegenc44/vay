@@ -12,7 +12,7 @@ use crate::{
         intrinsics::INTRINSICS_FILE_PATH,
         stdlib
     },
-    check::checker::Checker,
+    check::Checker,
     vay::core::CORE_FILE_PATH,
     ast::{declaration::Module, parser::Parser},
     interpret::interpreter::{ControlFlow, Interpreter},

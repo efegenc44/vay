@@ -4,96 +4,167 @@ use crate::{resolution::bound::Path, interner::InternIdx};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
-    Mono(MonoType),
-    Forall(Vec<TypeVar>, MonoType),
+    Mono(Mono),
+    Forall(Vec<Var>, Mono),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MonoType {
-    Variant(Path, Vec<MonoType>),
-    Struct(Path, Vec<MonoType>),
-    Function(FunctionType),
-    Constant(TypeVar),
-    Var(TypeVar),
-    BuiltIn(Path, BuiltInType, Vec<MonoType>),
+pub enum Mono {
+    Variant(Path, Vec<Mono>),
+    Struct(Path, Vec<Mono>),
+    Function(Function),
+    Constant(Var),
+    Var(Var),
+    BuiltIn(Path, BuiltIn, Vec<Mono>),
     Unit,
     Bottom,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FunctionType {
-    pub arguments: Vec<MonoType>,
-    pub return_type: Box<MonoType>,
+pub struct Function {
+    arguments: Vec<Mono>,
+    return_type: Box<Mono>,
 }
 
-impl FunctionType {
-    pub fn into_mono(self) -> MonoType {
-        MonoType::Function(self)
+impl Function {
+    pub fn new(arguments: Vec<Mono>, return_type: Box<Mono>) -> Self {
+        Self { arguments, return_type }
+    }
+
+    pub fn arguments(&self) -> &[Mono] {
+        &self.arguments
+    }
+
+    pub fn return_type(&self) -> &Mono {
+        &self.return_type
+    }
+
+    pub fn destruct(self) -> (Vec<Mono>, Box<Mono>) {
+        (self.arguments, self.return_type)
     }
 }
 
 #[derive(Clone)]
-pub struct MethodType {
-    pub function_type: FunctionType,
-    pub constraints: HashMap<usize, HashSet<Path>>,
-    pub type_vars: Vec<TypeVar>
+pub struct Method {
+    function_type: Function,
+    constraints: HashMap<usize, HashSet<Path>>,
+    type_vars: Vec<Var>
+}
+
+impl Method {
+    pub fn new(
+        function_type: Function,
+        constraints: HashMap<usize, HashSet<Path>>,
+        type_vars: Vec<Var>
+    ) -> Self {
+        Self { function_type, constraints, type_vars }
+    }
+
+    pub fn function_type(&self) -> &Function {
+        &self.function_type
+    }
+
+    pub fn constraints(&self) -> &HashMap<usize, HashSet<Path>> {
+        &self.constraints
+    }
+
+    pub fn type_vars(&self) -> &[Var] {
+        &self.type_vars
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Interface {
-    pub methods: HashMap<InternIdx, FunctionType>,
+    methods: HashMap<InternIdx, Function>,
+}
+
+impl Interface {
+    pub fn new() -> Self {
+        Self {
+            methods: HashMap::new()
+        }
+    }
+
+    pub fn methods(&self) -> &HashMap<InternIdx, Function> {
+        &self.methods
+    }
+
+    pub fn methods_mut(&mut self) -> &mut HashMap<InternIdx, Function> {
+        &mut self.methods
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypeVar {
-    pub idx: usize,
-    pub interfaces: HashSet<Path>
+pub struct Var {
+    idx: usize,
+    interfaces: HashSet<Path>
+}
+
+impl Var {
+    pub fn new(idx: usize) -> Self {
+        Self {
+            idx,
+            interfaces: HashSet::new()
+        }
+    }
+
+    pub fn idx(&self) -> usize {
+        self.idx
+    }
+
+    pub fn interfaces(&self) -> &HashSet<Path> {
+        &self.interfaces
+    }
+
+    pub fn interfaces_mut(&mut self) -> &mut HashSet<Path> {
+        &mut self.interfaces
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum BuiltInType {
+pub enum BuiltIn {
     U64,
     F32,
     Char,
     Array
 }
 
-impl MonoType {
-    pub fn into_function(self) -> FunctionType {
+impl Mono {
+    pub fn into_function(self) -> Function {
         let Self::Function(function) = self else {
             panic!()
         };
         function
     }
 
-    pub fn substitute(self, map: &HashMap<usize, MonoType>) -> MonoType {
+    pub fn substitute(self, map: &HashMap<usize, Mono>) -> Mono {
         match self {
-            MonoType::Variant(path, arguments) => {
+            Mono::Variant(path, arguments) => {
                 let arguments = arguments
                     .into_iter()
                     .map(|arg| arg.substitute(map))
                     .collect();
 
-                MonoType::Variant(path, arguments)
+                Mono::Variant(path, arguments)
             },
-            MonoType::Struct(path, arguments) => {
+            Mono::Struct(path, arguments) => {
                 let arguments = arguments
                     .into_iter()
                     .map(|arg| arg.substitute(map))
                     .collect();
 
-                MonoType::Struct(path, arguments)
+                Mono::Struct(path, arguments)
             },
-            MonoType::BuiltIn(path, builtin, arguments) => {
+            Mono::BuiltIn(path, builtin, arguments) => {
                 let arguments = arguments
                     .into_iter()
                     .map(|arg| arg.substitute(map))
                     .collect();
 
-                MonoType::BuiltIn(path, builtin, arguments)
+                Mono::BuiltIn(path, builtin, arguments)
             },
-            MonoType::Function(function_type) => {
-                let FunctionType { arguments, return_type } = function_type;
+            Mono::Function(function_type) => {
+                let Function { arguments, return_type } = function_type;
 
                 let arguments = arguments
                     .into_iter()
@@ -102,52 +173,52 @@ impl MonoType {
 
                 let return_type = Box::new(return_type.substitute(map));
 
-                let function = FunctionType { arguments, return_type };
-                MonoType::Function(function)
+                let function = Function { arguments, return_type };
+                Mono::Function(function)
             },
-            MonoType::Var(var) => {
-                let TypeVar { idx, .. } = var;
+            Mono::Var(var) => {
+                let Var { idx, .. } = var;
 
                 if let Some(m) = map.get(&idx).cloned() {
                     m.substitute(map)
                 } else {
-                    MonoType::Var(var)
+                    Mono::Var(var)
                 }
             },
-            MonoType::Constant(c) => MonoType::Constant(c),
-            MonoType::Unit => MonoType::Unit,
-            MonoType::Bottom => MonoType::Bottom
+            Mono::Constant(c) => Mono::Constant(c),
+            Mono::Unit => Mono::Unit,
+            Mono::Bottom => Mono::Bottom
         }
     }
 
-    pub fn replace_type_constants(self, map: &HashMap<usize, MonoType>) -> MonoType {
+    pub fn replace_type_constants(self, map: &HashMap<usize, Mono>) -> Mono {
         match self {
-            MonoType::Variant(path, arguments) => {
+            Mono::Variant(path, arguments) => {
                 let arguments = arguments
                     .into_iter()
                     .map(|arg| arg.replace_type_constants(map))
                     .collect();
 
-                MonoType::Variant(path, arguments)
+                Mono::Variant(path, arguments)
             },
-            MonoType::Struct(path, arguments) => {
+            Mono::Struct(path, arguments) => {
                 let arguments = arguments
                     .into_iter()
                     .map(|arg| arg.replace_type_constants(map))
                     .collect();
 
-                MonoType::Struct(path, arguments)
+                Mono::Struct(path, arguments)
             },
-            MonoType::BuiltIn(path, builtin, arguments) => {
+            Mono::BuiltIn(path, builtin, arguments) => {
                 let arguments = arguments
                     .into_iter()
                     .map(|arg| arg.replace_type_constants(map))
                     .collect();
 
-                MonoType::BuiltIn(path, builtin, arguments)
+                Mono::BuiltIn(path, builtin, arguments)
             },
-            MonoType::Function(function_type) => {
-                let FunctionType { arguments, return_type } = function_type;
+            Mono::Function(function_type) => {
+                let Function { arguments, return_type } = function_type;
 
                 let arguments = arguments
                     .into_iter()
@@ -156,12 +227,12 @@ impl MonoType {
 
                 let return_type = Box::new(return_type.replace_type_constants(map));
 
-                let function = FunctionType { arguments, return_type };
-                MonoType::Function(function)
+                let function = Function { arguments, return_type };
+                Mono::Function(function)
             },
-            MonoType::Var(var) => MonoType::Var(var),
-            MonoType::Constant(c) => {
-                let TypeVar { idx, .. } = c;
+            Mono::Var(var) => Mono::Var(var),
+            Mono::Constant(c) => {
+                let Var { idx, .. } = c;
 
                 let Some(t) = map.get(&idx).cloned() else {
                     panic!()
@@ -169,41 +240,35 @@ impl MonoType {
 
                 t.substitute(map)
             },
-            MonoType::Unit => MonoType::Unit,
-            MonoType::Bottom => MonoType::Bottom
+            Mono::Unit => Mono::Unit,
+            Mono::Bottom => Mono::Bottom
         }
     }
 
-    pub fn occuring_type_vars(&self) -> Vec<TypeVar> {
-        fn collect_type_vars(m: &MonoType, vars: &mut Vec<TypeVar>) {
+    pub fn occuring_type_vars(&self) -> Vec<Var> {
+        fn collect_type_vars(m: &Mono, vars: &mut Vec<Var>) {
             match m {
-                MonoType::Variant(_, arguments) => {
+                Mono::Variant(_, arguments) |
+                Mono::Struct(_, arguments) |
+                Mono::BuiltIn(_, _, arguments) => {
                     for argument in arguments {
                         collect_type_vars(argument, vars);
                     }
                 },
-                MonoType::Struct(_, arguments) => {
-                    for argument in arguments {
-                        collect_type_vars(argument, vars);
-                    }
-                },
-                MonoType::BuiltIn(_, _, arguments) => {
-                    for argument in arguments {
-                        collect_type_vars(argument, vars);
-                    }
-                },
-                MonoType::Function(t) => {
-                    let FunctionType { arguments, return_type } = t;
+                Mono::Function(t) => {
+                    let Function { arguments, return_type } = t;
 
                     for argument in arguments {
                         collect_type_vars(argument, vars);
                     }
+
                     collect_type_vars(return_type, vars);
                 },
-                MonoType::Constant(_) => (),
-                MonoType::Var(var) => vars.push(var.clone()),
-                MonoType::Unit => (),
-                MonoType::Bottom => ()
+                Mono::Var(var) => vars.push(var.clone()),
+
+                Mono::Constant(_) |
+                Mono::Unit |
+                Mono::Bottom => ()
             }
         }
 
@@ -214,34 +279,31 @@ impl MonoType {
 
     pub fn occurs(&self, idx: usize) -> bool {
         match self {
-            MonoType::Variant(_, arguments) => {
+            Mono::Variant(_, arguments) |
+            Mono::Struct(_, arguments) |
+            Mono::BuiltIn(_, _, arguments) => {
                 arguments.iter().any(|t| t.occurs(idx))
             },
-            MonoType::Struct(_, arguments) => {
-                arguments.iter().any(|t| t.occurs(idx))
-            },
-            MonoType::BuiltIn(_, _, arguments) => {
-                arguments.iter().any(|t| t.occurs(idx))
-            },
-            MonoType::Function(function) => {
-                let FunctionType { arguments, return_type } = function;
+            Mono::Function(function) => {
+                let Function { arguments, return_type } = function;
 
                 arguments.iter().any(|t| t.occurs(idx)) ||
                 return_type.occurs(idx)
             },
-            MonoType::Var(var) => var.idx == idx,
-            MonoType::Constant(_) => false,
-            MonoType::Unit => false,
-            MonoType::Bottom => false
+            Mono::Var(var) => var.idx == idx,
+
+            Mono::Constant(_) |
+            Mono::Unit |
+            Mono::Bottom => false
         }
     }
 }
 
-impl Display for MonoType {
+impl Display for Mono {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MonoType::Variant(path, arguments) |
-            MonoType::Struct(path, arguments) => {
+            Mono::Variant(path, arguments) |
+            Mono::Struct(path, arguments) => {
                 path.fmt(f)?;
                 match &arguments[..] {
                     [] => Ok(()),
@@ -255,7 +317,7 @@ impl Display for MonoType {
                     }
                 }
             },
-            MonoType::BuiltIn(_, builtin, arguments) => {
+            Mono::BuiltIn(_, builtin, arguments) => {
                 write!(f, "{}", builtin)?;
                 match &arguments[..] {
                     [] => Ok(()),
@@ -269,8 +331,8 @@ impl Display for MonoType {
                     }
                 }
             },
-            MonoType::Function(function) => {
-                let FunctionType { arguments, return_type } = function;
+            Mono::Function(function) => {
+                let Function { arguments, return_type } = function;
 
                 write!(f, "fun(")?;
                 match &arguments[..] {
@@ -285,16 +347,20 @@ impl Display for MonoType {
                 };
                 write!(f, " : {}", return_type)
             }
-            MonoType::Var(type_var) => write!(f, "a{} ({})", type_var.idx, type_var.interfaces
-                .iter().map(|path| path.to_string())
-                .collect::<Vec<_>>().join(",")
+            Mono::Var(type_var) => write!(f, "a{} ({})", type_var.idx, type_var.interfaces
+                .iter()
+                .map(|path| path.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
             ),
-            MonoType::Constant(type_var) => write!(f, "c{} ({})", type_var.idx, type_var.interfaces
-                .iter().map(|path| path.to_string())
-                .collect::<Vec<_>>().join(",")
+            Mono::Constant(type_var) => write!(f, "c{} ({})", type_var.idx, type_var.interfaces
+                .iter()
+                .map(|path| path.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
             ),
-            MonoType::Unit => write!(f, "()"),
-            MonoType::Bottom => write!(f, "Bottom")
+            Mono::Unit => write!(f, "()"),
+            Mono::Bottom => write!(f, "Bottom")
         }
     }
 }
@@ -319,13 +385,13 @@ impl Display for Type {
     }
 }
 
-impl Display for BuiltInType {
+impl Display for BuiltIn {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BuiltInType::U64 => write!(f, "U64"),
-            BuiltInType::F32 => write!(f, "F32"),
-            BuiltInType::Char => write!(f, "Char"),
-            BuiltInType::Array => write!(f, "Array"),
+            BuiltIn::U64 => write!(f, "U64"),
+            BuiltIn::F32 => write!(f, "F32"),
+            BuiltIn::Char => write!(f, "Char"),
+            BuiltIn::Array => write!(f, "Array"),
         }
     }
 }
