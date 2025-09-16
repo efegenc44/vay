@@ -1,5 +1,5 @@
 use crate::{
-    name::bound::Path,
+    resolution::bound::Path,
     ast::{
         expression::Expression,
         type_expression::TypeExpression
@@ -102,7 +102,7 @@ impl Import {
         Self { import_in, name, subnames, as_name }
     }
 
-    pub fn import_in(&self) -> bool {
+    pub fn is_import_in(&self) -> bool {
         self.import_in
     }
 

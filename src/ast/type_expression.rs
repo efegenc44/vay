@@ -1,5 +1,5 @@
 use crate::{
-    name::bound::Bound,
+    resolution::bound::Bound,
     interner::InternIdx,
     lex::location::Located
 };

@@ -1,7 +1,7 @@
 use std::{collections::HashMap, iter::Peekable};
 
 use crate::{
-    name::bound::Path,
+    resolution::bound::Path,
     ast::{
         declaration::{self, Declaration},
         expression::{self, Expression},

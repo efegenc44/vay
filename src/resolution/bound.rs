@@ -36,6 +36,14 @@ impl Path {
     pub fn pop(&mut self) -> Option<InternIdx> {
         self.0.pop()
     }
+
+    pub fn starts_with(&self, path: &Path) -> bool {
+        self.0.starts_with(&path.0)
+    }
+
+    pub fn last(&self) -> InternIdx {
+        *self.0.last().unwrap()
+    }
 }
 
 impl Display for Path {

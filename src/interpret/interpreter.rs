@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    name::bound::{Bound, Path},
+    resolution::bound::{Bound, Path},
     ast::{
         declaration::{self, Declaration},
         expression::{self, Expression},

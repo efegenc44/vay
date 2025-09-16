@@ -18,7 +18,7 @@ use crate::{
     interpret::interpreter::{ControlFlow, Interpreter},
     lex::lexer::Lexer,
     reportable::ReportableResult,
-    name::resolver::Resolver
+    resolution::Resolver
 };
 
 use crossterm::{

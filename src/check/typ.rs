@@ -1,6 +1,6 @@
 use std::{collections::{HashMap, HashSet}, fmt::Display};
 
-use crate::{name::bound::Path, interner::InternIdx};
+use crate::{resolution::bound::Path, interner::InternIdx};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {

@@ -3,7 +3,7 @@ use std::{
 };
 
 use crate::{
-    name::bound::Path,
+    resolution::bound::Path,
     ast::{
         expression::Expression,
         pattern::Pattern,

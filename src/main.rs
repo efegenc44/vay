@@ -4,7 +4,7 @@ mod runner;
 mod commandline;
 mod ast;
 mod lex;
-mod name;
+mod resolution;
 mod check;
 mod vay;
 mod interpret;

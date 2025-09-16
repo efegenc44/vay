@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use crate::{
-    name::bound::Path,
+    resolution::bound::Path,
     interner::interner,
     interpret::value::{
         ConstructorInstance,
