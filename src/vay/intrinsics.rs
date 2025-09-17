@@ -1,11 +1,9 @@
-use std::rc::Rc;
-
 use crate::{
     resolution::bound::Path,
     interner::interner,
     interpret::value::{
-        ConstructorInstance,
-        InstanceInstance,
+        VariantConstructor,
+        VariantInstance,
         Value
     }
 };
@@ -58,9 +56,9 @@ pub const INTRINSIC_FUNCTIONS: &[(&str, IntrinsicFunction)] = intrinsics_functio
             .map(|part| type_path.push(interner().intern_idx(part)))
             .for_each(drop);
 
-        let constructor = Rc::new(ConstructorInstance { type_path, case });
-        let instance = InstanceInstance { constructor, values: vec![] };
-        Value::Instance(Rc::new(instance))
+        let constructor = VariantConstructor::new(type_path, case);
+        let instance = VariantInstance::new(constructor, vec![]);
+        Value::VariantInstance(instance)
     };
     "U64::compare" = |mut arguments| {
         let b = arguments.pop().unwrap().into_u64();
@@ -80,9 +78,9 @@ pub const INTRINSIC_FUNCTIONS: &[(&str, IntrinsicFunction)] = intrinsics_functio
             .map(|part| type_path.push(interner().intern_idx(part)))
             .for_each(drop);
 
-        let constructor = Rc::new(ConstructorInstance { type_path, case });
-        let instance = InstanceInstance { constructor, values: vec![] };
-        Value::Instance(Rc::new(instance))
+        let constructor = VariantConstructor::new(type_path, case);
+        let instance = VariantInstance::new(constructor, vec![]);
+        Value::VariantInstance(instance)
     };
     "U64::toF32" = |mut arguments| {
         let a = arguments.pop().unwrap().into_u64();
@@ -131,9 +129,9 @@ pub const INTRINSIC_FUNCTIONS: &[(&str, IntrinsicFunction)] = intrinsics_functio
             .map(|part| type_path.push(interner().intern_idx(part)))
             .for_each(drop);
 
-        let constructor = Rc::new(ConstructorInstance { type_path, case });
-        let instance = InstanceInstance { constructor, values: vec![] };
-        Value::Instance(Rc::new(instance))
+        let constructor = VariantConstructor::new(type_path, case);
+        let instance = VariantInstance::new(constructor, vec![]);
+        Value::VariantInstance(instance)
     };
     "F32::compare" = |mut arguments| {
         let b = arguments.pop().unwrap().into_u64();
@@ -153,9 +151,9 @@ pub const INTRINSIC_FUNCTIONS: &[(&str, IntrinsicFunction)] = intrinsics_functio
             .map(|part| type_path.push(interner().intern_idx(part)))
             .for_each(drop);
 
-        let constructor = Rc::new(ConstructorInstance { type_path, case });
-        let instance = InstanceInstance { constructor, values: vec![] };
-        Value::Instance(Rc::new(instance))
+        let constructor = VariantConstructor::new(type_path, case);
+        let instance = VariantInstance::new(constructor, vec![]);
+        Value::VariantInstance(instance)
     };
     "Char::equals" = |mut arguments| {
         let b = arguments.pop().unwrap().into_char();
@@ -175,35 +173,35 @@ pub const INTRINSIC_FUNCTIONS: &[(&str, IntrinsicFunction)] = intrinsics_functio
             .map(|part| type_path.push(interner().intern_idx(part)))
             .for_each(drop);
 
-        let constructor = Rc::new(ConstructorInstance { type_path, case });
-        let instance = InstanceInstance { constructor, values: vec![] };
-        Value::Instance(Rc::new(instance))
+        let constructor = VariantConstructor::new(type_path, case);
+        let instance = VariantInstance::new(constructor, vec![]);
+        Value::VariantInstance(instance)
     };
     "Array::length" = |mut arguments| {
         let array = arguments.pop().unwrap().into_array();
 
-        let borrow = array.borrow();
+        let borrow = array.values().borrow();
         Value::U64(borrow.len() as u64)
     };
     "Array::append" = |mut arguments| {
         let value = arguments.pop().unwrap();
         let array = arguments.pop().unwrap().into_array();
 
-        array.borrow_mut().push(value);
+        array.values().borrow_mut().push(value);
 
         Value::Unit
     };
     "Array::pop" = |mut arguments| {
         let array = arguments.pop().unwrap().into_array();
 
-        let mut borrow = array.borrow_mut();
+        let mut borrow = array.values().borrow_mut();
         borrow.pop().unwrap()
     };
     "Array::get" = |mut arguments| {
         let index = arguments.pop().unwrap().into_u64();
         let array = arguments.pop().unwrap().into_array();
 
-        let borrow = array.borrow();
+        let borrow = array.values().borrow();
         borrow[index as usize].clone()
     }
 };

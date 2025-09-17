@@ -15,7 +15,7 @@ use crate::{
     check::Checker,
     vay::core::CORE_FILE_PATH,
     ast::{declaration::Module, Parser},
-    interpret::interpreter::{ControlFlow, Interpreter},
+    interpret::{ControlFlow, Interpreter},
     lex::lexer::Lexer,
     reportable::ReportableResult,
     resolution::Resolver
@@ -273,7 +273,7 @@ impl Runner {
                 runner_interactive!(self, self.resolver.expression(&mut expression), "name resolution");
                 let t = runner_interactive!(self, self.checker.infer(&expression), "type checking");
 
-                let ControlFlow::Ok(result) = self.interpreter.expression(&expression) else {
+                let ControlFlow::Ok(result) = self.interpreter.expression(&expression.data()) else {
                     unreachable!()
                 };
                 write!(stdout, "{} : {}\r\n", result, t).unwrap()

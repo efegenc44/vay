@@ -10,31 +10,22 @@ use crate::{
     },
     interner::{interner, InternIdx},
     vay::intrinsics::IntrinsicFunction,
-    lex::location::Located,
 };
 
 #[derive(Clone)]
-pub enum BuiltInMethodKind {
-    Intrinsic(IntrinsicFunction),
-    Normal(Rc<FunctionInstance>)
-}
-
-#[derive(Clone)]
 pub enum Value {
-    Function(Rc<FunctionInstance>),
-    Method(Rc<MethodInstance>),
-    Lambda(Rc<LambdaInstance>),
+    Function(Function),
+    Method(Method),
+    Lambda(Lambda),
     InterfaceFunction(InternIdx),
-    BuiltinMethod(Box<Value>, BuiltInMethodKind),
-    ExternalFunction(IntrinsicFunction),
-    Constructor(Rc<ConstructorInstance>),
-    Instance(Rc<InstanceInstance>),
-    StructConstructor(Rc<StructConstructorInstance>),
-    StructInstance(Rc<StructInstanceInstance>),
+    VariantConstructor(VariantConstructor),
+    VariantInstance(VariantInstance),
+    StructConstructor(StructConstructor),
+    StructInstance(StructInstance),
     U64(u64),
     F32(f32),
     Char(char),
-    Array(Rc<RefCell<Vec<Value>>>),
+    Array(Array),
     Unit
 }
 
@@ -46,6 +37,7 @@ impl Value {
             (Value::F32(f32_1), Pattern::F32(f32_2)) => f32_1 == f32_2,
             (Value::Array(array), Pattern::String(s2)) => {
                 let string = array
+                    .values()
                     .borrow()
                     .iter()
                     .map(|v| v.clone().into_char())
@@ -54,17 +46,15 @@ impl Value {
                 interner().intern_idx(&string) == *s2
             },
             (Value::Char(c1), Pattern::Char(c2)) => c1 == c2,
-            (Value::Instance(instance), Pattern::VariantCase(variant_case)) => {
-                let InstanceInstance { constructor, values } = instance.as_ref();
-
-                if &constructor.case != variant_case.case().data() {
+            (Value::VariantInstance(instance), Pattern::VariantCase(variant_case)) => {
+                if &instance.constructor().case() != variant_case.case().data() {
                     return false;
                 }
 
                 let empty_field = vec![];
                 let fields = variant_case.fields().unwrap_or(&empty_field);
 
-                for (value, field) in values.iter().zip(fields) {
+                for (value, field) in instance.values().iter().zip(fields) {
                     if !value.matches(field.data()) {
                         return false;
                     }
@@ -73,7 +63,7 @@ impl Value {
                 true
             }
             (Value::Array(array), Pattern::Array(pattern)) => {
-                let array = array.borrow();
+                let array = array.values().borrow();
 
                 // TODO: Better error reporting here or prefereably check for an
                 //   exhaustive pattern matching should prevent this
@@ -95,7 +85,7 @@ impl Value {
     }
 
     pub fn into_core_bool(self) -> bool {
-        let Self::Instance(instance) = self else {
+        let Self::VariantInstance(instance) = self else {
             panic!();
         };
 
@@ -125,7 +115,7 @@ impl Value {
         v
     }
 
-    pub fn into_array(self) -> Rc<RefCell<Vec<Value>>> {
+    pub fn into_array(self) -> Array {
         let Self::Array(v) = self else {
             panic!();
         };
@@ -149,13 +139,11 @@ impl Display for Value {
             Value::Method(..) |
             Value::Lambda(..) |
             Value::InterfaceFunction(..) |
-            Value::BuiltinMethod(..) |
-            Value::ExternalFunction(..) |
-            Value::Constructor(..) |
+            Value::VariantConstructor(..) |
             Value::StructConstructor(..) => write!(f, "<function>"),
-            Value::Instance(instance) => {
-                let InstanceInstance { constructor, values, .. } = instance.as_ref();
-                let ConstructorInstance { case, .. } = constructor.as_ref();
+            Value::VariantInstance(instance) => {
+                let case = &instance.constructor.case();
+                let values = instance.values();
 
                 if values.is_empty() {
                     return write!(f, "{}", interner().get(case));
@@ -174,11 +162,9 @@ impl Display for Value {
                 write!(f, ")")
             },
             Value::StructInstance(instance) => {
-                let StructInstanceInstance { type_path, fields } = instance.as_ref();
-
-                write!(f, "{}(", type_path)?;
+                write!(f, "{}(", instance.type_path())?;
                 let mut first = true;
-                for (name, value) in fields.borrow().iter() {
+                for (name, value) in instance.fields().borrow().iter() {
                     if first {
                         first = false;
                     } else {
@@ -193,9 +179,9 @@ impl Display for Value {
             Value::F32(f32) => write!(f, "{}", f32),
             Value::Char(ch) => write!(f, "\'{ch}\'"),
             Value::Array(array) => {
-                if let Some(Value::Char(_)) = array.borrow().first() {
+                if let Some(Value::Char(_)) = array.values().borrow().first() {
                     write!(f, "\"")?;
-                    for value in array.borrow().iter() {
+                    for value in array.values().borrow().iter() {
                         write!(f, "{}", value.clone().into_char())?;
                     }
                     write!(f, "\"")?;
@@ -205,7 +191,7 @@ impl Display for Value {
 
                 write!(f, "[")?;
                 let mut first = true;
-                for value in array.borrow().iter() {
+                for value in array.values().borrow().iter() {
                     if first {
                         first = false;
                     } else {
@@ -220,38 +206,143 @@ impl Display for Value {
     }
 }
 
-pub struct FunctionInstance {
-    pub body: Located<Expression>
+#[derive(Clone)]
+pub enum Function {
+    BuiltIn(IntrinsicFunction),
+    Normal(Rc<Expression>)
 }
 
-// TODO: Method probably should take something like Callable
-//   instead of FunctionInstance
-pub struct MethodInstance {
-    pub instance: Value,
-    pub function: Rc<FunctionInstance>
+#[derive(Clone)]
+pub struct Method {
+    instance: Box<Value>,
+    function: Function
 }
 
-pub struct LambdaInstance {
-    pub capture: Vec<Value>,
-    pub body: Located<Expression>
+impl Method {
+    pub fn new(instance: Box<Value>, function: Function) -> Self {
+        Self { instance, function }
+    }
+
+    pub fn instance(&self) -> &Value {
+        &self.instance
+    }
+
+    pub fn function(&self) -> &Function {
+        &self.function
+    }
 }
 
-pub struct ConstructorInstance {
-    pub type_path: Path,
-    pub case: InternIdx
+#[derive(Clone)]
+pub struct Lambda {
+    capture: Vec<Value>,
+    expression: Rc<Expression>
 }
 
-pub struct InstanceInstance {
-    pub constructor: Rc<ConstructorInstance>,
-    pub values: Vec<Value>
+impl Lambda {
+    pub fn new(capture: Vec<Value>, expression: Rc<Expression>) -> Self {
+        Self { capture, expression }
+    }
+
+    pub fn capture(&self) -> &[Value] {
+        &self.capture
+    }
+
+    pub fn expression(&self) -> &Expression {
+        &self.expression
+    }
 }
 
-pub struct StructConstructorInstance {
-    pub type_path: Path,
-    pub fields: Vec<InternIdx>
+#[derive(Clone)]
+pub struct VariantConstructor {
+    type_path: Path,
+    case: InternIdx
 }
 
-pub struct StructInstanceInstance {
-    pub type_path: Path,
-    pub fields: RefCell<HashMap<InternIdx, Value>>
+impl VariantConstructor {
+    pub fn new(type_path: Path, case: InternIdx) -> Self {
+        Self { type_path, case }
+    }
+
+    pub fn type_path(&self) -> &Path {
+        &self.type_path
+    }
+
+    pub fn case(&self) -> InternIdx {
+        self.case
+    }
+}
+
+#[derive(Clone)]
+pub struct VariantInstance {
+    constructor: VariantConstructor,
+    values: Vec<Value>
+}
+
+impl VariantInstance {
+    pub fn new(constructor: VariantConstructor, values: Vec<Value>) -> Self {
+        Self { constructor, values }
+    }
+
+    pub fn constructor(&self) -> &VariantConstructor {
+        &self.constructor
+    }
+
+    pub fn values(&self) -> &[Value] {
+        &self.values
+    }
+}
+
+#[derive(Clone)]
+pub struct StructConstructor {
+    type_path: Path,
+    fields: Vec<InternIdx>
+}
+
+impl StructConstructor {
+    pub fn new(type_path: Path, fields: Vec<InternIdx>) -> Self {
+        Self { type_path, fields }
+    }
+
+    pub fn type_path(&self) -> &Path {
+        &self.type_path
+    }
+
+    pub fn fields(&self) -> &[InternIdx] {
+        &self.fields
+    }
+}
+
+#[derive(Clone)]
+pub struct StructInstance {
+    type_path: Path,
+    fields: Rc<RefCell<HashMap<InternIdx, Value>>>
+}
+
+impl StructInstance {
+    pub fn new(type_path: Path, fields: Rc<RefCell<HashMap<InternIdx, Value>>>) -> Self {
+        Self { type_path, fields }
+    }
+
+    pub fn type_path(&self) -> &Path {
+        &self.type_path
+    }
+
+    pub fn fields(&self) -> &RefCell<HashMap<InternIdx, Value>> {
+        &self.fields
+    }
+}
+
+#[derive(Clone)]
+pub struct Array {
+    values: Rc<RefCell<Vec<Value>>>
+}
+
+impl Array {
+    pub fn new(values: Rc<RefCell<Vec<Value>>>) -> Self {
+        Self { values }
+    }
+
+    pub fn values(&self) -> &RefCell<Vec<Value>> {
+        &self.values
+    }
 }
