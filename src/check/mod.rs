@@ -1460,6 +1460,9 @@ impl Checker {
             .map(|_| self.newvar())
             .collect::<Vec<_>>();
 
+        let in_while = self.in_while;
+        self.in_while = false;
+
         scoped!(self, {
             self.define_type_vars(variables.clone());
 
@@ -1467,6 +1470,8 @@ impl Checker {
             self.check(lambda.body(), return_type.clone())?;
             self.return_type.pop();
         });
+
+        self.in_while = in_while;
 
         let arguments = variables
             .into_iter()
